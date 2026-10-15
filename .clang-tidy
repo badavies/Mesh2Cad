@@ -1,0 +1,27 @@
+# CLion shows these as you type. CI runs clang-tidy once the codebase is clean (tracked in issues).
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  clang-analyzer-*,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-virtual-class-destructor,
+  misc-const-correctness,
+  misc-include-cleaner,
+  misc-redundant-expression,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  performance-*,
+  readability-container-size-empty,
+  readability-delete-null-pointer,
+  readability-else-after-return,
+  readability-make-member-function-const,
+  readability-redundant-*,
+  readability-simplify-boolean-expr
+HeaderFilterRegex: '.*/src/.*'
+WarningsAsErrors: ''
+CheckOptions:
+  - key: misc-include-cleaner.IgnoreHeaders
+    value: 'nlohmann/.*'

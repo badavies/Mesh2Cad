@@ -1,0 +1,5 @@
+{"command":"mesh.import","params":{"path":"cube.stl","name":"cube"}}
+{"command":"mesh.info","params":{"id":1}}
+{"command":"doc.list"}
+{"command":"doc.undo"}
+{"command":"doc.list"}

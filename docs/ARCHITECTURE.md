@@ -49,7 +49,7 @@ The core is C++23, licensed GPL-3.0-or-later, and every dependency must be GPL v
 
 | Area | Choice | Licence | Role |
 | --- | --- | --- | --- |
-| Language | C++23 (MSVC 17.10+, GCC 13+, Clang 17+) | n/a | All core code, including the JSON channel and MCP server; C++23 is needed for `std::expected` |
+| Language | C++23 (MSVC 17.10+, GCC 13+; Clang only with libc++, see ADR-019) | n/a | All core code, including the JSON channel and MCP server; C++23 is needed for `std::expected` |
 | Build | CMake presets + vcpkg (manifest mode, pinned baseline) | MIT | Reproducible builds on Windows and Linux |
 | UI | Qt 6 Widgets | LGPL v3 | Windows, docks, panels, dialogs |
 | Viewport | Custom OpenGL renderer in a Qt widget | n/a | Large-mesh rendering with level of detail |
@@ -262,7 +262,7 @@ The UI is a thin shell over the document: Qt 6 Widgets for panels, a custom Open
 - Meshes are uploaded to the GPU as float32 buffers in chunks, so no single buffer limit is hit on large scans.
 - Level of detail: while orbiting, draw a decimated proxy; when the camera stops, draw full resolution. Target: 30 fps or better while orbiting a 10M-triangle scan.
 - Point picking (measurement, probing, snapping, curve drawing) uses a CPU ray cast against the mesh's spatial index or the exact B-rep. It takes well under a millisecond and returns true triangle ids even while the viewport is drawing a decimated proxy.
-- Area selection (lasso, brush on visible faces) uses an off-screen ID buffer in R32UI integer format, rendered from the full-resolution mesh only when the camera is still. Ids never come from the proxy, and the 32-bit format avoids the 16.7 million limit of a 24-bit colour buffer.
+- Area selection (lasso) is a command that takes the screen polygon and camera matrix and selects by projection with BVH visibility tests (ADR-024), so it is reproducible from the session log. An R32UI id buffer may be added later as an accelerator that gives the same result.
 - Tools: brush and lasso selection on the mesh, shell highlighting, section plane, curve drawing on the surface, point-to-point measurement with snapping, colour maps for deviation and curvature with a value probe.
 - B-rep display uses OCCT tessellation converted to the same render path. OCCT's own viewer is not used.
 
@@ -317,7 +317,7 @@ THIRD_PARTY.md
 
 **Build and CI**
 
-- CMake presets for Windows (MSVC) and Linux (GCC and Clang). Both run in CI on every pull request.
+- CMake presets for Windows (MSVC) and Linux (GCC; Clang only with libc++, see ADR-019). Both run in CI on every pull request.
 - Warnings as errors; clang-format and clang-tidy enforced in CI.
 - AddressSanitizer and UndefinedBehaviorSanitizer builds on Linux CI.
 - Floating-point flags are fixed in the CMake presets: `-ffp-contract=off` on GCC and Clang, `/fp:precise` on MSVC, and no fast-math anywhere. Parallel sums and reductions use `tbb::parallel_deterministic_reduce`, never `tbb::parallel_reduce`.
@@ -440,17 +440,23 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-005 | STEP AP242 as primary CAD export; glTF, OBJ, STL for meshes | Accepted | Covers Fusion 360 and Blender, the two target applications |
 | ADR-006 | Subdivision-to-B-spline as the first surfacing path | Accepted | Smooth, mostly exact patches with the least custom fitting code |
 | ADR-007 | App-owned core types; kernel types confined to adapters | Accepted | Libraries stay replaceable; UI and pipeline stay simple |
-| ADR-008 | Qt 6 Widgets with a custom OpenGL viewport | Proposed | Full control of large-mesh rendering; mature desktop widgets |
+| ADR-008 | Qt 6 Widgets with a custom OpenGL viewport | Accepted (ADR-023) | Full control of large-mesh rendering; mature desktop widgets |
 | ADR-009 | Quad remesher choice | Proposed | Decided by the M2 spike |
 | ADR-010 | Every action is a registered command; UI, CLI, JSON channel and MCP server are thin front ends | Accepted | One code path to test; automation and AI agents get every feature for free |
-| ADR-011 | JSON-RPC 2.0 over stdio or local socket; MCP server written in C++ on top of it | Proposed | Reuses the same message code; avoids a second language |
+| ADR-011 | JSON-RPC 2.0 over stdio or local socket; MCP server written in C++ on top of it | Accepted (ADR-023) | Reuses the same message code; avoids a second language |
 | ADR-012 | Language standard C++23 (supersedes C++20 in ADR-001) | Accepted | `std::expected` is C++23; avoids an extra dependency |
 | ADR-013 | Document depends on core only; the command engine orchestrates pipeline and I/O | Accepted | Keeps the document a small, fast-to-test state container |
 | ADR-014 | Selections are document objects referenced by id | Accepted | Keeps large index sets out of JSON; same selection model for UI and agents |
 | ADR-015 | Surface fitting on the Catmull-Clark control cage via limit stencils | Accepted | Preserves cross-patch continuity without explicit constraints |
 | ADR-016 | Primitives are trimmed by General Fuse and joined by booleans, not sewn | Accepted | Sewing only joins faces that already share boundaries |
 | ADR-017 | miniz for the project archive | Accepted | Small, MIT-licensed, single-file zip support |
-| ADR-018 | Point picking by CPU ray cast; area selection by R32UI ID buffer at full resolution | Accepted | Exact ids during proxy rendering; no 24-bit id overflow |
+| ADR-018 | Point picking by CPU ray cast; area selection by R32UI ID buffer at full resolution | Amended by ADR-024 | Exact ids during proxy rendering; no 24-bit id overflow |
+| ADR-019 | Linux builds use GCC 13+; Clang needs libc++ | Accepted | Clang 18 with libstdc++ 13 has no `std::expected`; see `docs/adr/0019-linux-compilers.md` |
+| ADR-020 | Dependencies fall back to pinned downloads when vcpkg is not configured | Accepted | First CLion load must configure; see `docs/adr/0020-dependency-fallback.md` |
+| ADR-021 | Own OBJ and PLY parsers | Accepted | Scans need positions and triangles only; see `docs/adr/0021-own-obj-ply-parsers.md` |
+| ADR-022 | CGAL with Eigen; fetched CGAL 6.0.1 and Boost headers when not installed | Accepted | Builds without vcpkg; see `docs/adr/0022-cgal-eigen-boost-fallback.md` |
+| ADR-023 | Qt app optional in the build; one engine thread runs commands from every source | Accepted | Responsive UI, no interleaved undo steps; see `docs/adr/0023-desktop-app-and-engine-thread.md` |
+| ADR-024 | Lasso selection by CPU projection, reproducible from the command | Accepted | Same result from UI, CLI and agents; see `docs/adr/0024-lasso-by-projection.md` |
 
 ## 15. Review log
 

@@ -1,0 +1,18 @@
+m2c_add_library(commands
+    SOURCES
+        AlignMeasureCommands.cpp
+        CommandRegistry.cpp
+        DocumentCommands.cpp
+        JsonConvert.cpp
+        MeshToolCommands.cpp
+        ProjectCommands.cpp
+        SelectionCommands.cpp
+        ShellCommands.cpp
+        detail/Params.cpp
+    DEPS
+        Mesh2Cad::core
+        Mesh2Cad::document
+        Mesh2Cad::io
+        Mesh2Cad::pipeline
+        nlohmann_json::nlohmann_json)
+target_include_directories(m2c_commands PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="Stage Tests" type="CMakeRunConfiguration" factoryName="Application" folderName="Tests" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Mesh2Cad" TARGET_NAME="m2c_stage_tests" RUN_TARGET_PROJECT_NAME="Mesh2Cad" RUN_TARGET_NAME="m2c_stage_tests">
+    <method v="2">
+      <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+    </method>
+  </configuration>
+</component>

@@ -1,0 +1,9 @@
+m2c_add_library(core
+    SOURCES
+        MeshSelection.cpp
+        DisplayProxy.cpp
+        MeshStats.cpp
+        MeshTopology.cpp
+        SpatialIndex.cpp
+        Transform.cpp
+        TriMesh.cpp)

@@ -1,0 +1,35 @@
+# Build output
+/build/
+cmake-build-*/
+/out/
+/vcpkg_installed/
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+
+# CLion / JetBrains: per-user state (shared project settings stay tracked)
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/shelf/
+.idea/dictionaries/
+.idea/httpRequests/
+.idea/dataSources/
+.idea/cmake.xml
+.idea/claudeCodeEditorTabs.xml
+.fleet/
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db

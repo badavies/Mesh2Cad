@@ -1,0 +1,8 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="All Tests" type="CompoundRunConfigurationType" folderName="Tests">
+    <toRun type="CMakeRunConfiguration" name="Unit Tests" />
+    <toRun type="CMakeRunConfiguration" name="Stage Tests" />
+    <toRun type="CMakeRunConfiguration" name="Command Tests" />
+    <method v="2" />
+  </configuration>
+</component>

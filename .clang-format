@@ -1,0 +1,30 @@
+# Applied by CLion automatically and checked in CI.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+ContinuationIndentWidth: 4
+AccessModifierOffset: -4
+ColumnLimit: 100
+PointerAlignment: Left
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: true
+AllowShortEnumsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+BinPackArguments: false
+BinPackParameters: false
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"m2c/'
+    Priority: 3
+  - Regex: '^"'
+    Priority: 4
+  - Regex: '^<[a-z_]+(\.h)?>$'
+    Priority: 1
+  - Regex: '^<'
+    Priority: 2
+NamespaceIndentation: None
+FixNamespaceComments: true
+ReflowComments: true
+SortIncludes: CaseSensitive
