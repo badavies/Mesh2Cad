@@ -86,6 +86,27 @@ TEST_CASE("Mesh tools edit in place and undo as one step", "[commands][tools]") 
     CHECK(s.document.undoHistory().size() == steps);
 }
 
+TEST_CASE("mesh.simplify stops at max_error_mm", "[commands][tools]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId id = s.import(dir, makeSphere(10.0, 4), "ball"); // 5120 faces
+
+    // With only an error limit there is no count target: it goes as far as the limit allows.
+    const Json loose = s.run("mesh.simplify", {{"id", id}, {"max_error_mm", 1.0}});
+    CHECK(loose["report"]["faces_after"].get<int>() < 1000);
+    CHECK(loose["stats"]["is_watertight"] == true);
+    s.run("doc.undo");
+
+    // A target count as well: whichever comes first.
+    const Json counted =
+        s.run("mesh.simplify", {{"id", id}, {"max_error_mm", 1.0}, {"target_faces", 3000}});
+    CHECK(counted["report"]["faces_after"].get<int>() < 3000);
+    CHECK(counted["report"]["faces_after"].get<int>() >= 2998);
+
+    CHECK(s.tryRun("mesh.simplify", {{"id", id}, {"max_error_mm", 0}}).error().code ==
+          ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("Shell commands find, split and clean fragments", "[commands][shells]") {
     Session s;
     const TempDir dir;

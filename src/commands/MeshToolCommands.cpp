@@ -127,13 +127,16 @@ void addMeshToolCommands(std::vector<Command>& out) {
 
     out.push_back(makeCommand(
         "mesh.simplify",
-        "Reduce the triangle count (quadric edge collapse), keeping open boundaries in place.",
+        "Reduce the triangle count (quadric edge collapse), keeping open boundaries in place. "
+        "Stops "
+        "at the target count or the maximum error, whichever comes first.",
         R"({
             "type":"object",
             "properties":{
                 "id":{"type":"integer","minimum":0},
                 "target_faces":{"type":"integer","minimum":1,"description":"Target triangle count."},
-                "target_ratio":{"type":"number","exclusiveMinimum":0,"maximum":1,"description":"Target as a fraction of the current count (used when target_faces is not given)."},
+                "target_ratio":{"type":"number","exclusiveMinimum":0,"maximum":1,"description":"Target as a fraction of the current count (used when target_faces is not given). Default 0.5 unless max_error_mm is given."},
+                "max_error_mm":{"type":"number","exclusiveMinimum":0,"description":"Stop before the surface moves further than this from the original. With no target given, simplifies as far as this allows."},
                 "preserve_borders":{"type":"boolean","default":true}
             },
             "required":["id"],"additionalProperties":false})",
@@ -144,13 +147,17 @@ void addMeshToolCommands(std::vector<Command>& out) {
             M2C_TRY(target, optionalInteger(params, "target_faces", 0, 1, INT64_MAX));
             M2C_TRY(ratio, optionalNumber(params, "target_ratio", 0.5, 1e-9, 1.0));
             M2C_TRY(borders, optionalBool(params, "preserve_borders", true));
+            M2C_TRY(maxError, optionalNumber(params, "max_error_mm", 0.0, 1e-12, 1e12));
             SimplifyParams p;
-            p.targetFaces = *target > 0
-                                ? static_cast<std::size_t>(*target)
-                                : std::max<std::size_t>(1,
-                                                        static_cast<std::size_t>(std::llround(
-                                                            *ratio * static_cast<double>(before))));
+            if (*target > 0) {
+                p.targetFaces = static_cast<std::size_t>(*target);
+            } else if (*maxError == 0.0 || params.contains("target_ratio")) {
+                p.targetFaces = std::max<std::size_t>(
+                    1,
+                    static_cast<std::size_t>(std::llround(*ratio * static_cast<double>(before))));
+            } // else only the error limit stops it
             p.preserveBorders = *borders;
+            p.maxErrorMm = *maxError;
             M2C_TRY(simplified, simplifyMesh(*object->mesh, p));
             Json report{{"faces_before", before}, {"faces_after", simplified->faceCount()}};
             M2C_TRY(done, commitMesh(context, *object, std::move(*simplified)));

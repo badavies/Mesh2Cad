@@ -176,14 +176,15 @@ Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces
 
 ### `mesh.simplify`
 
-Reduce the triangle count (quadric edge collapse), keeping open boundaries in place. *(changes the document)*
+Reduce the triangle count (quadric edge collapse), keeping open boundaries in place. Stops at the target count or the maximum error, whichever comes first. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
+| `max_error_mm` | number |  | Stop before the surface moves further than this from the original. With no target given, simplifies as far as this allows. |
 | `preserve_borders` | boolean |  | Default `true`. |
 | `target_faces` | integer |  | Target triangle count. |
-| `target_ratio` | number |  | Target as a fraction of the current count (used when target_faces is not given). |
+| `target_ratio` | number |  | Target as a fraction of the current count (used when target_faces is not given). Default 0.5 unless max_error_mm is given. |
 
 ### `mesh.smooth`
 

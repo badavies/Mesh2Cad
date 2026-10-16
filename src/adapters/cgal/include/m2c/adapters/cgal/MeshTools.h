@@ -50,11 +50,13 @@ struct HoleFillResult {
 [[nodiscard]] Result<HoleFillResult> fillHoles(const TriMesh& mesh, const HoleFillParams& params);
 
 struct SimplifyParams {
-    std::size_t targetFaces{0};
+    std::size_t targetFaces{0}; ///< 0 = no face count target (then maxErrorMm must be set).
     bool preserveBorders{true}; ///< Keep open boundaries exactly where they are.
+    double maxErrorMm{0.0};     ///< Stop before a collapse moves the surface further; 0 = no limit.
 };
 
-/// Garland-Heckbert edge-collapse simplification to a target face count.
+/// Garland-Heckbert edge-collapse simplification to a target face count or a maximum error,
+/// whichever is reached first.
 [[nodiscard]] Result<TriMesh> simplify(const TriMesh& mesh, const SimplifyParams& params);
 
 struct RemeshParams {
