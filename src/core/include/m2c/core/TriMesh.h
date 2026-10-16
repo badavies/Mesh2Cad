@@ -13,7 +13,8 @@
 namespace m2c {
 
 class SpatialIndex;
-struct LazySpatialIndex;
+struct FaceAdjacency;
+struct MeshCaches;
 
 struct Aabb {
     Vec3d min;
@@ -59,13 +60,17 @@ public:
     /// (thread-safe) and shared by every copy of this mesh.
     [[nodiscard]] const SpatialIndex& spatialIndex() const;
 
+    /// Face-to-face adjacency (MeshTopology.h). Built on first use (thread-safe) and shared by
+    /// every copy of this mesh, so selection tools on a large scan do not rebuild it per call.
+    [[nodiscard]] const FaceAdjacency& faceAdjacency() const;
+
 private:
     TriMesh(PositionBuffer positions, IndexBuffer indices, Aabb bounds);
 
     PositionBuffer positions_;
     IndexBuffer indices_;
     Aabb bounds_;
-    std::shared_ptr<LazySpatialIndex> index_;
+    std::shared_ptr<MeshCaches> caches_;
 };
 
 } // namespace m2c

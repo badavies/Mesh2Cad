@@ -7,24 +7,34 @@
 #include <mutex>
 #include <string>
 
+#include "m2c/core/MeshTopology.h"
 #include "m2c/core/SpatialIndex.h"
 
 namespace m2c {
 
-struct LazySpatialIndex {
-    std::once_flag once;
+/// Derived data built on first use. Meshes are immutable, so it never goes stale.
+struct MeshCaches {
+    std::once_flag indexOnce;
     std::unique_ptr<SpatialIndex> index;
+    std::once_flag adjacencyOnce;
+    FaceAdjacency adjacency;
 };
 
 TriMesh::TriMesh(PositionBuffer positions, IndexBuffer indices, Aabb bounds)
     : positions_(std::move(positions)), indices_(std::move(indices)), bounds_(bounds),
-      index_(std::make_shared<LazySpatialIndex>()) {}
+      caches_(std::make_shared<MeshCaches>()) {}
 
 const SpatialIndex& TriMesh::spatialIndex() const {
-    std::call_once(index_->once, [this] {
-        index_->index = std::make_unique<SpatialIndex>(positions_, indices_);
+    std::call_once(caches_->indexOnce, [this] {
+        caches_->index = std::make_unique<SpatialIndex>(positions_, indices_);
     });
-    return *index_->index;
+    return *caches_->index;
+}
+
+const FaceAdjacency& TriMesh::faceAdjacency() const {
+    std::call_once(caches_->adjacencyOnce,
+                   [this] { caches_->adjacency = buildFaceAdjacency(*this); });
+    return caches_->adjacency;
 }
 
 Result<TriMesh> TriMesh::create(PositionBuffer positions, IndexBuffer indices) {
