@@ -27,13 +27,4 @@ target_link_libraries(mesh2cad-app PRIVATE m2c_app m2c_warnings)
 target_compile_definitions(mesh2cad-app PRIVATE MESH2CAD_VERSION="${PROJECT_VERSION}")
 m2c_copy_runtime(mesh2cad-app)
 
-if(WIN32)
-    # Copy the Qt DLLs next to the exe so it runs outside the IDE (windeployqt ships with Qt).
-    find_program(M2C_WINDEPLOYQT windeployqt HINTS "${Qt6_DIR}/../../../bin")
-    if(M2C_WINDEPLOYQT)
-        add_custom_command(TARGET mesh2cad-app POST_BUILD
-            COMMAND "${M2C_WINDEPLOYQT}" --no-translations --no-compiler-runtime
-                    "$<TARGET_FILE:mesh2cad-app>"
-            COMMENT "Copying Qt libraries next to mesh2cad-app")
-    endif()
-endif()
+m2c_deploy_qt(mesh2cad-app) # so it runs outside the IDE

@@ -102,3 +102,21 @@ function(m2c_copy_runtime target)
             VERBATIM)
     endif()
 endfunction()
+
+# m2c_deploy_qt(<target>)
+#
+# Windows executables linked against Qt need the Qt DLLs and the platform plugin next to them;
+# without them they exit with 0xc0000135 (DLL not found), which also breaks test discovery for the
+# app tests. windeployqt ships with Qt and copies them.
+function(m2c_deploy_qt target)
+    if(NOT WIN32)
+        return()
+    endif()
+    find_program(M2C_WINDEPLOYQT windeployqt HINTS "${Qt6_DIR}/../../../bin")
+    if(M2C_WINDEPLOYQT)
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND "${M2C_WINDEPLOYQT}" --no-translations --no-compiler-runtime
+                    "$<TARGET_FILE:${target}>"
+            COMMENT "Copying Qt libraries next to ${target}")
+    endif()
+endfunction()
