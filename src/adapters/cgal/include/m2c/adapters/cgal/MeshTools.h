@@ -12,7 +12,8 @@
 namespace m2c::cgal {
 
 struct RepairParams {
-    /// Also try CGAL's (experimental) local self-intersection removal. Slow on large scans.
+    /// Also remove self-intersections: CGAL's (experimental) local removal within each shell, then
+    /// closed shells that pass through each other are united. Slow on large scans.
     bool removeSelfIntersections{false};
 };
 
@@ -21,18 +22,21 @@ struct RepairResult {
     std::size_t removedFaces{0};  ///< Degenerate and duplicate faces removed.
     std::size_t splitVertices{0}; ///< Non-manifold vertices duplicated.
     bool orientationFixed{false}; ///< Faces were flipped to a consistent orientation.
-    bool selfIntersecting{false}; ///< Self-intersections remain after repair.
+    bool selfIntersecting{false}; ///< Faces still cross (faces that only touch do not count).
 };
 
-/// Clean-up: merges duplicate points, removes degenerate and duplicate faces, makes the mesh
-/// manifold, orients faces consistently (outward when the mesh is closed) and optionally removes
-/// self-intersections. Holes are left open; see fillHoles().
+/// Clean-up: merges duplicate points, removes degenerate and duplicate faces and fins (faces
+/// hanging off an edge two other faces already share), makes the mesh manifold, orients faces
+/// consistently (outward when the mesh is closed) and optionally removes self-intersections. Holes
+/// are left open; see fillHoles().
 [[nodiscard]] Result<RepairResult> repair(const TriMesh& mesh, const RepairParams& params);
 
 struct HoleFillParams {
     double maxPerimeterMm{0.0}; ///< Holes with a longer boundary are left open; 0 = no limit.
     std::size_t maxEdges{0};    ///< Holes with more boundary edges are left open; 0 = no limit.
-    bool refineAndFair{true};   ///< Add interior vertices and blend into the surrounding curvature.
+    /// Add interior vertices and blend into the surrounding curvature. Where the surface meets the
+    /// hole's plane at more than 45 degrees (an open end) the patch stays flat instead of doming.
+    bool refineAndFair{true};
 };
 
 struct HoleFillResult {

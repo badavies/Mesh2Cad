@@ -90,7 +90,7 @@ Fill open boundaries with patches that blend into the surrounding surface. Holes
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `fair` | boolean |  | Refine and fair the patch to match the surrounding curvature. Default `true`. |
+| `fair` | boolean |  | Refine and fair the patch to match the surrounding curvature. Where the surface meets the hole at more than 45 degrees (an open end) the patch stays flat instead of doming. Default `true`. |
 | `id` | integer | yes |  |
 | `max_edges` | integer |  | Leave holes with more boundary edges open; 0 = no limit. Default `0`. |
 | `max_perimeter_mm` | number |  | Leave holes with a longer boundary open; 0 = no limit. Default `0`. |
@@ -167,12 +167,12 @@ Rebuild an even triangle mesh at a set edge length, keeping sharp edges. *(chang
 
 ### `mesh.repair`
 
-Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces, fix non-manifold vertices and orient faces consistently (outward if closed). Holes stay open. *(changes the document)*
+Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces and fins on non-manifold edges, fix non-manifold vertices and orient faces consistently (outward if closed). Holes stay open. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
-| `remove_self_intersections` | boolean |  | Also try to remove self-intersections locally (slow on large scans). Default `false`. |
+| `remove_self_intersections` | boolean |  | Also remove self-intersections: locally within a shell, and by uniting closed shells that pass through each other (slow on large scans). Default `false`. |
 
 ### `mesh.simplify`
 
