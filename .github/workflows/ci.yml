@@ -4,9 +4,20 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Nightly: the full suite on every preset plus a long fuzzing run under the sanitizers.
+  # The golden scans are not in the repository, so the golden test reports them as skipped
+  # here; run `ctest -L golden` on a machine with the scans before each gate
+  # (tests/golden/README.md).
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzz_iterations:
+        description: Mutated inputs for the long fuzzing run
+        default: "1000000" # about 15 minutes under the sanitizers
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -77,6 +88,25 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
+
+      # A new seed each night; a failure prints the seed, and the rerun below saves the input.
+      - name: Long fuzzing run (nightly)
+        id: fuzz
+        if: matrix.preset == 'linux-gcc-sanitize' && github.event_name != 'push' && github.event_name != 'pull_request'
+        run: >-
+          build/linux-gcc-sanitize/tests/fuzz/m2c_fuzz_mesh_parsers
+          --iterations ${{ inputs.fuzz_iterations || '1000000' }} --seed ${{ github.run_number }}
+      - name: Save the failing fuzz input
+        if: failure() && steps.fuzz.outcome == 'failure'
+        run: >-
+          build/linux-gcc-sanitize/tests/fuzz/m2c_fuzz_mesh_parsers
+          --iterations ${{ inputs.fuzz_iterations || '1000000' }} --seed ${{ github.run_number }}
+          --save-last fuzz-failing-input.bin || true
+      - uses: actions/upload-artifact@v4
+        if: failure() && steps.fuzz.outcome == 'failure'
+        with:
+          name: fuzz-failing-input
+          path: fuzz-failing-input.bin
 
   app:
     name: Desktop app (Linux, Qt from apt)

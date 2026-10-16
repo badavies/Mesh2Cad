@@ -13,7 +13,7 @@ Catch2 v3 tests, registered with CTest one test case at a time.
 | (script) | — | `layering` | `scripts/check_layers.py` module dependency check |
 | `support/` | — | — | Shared helpers: `makeCube()`, `makeBox()`, `makeSphere()`, `addNoise()`, `TempDir` |
 
-Nightly, run the fuzzer longer (`m2c_fuzz_mesh_parsers --iterations 1000000 --seed <n>`, preferably under the `linux-gcc-sanitize` preset; `--save-last FILE` keeps the input being tried, so a crash can be reproduced) and the golden scans (`ctest -L golden`). On a machine without a display run `ctest -LE app`, or wrap ctest in `xvfb-run` as CI does. Set `M2C_TEST_SCREENSHOT_DIR` to save what the app tests drew.
+CI runs nightly as well (and from *Run workflow* on the Actions page): the full suite on every preset, plus the fuzzer under the `linux-gcc-sanitize` preset for 1,000,000 inputs with a new seed each night (`m2c_fuzz_mesh_parsers --iterations N --seed S`; `--save-last FILE` keeps the input being tried, so a crash can be reproduced, and CI uploads it). CI has no golden scans, so run `ctest -L golden` on a machine with them before each milestone gate. On a machine without a display run `ctest -LE app`, or wrap ctest in `xvfb-run` as CI does. Set `M2C_TEST_SCREENSHOT_DIR` to save what the app tests drew.
 
 ## Running
 
