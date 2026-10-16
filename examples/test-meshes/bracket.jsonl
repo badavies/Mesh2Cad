@@ -1,0 +1,12 @@
+{"command": "mesh.import", "params": {"path": "bracket.stl"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "mesh.pick", "params": {"origin": [45, 30, 50], "direction": [0, 0, -1]}}
+{"command": "select.crease", "params": {"id": 1, "face": 39, "name": "base top"}}
+{"command": "plane.fit", "params": {"selection_id": 2}}
+{"command": "select.crease", "params": {"id": 1, "face": 41, "name": "hole"}}
+{"command": "select.grow", "params": {"selection_id": 3}}
+{"command": "measure.distance", "params": {"a": {"point": [30, 20, 0], "id": 1}, "b": {"point": [30, 20, 6], "id": 1}, "name": "thickness"}}
+{"command": "mesh.remesh", "params": {"id": 1, "target_edge_mm": 2.0, "sharp_angle_deg": 60}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "doc.undo"}
+{"command": "mesh.info", "params": {"id": 1}}

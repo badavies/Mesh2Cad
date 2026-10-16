@@ -1,0 +1,13 @@
+{"command": "mesh.import", "params": {"path": "bracket_scan.ply"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "select.crease", "params": {"id": 1, "face": 6584, "max_angle_deg": 15, "name": "primary"}}
+{"command": "select.crease", "params": {"id": 1, "face": 6540, "max_angle_deg": 15, "name": "secondary"}}
+{"command": "select.crease", "params": {"id": 1, "face": 821, "max_angle_deg": 15, "name": "tertiary"}}
+{"command": "plane.fit", "params": {"selection_id": 2}}
+{"command": "align.datum", "params": {"id": 1, "primary": 2, "secondary": 3, "tertiary": 4}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "select.brush", "params": {"id": 1, "center": [40, 30, 6], "radius_mm": 8, "name": "brush"}}
+{"command": "mesh.smooth", "params": {"id": 1, "selection_id": 5, "iterations": 10}}
+{"command": "mesh.smooth", "params": {"id": 1, "iterations": 5, "preserve_sharp_edges": true}}
+{"command": "mesh.simplify", "params": {"id": 1, "target_faces": 5000}}
+{"command": "mesh.info", "params": {"id": 1}}

@@ -1,0 +1,6 @@
+{"command": "mesh.import", "params": {"path": "soup_damaged.ply"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "shells.detect", "params": {"id": 1}}
+{"command": "mesh.wrap", "params": {"id": 1, "alpha_mm": 2.0, "name": "wrapped"}}
+{"command": "mesh.info", "params": {"id": 2}}
+{"command": "object.show", "params": {"id": 1, "visible": false}}

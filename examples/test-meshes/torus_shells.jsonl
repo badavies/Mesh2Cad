@@ -1,0 +1,13 @@
+{"command": "mesh.import", "params": {"path": "torus_shells.obj"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "shells.detect", "params": {"id": 1}}
+{"command": "shells.select", "params": {"id": 1, "shells": [1, 2]}}
+{"command": "select.shell", "params": {"id": 1, "face": 2304, "name": "fragment"}}
+{"command": "shells.split", "params": {"id": 1}}
+{"command": "doc.list"}
+{"command": "doc.undo"}
+{"command": "shells.clean", "params": {"id": 1, "min_faces": 100}}
+{"command": "shells.detect", "params": {"id": 1}}
+{"command": "doc.undo"}
+{"command": "shells.keep", "params": {"id": 1}}
+{"command": "mesh.info", "params": {"id": 1}}

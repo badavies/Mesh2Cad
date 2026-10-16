@@ -1,0 +1,7 @@
+{"command": "mesh.import", "params": {"path": "sphere_inside_out.stl"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "mesh.flip", "params": {"id": 1}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "doc.undo"}
+{"command": "mesh.repair", "params": {"id": 1}}
+{"command": "mesh.info", "params": {"id": 1}}

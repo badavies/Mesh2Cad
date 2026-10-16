@@ -1,0 +1,7 @@
+{"command": "mesh.import", "params": {"path": "box_defects.ply"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "shells.detect", "params": {"id": 1}}
+{"command": "mesh.repair", "params": {"id": 1}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "mesh.repair", "params": {"id": 1, "remove_self_intersections": true}}
+{"command": "mesh.info", "params": {"id": 1}}

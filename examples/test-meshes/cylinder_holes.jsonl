@@ -1,0 +1,7 @@
+{"command": "mesh.import", "params": {"path": "cylinder_holes.stl"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "holes.fill", "params": {"id": 1, "max_edges": 20}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "doc.undo"}
+{"command": "holes.fill", "params": {"id": 1}}
+{"command": "mesh.info", "params": {"id": 1}}
