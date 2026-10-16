@@ -118,8 +118,10 @@ else()
 endif()
 target_compile_definitions(m2c_cgal_deps INTERFACE CGAL_EIGEN3_ENABLED)
 if(MINGW)
-    # CGAL translation units exceed the default COFF section limit.
-    target_compile_options(m2c_cgal_deps INTERFACE -Wa,-mbig-obj)
+    # CGAL translation units exceed the default COFF section limit. Unoptimised Debug objects are
+    # still too big for binutils 2.39 (the MinGW 13.1 that ships with Qt); -Og shrinks them and
+    # keeps them debuggable.
+    target_compile_options(m2c_cgal_deps INTERFACE -Wa,-mbig-obj $<$<CONFIG:Debug>:-Og>)
 endif()
 
 # ---- Qt 6 (ADR 0023): optional, the desktop app is built only when Qt is found -----------------
