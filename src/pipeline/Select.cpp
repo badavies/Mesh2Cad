@@ -28,7 +28,7 @@ brushSelect(const TriMesh& mesh, const Vec3d& center, double radiusMm, bool conn
     }
     MeshSelection candidate(mesh.faceCount());
     for (const std::uint32_t f : inside) candidate.set(f);
-    const FaceAdjacency adj = buildFaceAdjacency(mesh);
+    const FaceAdjacency& adj = mesh.faceAdjacency();
     std::vector<std::uint32_t> stack{index.closestPoint(center).face};
     selection.set(stack.back());
     while (!stack.empty()) {
@@ -52,7 +52,7 @@ creaseFloodSelect(const TriMesh& mesh, std::uint32_t seed, double maxAngleDeg) {
                     "seed face " + std::to_string(seed) + " does not exist");
     }
     const double cosLimit = std::cos(maxAngleDeg * std::numbers::pi / 180.0);
-    const FaceAdjacency adj = buildFaceAdjacency(mesh);
+    const FaceAdjacency& adj = mesh.faceAdjacency();
     MeshSelection selection(mesh.faceCount());
     selection.set(seed);
     std::vector<std::uint32_t> stack{seed};
@@ -119,7 +119,7 @@ Result<MeshSelection> lassoSelect(const TriMesh& mesh, const LassoParams& params
 MeshSelection growSelection(const TriMesh& mesh, const MeshSelection& selection, int rings) {
     MeshSelection current = selection;
     if (rings == 0 || selection.size() != mesh.faceCount()) return current;
-    const FaceAdjacency adj = buildFaceAdjacency(mesh);
+    const FaceAdjacency& adj = mesh.faceAdjacency();
     const int steps = rings > 0 ? rings : -rings;
     for (int r = 0; r < steps; ++r) {
         MeshSelection next = current;

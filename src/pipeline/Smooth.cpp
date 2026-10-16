@@ -65,7 +65,7 @@ smoothTaubin(const TriMesh& mesh, const SmoothParams& params, const MeshSelectio
     }
     // Fix open-boundary vertices and, if asked, vertices on sharp edges.
     {
-        const FaceAdjacency adj = buildFaceAdjacency(mesh);
+        const FaceAdjacency& adj = mesh.faceAdjacency();
         const double cosSharp = std::cos(params.sharpAngleDeg * std::numbers::pi / 180.0);
         for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
             const auto v = mesh.face(f);

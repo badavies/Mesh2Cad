@@ -126,6 +126,18 @@ TEST_CASE("Face components count separate shells", "[core][topology]") {
     CHECK_FALSE(extractFaces(two, std::vector<bool>(two.faceCount(), false)).has_value());
 }
 
+TEST_CASE("Face adjacency is built once and shared by copies", "[core][topology]") {
+    const TriMesh sphere = makeSphere(10.0, 2);
+    const FaceAdjacency& cached = sphere.faceAdjacency();
+    const FaceAdjacency built = buildFaceAdjacency(sphere);
+    CHECK(cached.offsets == built.offsets);
+    CHECK(cached.neighbours == built.neighbours);
+    CHECK(cached.neighbours.size() == 3 * sphere.faceCount()); // closed manifold: three each
+
+    const TriMesh copy = sphere;
+    CHECK(&copy.faceAdjacency() == &cached);
+}
+
 TEST_CASE("Display proxies shrink big meshes and keep their shape", "[core][proxy]") {
     const TriMesh sphere = makeSphere(10.0, 5); // 20480 faces
     const TriMesh proxy = buildDisplayProxy(sphere, 2000);

@@ -55,7 +55,7 @@ FaceAdjacency buildFaceAdjacency(const TriMesh& mesh) {
 }
 
 std::vector<std::uint32_t> faceComponents(const TriMesh& mesh, std::uint32_t* componentCount) {
-    const FaceAdjacency adj = buildFaceAdjacency(mesh);
+    const FaceAdjacency& adj = mesh.faceAdjacency();
     constexpr std::uint32_t kUnset = std::numeric_limits<std::uint32_t>::max();
     std::vector<std::uint32_t> component(mesh.faceCount(), kUnset);
     std::vector<std::uint32_t> stack;

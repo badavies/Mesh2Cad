@@ -14,6 +14,7 @@
 #include <thread>
 
 #include "m2c/core/DisplayProxy.h"
+#include "m2c/core/MeshTopology.h"
 #include "m2c/core/SpatialIndex.h"
 
 namespace m2c::app {
@@ -316,13 +317,15 @@ void Viewport::syncGpu() {
             gpu.keepAlive = mesh;
             gpu.offset = (mesh->bounds().min + mesh->bounds().max) * 0.5;
             upload(gpu, *mesh, gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
-            // Build the picking tree (and a proxy for huge meshes) off the UI thread.
+            // Build the picking tree, the adjacency the selection tools use (and a proxy for
+            // huge meshes) off the UI thread.
             const bool wantProxy = mesh->faceCount() > kProxyThreshold;
             gpu.proxyRequested = wantProxy;
             QPointer<Viewport> self(this);
             const ObjectId id = o.id;
             std::thread([self, id, mesh, wantProxy] {
                 (void)mesh->spatialIndex();
+                (void)mesh->faceAdjacency();
                 if (!wantProxy) return;
                 auto proxy = std::make_shared<const TriMesh>(buildDisplayProxy(*mesh, kProxyFaces));
                 QMetaObject::invokeMethod(
