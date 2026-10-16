@@ -38,6 +38,9 @@ option(MESH2CAD_WARNINGS_AS_ERRORS "Treat compiler warnings as errors" OFF)
 add_library(m2c_warnings INTERFACE)
 if(MSVC)
     target_compile_options(m2c_warnings INTERFACE /W4 /permissive- /utf-8 /Zc:__cplusplus)
+    # The MSVC CRT deprecates standard functions such as std::getenv in favour of its own _s
+    # variants (C4996). We use the standard ones, as on the other platforms.
+    target_compile_definitions(m2c_warnings INTERFACE _CRT_SECURE_NO_WARNINGS)
     if(MESH2CAD_WARNINGS_AS_ERRORS)
         target_compile_options(m2c_warnings INTERFACE /WX)
     endif()
