@@ -190,6 +190,27 @@ TEST_CASE("Selections, face deletion and datum alignment through commands", "[co
           ErrorCode::NotFound);
 }
 
+TEST_CASE("align.symmetry puts the mirror plane on X = 0 and reports the fit",
+          "[commands][align]") {
+    Session s;
+    const TempDir dir;
+    // Symmetric about y = 10 only; the import sees it turned and moved.
+    const TriMesh part = combine({makeBox(40, 20, 10, 4), makeBox(10, 20, 15, 2)});
+    const Transform3d pose{{0, -1, 0, 1, 0, 0, 0, 0, 1}, {5, 6, 7}}; // 90 degrees about Z
+    const ObjectId id = s.import(dir, *transformMesh(part, pose), "part");
+
+    const Json aligned = s.run("align.symmetry", {{"id", id}, {"origin", "bounds_bottom_center"}});
+    CHECK(aligned["report"]["residual_mm"].get<double>() < 1e-6);
+    const Json& bounds = aligned["stats"]["bounds"];
+    CHECK_THAT(bounds["min"][0].get<double>(), WithinAbs(-10.0, 1e-6)); // 20 wide, centred
+    CHECK_THAT(bounds["max"][0].get<double>(), WithinAbs(10.0, 1e-6));
+    CHECK_THAT(bounds["min"][2].get<double>(), WithinAbs(0.0, 1e-9));
+    CHECK(s.document.undoHistory().back().label == "align.symmetry");
+
+    CHECK(s.tryRun("align.symmetry", {{"id", id}, {"origin", "corner"}}).error().code ==
+          ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("A brush stroke is one command and one undo step", "[commands][select]") {
     Session s;
     const TempDir dir;

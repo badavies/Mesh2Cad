@@ -38,6 +38,15 @@ Undo every alignment applied to a mesh, returning it to its scanned pose. *(chan
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
 
+### `align.symmetry`
+
+Automatic alignment by the best mirror-symmetry plane: that plane becomes X = 0, Y and Z follow the principal axes within it. Reports how far mirrored points land from the surface, so a poor fit shows. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `origin` | `centroid` \| `bounds_center` \| `bounds_bottom_center` |  | Positions the part in Y and Z; X = 0 stays on the plane. Default `"centroid"`. |
+
 ### `align.transform`
 
 Apply a rigid transform (rotation matrix and translation) to a mesh. *(changes the document)*

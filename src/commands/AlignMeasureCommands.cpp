@@ -54,6 +54,16 @@ Result<Json> applyTransform(CommandContext& context,
     return result;
 }
 
+Result<AlignOrigin> originParam(const Json& params) {
+    M2C_TRY(name, optionalString(params, "origin"));
+    const std::string o = name->value_or("centroid");
+    if (o == "centroid") return AlignOrigin::Centroid;
+    if (o == "bounds_center") return AlignOrigin::BoundsCenter;
+    if (o == "bounds_bottom_center") return AlignOrigin::BoundsBottomCenter;
+    return fail(ErrorCode::InvalidArgument,
+                "origin must be centroid, bounds_center or bounds_bottom_center");
+}
+
 Result<PickedPoint> pointParam(const CommandContext& context,
                                const Json& params,
                                const std::string& key,
@@ -101,19 +111,33 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireMesh(context, params));
-            M2C_TRY(originName, optionalString(params, "origin"));
-            const std::string o = originName->value_or("centroid");
-            AlignOrigin origin = AlignOrigin::Centroid;
-            if (o == "bounds_center") {
-                origin = AlignOrigin::BoundsCenter;
-            } else if (o == "bounds_bottom_center") {
-                origin = AlignOrigin::BoundsBottomCenter;
-            } else if (o != "centroid") {
-                return fail(ErrorCode::InvalidArgument,
-                            "origin must be centroid, bounds_center or bounds_bottom_center");
-            }
-            M2C_TRY(t, principalAxesAlignment(*object->mesh, origin));
+            M2C_TRY(origin, originParam(params));
+            M2C_TRY(t, principalAxesAlignment(*object->mesh, *origin));
             return applyTransform(context, *object, *t, {});
+        }));
+
+    out.push_back(makeCommand(
+        "align.symmetry",
+        "Automatic alignment by the best mirror-symmetry plane: that plane becomes X = 0, Y and Z "
+        "follow the principal axes within it. Reports how far mirrored points land from the "
+        "surface, so a poor fit shows.",
+        R"({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0},
+                "origin":{"type":"string","enum":["centroid","bounds_center","bounds_bottom_center"],"default":"centroid","description":"Positions the part in Y and Z; X = 0 stays on the plane."}
+            },
+            "required":["id"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireMesh(context, params));
+            M2C_TRY(origin, originParam(params));
+            M2C_TRY(aligned, symmetryAlignment(*object->mesh, *origin));
+            M2C_TRY(result, applyTransform(context, *object, aligned->transform, {}));
+            (*result)["report"] = Json{{"plane_point", toJson(aligned->planePoint)},
+                                       {"plane_normal", toJson(aligned->planeNormal)},
+                                       {"residual_mm", aligned->residualMm}};
+            return result;
         }));
 
     out.push_back(makeCommand(

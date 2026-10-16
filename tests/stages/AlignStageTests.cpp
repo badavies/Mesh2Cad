@@ -108,3 +108,36 @@ TEST_CASE("Principal-axes alignment is independent of the scanned pose", "[stage
     CHECK(box.max.y - box.min.y > box.max.z - box.min.z);
     CHECK_THAT(box.min.z, WithinAbs(0.0, 1e-9));
 }
+
+TEST_CASE("Symmetry alignment puts the mirror plane of a moved part on X = 0", "[stages][align]") {
+    // Symmetric about y = 10 only: a base with a tower at one end.
+    const TriMesh symmetric = combine({makeBox(40, 20, 10, 4), makeBox(10, 20, 15, 2)});
+    // A lump on one side, as a scan's stray feature: it shifts the centroid and tilts the
+    // principal axes, so the plane has to be refined away from the principal-axis plane.
+    const TriMesh lumpy = combine({symmetric, makeSphere(3.0, 2, {30, 3, 10})});
+
+    for (const bool withLump : {false, true}) {
+        INFO("with lump: " << withLump);
+        const TriMesh& part = withLump ? lumpy : symmetric;
+        const Transform3d pose = rotation({1, -2, 0.7}, 71.0, {-30, 12, 44});
+        const TriMesh scan = *transformMesh(part, pose);
+        const auto aligned = symmetryAlignment(scan, AlignOrigin::BoundsBottomCenter);
+        REQUIRE(aligned.has_value());
+        const Transform3d total = aligned->transform * pose;
+
+        // The part's Y axis (the plane's normal) becomes +-X, and points on the plane get X = 0.
+        CHECK(std::abs(total.rotate({0, 1, 0}).x) > 1.0 - 1e-5);
+        for (const Vec3d& p : {Vec3d{0, 10, 0}, Vec3d{40, 10, 10}, Vec3d{5, 10, 15}}) {
+            CHECK_THAT(total.apply(p).x, WithinAbs(0.0, 0.01));
+        }
+        // Y follows the larger in-plane spread, and the part sits on Z = 0.
+        const Aabb box = computeStats(*transformMesh(scan, aligned->transform)).bounds;
+        CHECK(box.max.y - box.min.y > box.max.z - box.min.z);
+        CHECK_THAT(box.min.z, WithinAbs(0.0, 1e-9));
+        if (withLump) {
+            CHECK(aligned->residualMm > 0.01); // the lump has no mirror image
+        } else {
+            CHECK(aligned->residualMm < 1e-6);
+        }
+    }
+}
