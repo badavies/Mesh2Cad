@@ -8,10 +8,12 @@ Catch2 v3 tests, registered with CTest one test case at a time.
 | `stages/` | `m2c_stage_tests` | `stages` | Pipeline stages and CGAL tools on synthetic meshes |
 | `commands/` | `m2c_command_tests` | `commands` | Commands through the registry, JSON-RPC and MCP (same results), the files in `examples/` |
 | `app/` | `m2c_app_tests` | `app` | The real desktop window driven by mouse events and by an agent on the local socket (built with Qt; needs a display) |
+| `fuzz/` | `m2c_fuzz_mesh_parsers` | `fuzz` | STL, OBJ and PLY readers on mutated input (libFuzzer entry point plus a fixed-seed driver for GCC and MSVC) |
+| `golden/` | `m2c_golden_tests` | `golden` | Real scans replayed through the CLI path, JSON-RPC and MCP against stored metrics; skipped without scans (see `golden/README.md`) |
 | (script) | — | `layering` | `scripts/check_layers.py` module dependency check |
 | `support/` | — | — | Shared helpers: `makeCube()`, `makeBox()`, `makeSphere()`, `addNoise()`, `TempDir` |
 
-Later milestones add `golden/` and `fuzz/` (see `docs/ARCHITECTURE.md` section 10). On a machine without a display run `ctest -LE app`, or wrap ctest in `xvfb-run` as CI does. Set `M2C_TEST_SCREENSHOT_DIR` to save what the app tests drew.
+Nightly, run the fuzzer longer (`m2c_fuzz_mesh_parsers --iterations 1000000 --seed <n>`, preferably under the `linux-gcc-sanitize` preset; `--save-last FILE` keeps the input being tried, so a crash can be reproduced) and the golden scans (`ctest -L golden`). On a machine without a display run `ctest -LE app`, or wrap ctest in `xvfb-run` as CI does. Set `M2C_TEST_SCREENSHOT_DIR` to save what the app tests drew.
 
 ## Running
 

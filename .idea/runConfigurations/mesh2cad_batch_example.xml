@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="mesh2cad batch (example session)" type="CMakeRunConfiguration" factoryName="Application" folderName="Mesh2Cad" PROGRAM_PARAMS="batch session.jsonl" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$PROJECT_DIR$/examples" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Mesh2Cad" TARGET_NAME="mesh2cad" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="Mesh2Cad" RUN_TARGET_NAME="mesh2cad">
+  <configuration default="false" name="mesh2cad batch (example session)" type="CMakeRunConfiguration" factoryName="Application" folderName="Mesh2Cad" PROGRAM_PARAMS="batch session.jsonl" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$PROJECT_DIR$/examples" PASS_PARENT_ENVS_2="true" PROJECT_NAME="Mesh2Cad" TARGET_NAME="mesh2cad" CONFIG_NAME="qt-mingw-debug" RUN_TARGET_PROJECT_NAME="Mesh2Cad" RUN_TARGET_NAME="mesh2cad">
     <method v="2">
       <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
     </method>

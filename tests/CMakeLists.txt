@@ -7,6 +7,8 @@ target_link_libraries(m2c_test_support INTERFACE Catch2::Catch2WithMain m2c_warn
 add_subdirectory(unit)
 add_subdirectory(stages)
 add_subdirectory(commands)
+add_subdirectory(fuzz)
+add_subdirectory(golden)
 
 # Every Catch2 test case is registered with CTest individually (catch_discover_tests) and labelled
 # "unit" or "commands", so `ctest -L unit` and the IDE test runner can select a group.
@@ -22,7 +24,7 @@ endif()
 # `cmake --build <dir> --target check` builds everything and runs the whole suite.
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS m2c_unit_tests m2c_stage_tests m2c_command_tests mesh2cad
+    DEPENDS m2c_unit_tests m2c_stage_tests m2c_command_tests m2c_fuzz_mesh_parsers mesh2cad
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     USES_TERMINAL
     COMMENT "Running all tests")
