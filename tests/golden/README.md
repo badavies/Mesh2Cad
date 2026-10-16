@@ -1,31 +1,47 @@
 # Golden scans
 
-Real scans that gate each milestone (`docs/ARCHITECTURE.md` sections 10 and 12). The scans are stored in Git LFS (see `.gitattributes`); keep very large ones outside the repository and point `M2C_GOLDEN_DIR` at their parent folder.
+Real scans that gate each milestone (`docs/ARCHITECTURE.md` sections 10 and 12). The session and the limits for each scan are in the repository; the scan itself is too large for Git, so each folder keeps a local, gitignored copy of it named `scan.<ext>`.
 
 One folder per scan:
 
 ```
-tests/golden/controller/
-  scan.stl         the raw scan (STL, OBJ or PLY; Git LFS)
+tests/golden/dji_controller_3/
+  scan.obj         local copy of the raw scan (gitignored; see "Getting the scans")
   session.jsonl    the commands to run, one JSON object per line
-  metrics.json     limits checked after the session
+  metrics.json     which scan file, and the limits checked after the session
 ```
+
+| Folder | Source scan | What it exercises |
+| --- | --- | --- |
+| `dji_controller_3` | `D:\Revopoint\DJI Controller 3.obj` | Closed organic body: shell clean-up, repair, principal alignment |
+| `dewalt_multitool` | `D:\Revopoint\Dewalt Multitool.obj` | 145 holes, some in folded pockets the CGAL triangulation refuses |
+| `siemens_coffee_lid` | `D:\Revopoint\Siemens Coffe Machine Lid.obj` | A single-sided sheet: closed with the shrink-wrap fallback, not hole filling |
+| `tyranid_v2` | `D:\Revopoint\tyranid v2.obj` | Quad faces, non-manifold edges, inconsistent orientation |
+
+## Getting the scans
+
+Copy each source scan into its folder as `scan.obj` (the name in `metrics.json` under `scan.file`). The original stays where it is. `metrics.json` records the size and SHA-256 of the exact file the limits were measured on, and the test fails if the copy differs; check a copy with `certutil -hashfile scan.obj SHA256` (Windows) or `sha256sum scan.obj`. A folder without its scan is skipped with a warning, so CI, which has no scans, reports the test as skipped.
+
+To keep the whole golden set somewhere else, point `M2C_GOLDEN_DIR` at a folder laid out the same way.
+
+## File formats
 
 `session.jsonl` uses the format of `mesh2cad batch` and of the app's session log, so a session recorded in the app can be copied in. Relative paths are resolved against the scan folder.
 
 ```
-{"command":"mesh.import","params":{"path":"scan.stl"}}
+{"command":"mesh.import","params":{"path":"scan.obj"}}
 {"command":"mesh.repair","params":{"id":1}}
 {"command":"holes.fill","params":{"id":1}}
 {"command":"align.principal","params":{"id":1,"origin":"bounds_bottom_center"}}
 ```
 
-`metrics.json` lists query commands to run on the final document and what their results must contain. Keys are JSON pointers into the result; a plain value must match exactly, `{"min": a, "max": b}` is an inclusive range.
+`metrics.json` names the scan and lists query commands to run on the final document and what their results must contain. Keys are JSON pointers into the result; a plain value must match exactly, `{"min": a, "max": b}` is an inclusive range.
 
 ```json
 {
+  "scan": {"file": "scan.obj", "source": "D:\\Revopoint\\DJI Controller 3.obj", "bytes": 49034218, "sha256": "a3d2..."},
   "session": "session.jsonl",
-  "max_seconds": 120,
+  "max_seconds": 30,
   "checks": [
     {
       "command": "mesh.info",
@@ -33,14 +49,16 @@ tests/golden/controller/
       "expect": {
         "/stats/is_watertight": true,
         "/stats/non_manifold_edge_count": 0,
-        "/stats/face_count": {"min": 200000, "max": 2000000},
-        "/stats/bounds/min/2": {"min": -0.01, "max": 0.01}
+        "/stats/face_count": {"min": 612575, "max": 677056},
+        "/stats/bounds/min/2": {"min": -0.001, "max": 0.001}
       }
     }
   ]
 }
 ```
 
-The test replays the session through the registry (CLI path), the JSON channel and the MCP server, requires identical documents from all three, then checks the metrics. Run it with `ctest -L golden`; without scans it is reported as skipped.
+The gate limits are fixed: watertight, no non-manifold or boundary edges, positive volume (outward faces), and the part sitting on Z = 0 after alignment. The other limits were set from the first run: face count within 5%, volume within 2% and the aligned bounding box within 1%, so a change in repair or a turned alignment shows up. `max_seconds` is about four times the first optimised (Release) run and is not checked in debug builds.
+
+The test replays the session through the registry (CLI path), the JSON channel and the MCP server, requires identical documents from all three, then checks the metrics. Run it on a Release build with `ctest -L golden`; it takes a few minutes.
 
 Changing a stored limit is a separate, human-reviewed commit that says why (`docs/AI_GUIDELINES.md` rule 10).

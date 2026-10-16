@@ -3,7 +3,10 @@
 #include <iterator>
 #include <vector>
 
+#include <CGAL/Polygon_mesh_processing/fair.h>
+#include <CGAL/Polygon_mesh_processing/refine.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
+#include <CGAL/boost/graph/Euler_operations.h>
 // Newer CGAL (6.2.1 from vcpkg) moved extract_boundary_cycles() from Polygon_mesh_processing to
 // the BGL border header and deprecated the old one; the downloaded CGAL 6.0.1 has only the old one.
 #if __has_include(<CGAL/boost/graph/border.h>)
@@ -61,6 +64,36 @@ double rimAlignment(const SurfaceMesh& mesh, SurfaceMesh::Halfedge_index start) 
     return total > 0.0 ? weighted / total : 1.0;
 }
 
+// Last resort for a hole CGAL cannot triangulate. Its triangulation never adds an edge that already
+// exists, so a rim whose vertices are already joined across the surface (common where a scan is
+// thin) can have no valid triangulation at all. A fan from a new vertex at the rim's centroid adds
+// no edge between rim vertices. The fan is then refined and, if asked, faired like CGAL's patches.
+std::vector<SurfaceMesh::Face_index> fanFill(SurfaceMesh& mesh,
+                                             SurfaceMesh::Halfedge_index border,
+                                             bool refineAndFair,
+                                             unsigned continuity) {
+    Vector sum(0, 0, 0);
+    std::size_t count = 0;
+    for (const auto h : CGAL::halfedges_around_face(border, mesh)) {
+        sum = sum + (mesh.point(mesh.target(h)) - CGAL::ORIGIN);
+        ++count;
+    }
+    CGAL::Euler::fill_hole(border, mesh);
+    const auto spoke = CGAL::Euler::add_center_vertex(border, mesh);
+    const auto center = mesh.target(spoke);
+    mesh.point(center) = CGAL::ORIGIN + sum / static_cast<double>(count);
+
+    std::vector<SurfaceMesh::Face_index> faces;
+    for (const auto f : CGAL::faces_around_target(spoke, mesh)) faces.push_back(f);
+    if (!refineAndFair) return faces;
+    std::vector<SurfaceMesh::Face_index> newFaces;
+    std::vector<SurfaceMesh::Vertex_index> interior{center};
+    PMP::refine(mesh, faces, std::back_inserter(newFaces), std::back_inserter(interior));
+    (void)PMP::fair(mesh, interior, CGAL::parameters::fairing_continuity(continuity));
+    faces.insert(faces.end(), newFaces.begin(), newFaces.end());
+    return faces;
+}
+
 } // namespace
 
 Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& params) {
@@ -94,12 +127,12 @@ Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& par
             }
             std::vector<Face> newFaces;
             bool ok = true;
+            // Tangent continuity blends the patch into the surrounding curvature, but where the
+            // surface meets the hole's plane at more than 45 degrees (an open end) it forces a
+            // dome: the patch must leave the rim parallel to the walls. There the patch only
+            // keeps position continuity, which gives a flat cap on a flat rim.
+            const unsigned continuity = rimAlignment(mesh, start) >= std::sqrt(0.5) ? 1 : 0;
             if (params.refineAndFair) {
-                // Tangent continuity blends the patch into the surrounding curvature, but where
-                // the surface meets the hole's plane at more than 45 degrees (an open end) it
-                // forces a dome: the patch must leave the rim parallel to the walls. There the
-                // patch only keeps position continuity, which gives a flat cap on a flat rim.
-                const unsigned continuity = rimAlignment(mesh, start) >= std::sqrt(0.5) ? 1 : 0;
                 const auto outcome = PMP::triangulate_refine_and_fair_hole(
                     mesh,
                     start,
@@ -113,6 +146,10 @@ Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& par
                     mesh,
                     start,
                     CGAL::parameters::face_output_iterator(std::back_inserter(newFaces)));
+                ok = !newFaces.empty();
+            }
+            if (!ok && mesh.is_border(start)) {
+                newFaces = fanFill(mesh, start, params.refineAndFair, continuity);
                 ok = !newFaces.empty();
             }
             if (ok) {

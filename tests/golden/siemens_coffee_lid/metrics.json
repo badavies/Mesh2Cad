@@ -1,0 +1,55 @@
+{
+  "scan": {
+    "file": "scan.obj",
+    "source": "D:\\Revopoint\\Siemens Coffe Machine Lid.obj",
+    "bytes": 53397165,
+    "sha256": "1aa82d8e036ffd6429d467a25ce54e2c17a7f8e9393bdd3550dac1b62c8c6aaa"
+  },
+  "session": "session.jsonl",
+  "max_seconds": 120,
+  "checks": [
+    {
+      "command": "mesh.info",
+      "params": {
+        "id": 2
+      },
+      "expect": {
+        "/stats/is_watertight": true,
+        "/stats/non_manifold_edge_count": 0,
+        "/stats/boundary_edge_count": 0,
+        "/stats/signed_volume_mm3": {
+          "min": 13855.127,
+          "max": 14420.642
+        },
+        "/stats/face_count": {
+          "min": 150451,
+          "max": 166288
+        },
+        "/stats/bounds/min/2": {
+          "min": -0.001,
+          "max": 0.001
+        },
+        "/stats/bounds/min/0": {
+          "min": -103.709,
+          "max": -101.656
+        },
+        "/stats/bounds/min/1": {
+          "min": -99.698,
+          "max": -97.724
+        },
+        "/stats/bounds/max/0": {
+          "min": 101.656,
+          "max": 103.709
+        },
+        "/stats/bounds/max/1": {
+          "min": 97.724,
+          "max": 99.698
+        },
+        "/stats/bounds/max/2": {
+          "min": 10.351,
+          "max": 10.56
+        }
+      }
+    }
+  ]
+}

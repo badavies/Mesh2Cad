@@ -1,0 +1,55 @@
+{
+  "scan": {
+    "file": "scan.obj",
+    "source": "D:\\Revopoint\\Dewalt Multitool.obj",
+    "bytes": 67307252,
+    "sha256": "d18e2397fd5fc4611e5ce8d93081af5a7ceb73c8caef43030303dc13033ae948"
+  },
+  "session": "session.jsonl",
+  "max_seconds": 60,
+  "checks": [
+    {
+      "command": "mesh.info",
+      "params": {
+        "id": 1
+      },
+      "expect": {
+        "/stats/is_watertight": true,
+        "/stats/non_manifold_edge_count": 0,
+        "/stats/boundary_edge_count": 0,
+        "/stats/signed_volume_mm3": {
+          "min": 679094.496,
+          "max": 706812.638
+        },
+        "/stats/face_count": {
+          "min": 857295,
+          "max": 947536
+        },
+        "/stats/bounds/min/2": {
+          "min": -0.001,
+          "max": 0.001
+        },
+        "/stats/bounds/min/0": {
+          "min": -145.073,
+          "max": -142.2
+        },
+        "/stats/bounds/min/1": {
+          "min": -51.858,
+          "max": -50.831
+        },
+        "/stats/bounds/max/0": {
+          "min": 142.2,
+          "max": 145.073
+        },
+        "/stats/bounds/max/1": {
+          "min": 50.831,
+          "max": 51.858
+        },
+        "/stats/bounds/max/2": {
+          "min": 67.163,
+          "max": 68.52
+        }
+      }
+    }
+  ]
+}

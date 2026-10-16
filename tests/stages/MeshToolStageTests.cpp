@@ -3,8 +3,10 @@
 // (ARCHITECTURE.md section 10).
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <numbers>
+#include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -197,6 +199,42 @@ TEST_CASE("Filling the open end of a box gives a flat cap, not a dome", "[stages
     CHECK(s.isWatertight());
     CHECK_THAT(s.bounds.max.z, WithinAbs(10.0, 1e-6));
     CHECK_THAT(s.signedVolume, WithinRel(1000.0, 1e-6));
+}
+
+TEST_CASE("Holes whose rim vertices are already joined still get filled", "[stages][holes]") {
+    // The seven-vertex torus joins every pair of vertices by an edge. Without the faces around
+    // one vertex, the hexagonal hole left behind has no triangulation that avoids existing edges,
+    // like the folded pockets in real scans; CGAL refuses it and the fan fallback fills it.
+    std::vector<Vec3d> positions;
+    for (int k = 0; k < 7; ++k) {
+        const double u = 2.0 * std::numbers::pi * k / 7.0;
+        const double v = 2.0 * std::numbers::pi * 3 * k / 7.0;
+        positions.push_back({(10.0 + 4.0 * std::cos(v)) * std::cos(u),
+                             (10.0 + 4.0 * std::cos(v)) * std::sin(u),
+                             4.0 * std::sin(v)});
+    }
+    std::vector<std::uint32_t> indices;
+    for (std::uint32_t i = 0; i < 7; ++i) {
+        for (const std::array<std::uint32_t, 3> f :
+             {std::array{i, (i + 1) % 7, (i + 3) % 7}, std::array{i, (i + 3) % 7, (i + 2) % 7}}) {
+            if (f[0] != 0 && f[1] != 0 && f[2] != 0)
+                indices.insert(indices.end(), f.begin(), f.end());
+        }
+    }
+    const TriMesh holed = makeMesh(positions, indices);
+    REQUIRE(holed.faceCount() == 8);
+    REQUIRE(computeStats(holed).boundaryEdgeCount == 6);
+
+    for (const bool fair : {false, true}) {
+        INFO("refine and fair: " << fair);
+        const auto filled = fillHoles(holed, HoleFillParams{0.0, 0, fair});
+        REQUIRE(filled.has_value());
+        CHECK(filled->filled == 1);
+        CHECK(filled->failed == 0);
+        const MeshStats s = computeStats(filled->mesh);
+        CHECK(s.isWatertight());
+        if (!fair) CHECK(filled->mesh.faceCount() == 14); // a fan of six around one new vertex
+    }
 }
 
 TEST_CASE("Simplification of a large mesh stops at the target", "[stages][simplify]") {

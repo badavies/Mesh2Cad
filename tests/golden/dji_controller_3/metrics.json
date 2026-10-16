@@ -1,0 +1,55 @@
+{
+  "scan": {
+    "file": "scan.obj",
+    "source": "D:\\Revopoint\\DJI Controller 3.obj",
+    "bytes": 49034218,
+    "sha256": "a3d20e5b05527ebb0e725855bc8fd7751732d70e4a53cb116820d3bbeb4fc32f"
+  },
+  "session": "session.jsonl",
+  "max_seconds": 30,
+  "checks": [
+    {
+      "command": "mesh.info",
+      "params": {
+        "id": 1
+      },
+      "expect": {
+        "/stats/is_watertight": true,
+        "/stats/non_manifold_edge_count": 0,
+        "/stats/boundary_edge_count": 0,
+        "/stats/signed_volume_mm3": {
+          "min": 489642.198,
+          "max": 509627.593
+        },
+        "/stats/face_count": {
+          "min": 612575,
+          "max": 677056
+        },
+        "/stats/bounds/min/2": {
+          "min": -0.001,
+          "max": 0.001
+        },
+        "/stats/bounds/min/0": {
+          "min": -82.96,
+          "max": -81.317
+        },
+        "/stats/bounds/min/1": {
+          "min": -60.271,
+          "max": -59.078
+        },
+        "/stats/bounds/max/0": {
+          "min": 81.317,
+          "max": 82.96
+        },
+        "/stats/bounds/max/1": {
+          "min": 59.078,
+          "max": 60.271
+        },
+        "/stats/bounds/max/2": {
+          "min": 80.109,
+          "max": 81.728
+        }
+      }
+    }
+  ]
+}
