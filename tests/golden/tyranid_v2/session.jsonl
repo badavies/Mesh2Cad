@@ -1,0 +1,5 @@
+{"command":"mesh.import","params":{"path":"scan.obj"}}
+{"command":"shells.clean","params":{"id":1,"min_faces":1000}}
+{"command":"mesh.repair","params":{"id":1}}
+{"command":"holes.fill","params":{"id":1}}
+{"command":"align.principal","params":{"id":1,"origin":"bounds_bottom_center"}}

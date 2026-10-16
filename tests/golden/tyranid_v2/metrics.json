@@ -1,0 +1,55 @@
+{
+  "scan": {
+    "file": "scan.obj",
+    "source": "D:\\Revopoint\\tyranid v2.obj",
+    "bytes": 13693296,
+    "sha256": "4814f1a161905da8fb444017b91b3618cad3fb97485584b602279b6731eb44be"
+  },
+  "session": "session.jsonl",
+  "max_seconds": 30,
+  "checks": [
+    {
+      "command": "mesh.info",
+      "params": {
+        "id": 1
+      },
+      "expect": {
+        "/stats/is_watertight": true,
+        "/stats/non_manifold_edge_count": 0,
+        "/stats/boundary_edge_count": 0,
+        "/stats/signed_volume_mm3": {
+          "min": 68629.527,
+          "max": 71430.732
+        },
+        "/stats/face_count": {
+          "min": 212608,
+          "max": 234987
+        },
+        "/stats/bounds/min/2": {
+          "min": -0.001,
+          "max": 0.001
+        },
+        "/stats/bounds/min/0": {
+          "min": -64.014,
+          "max": -62.747
+        },
+        "/stats/bounds/min/1": {
+          "min": -55.905,
+          "max": -54.798
+        },
+        "/stats/bounds/max/0": {
+          "min": 62.747,
+          "max": 64.014
+        },
+        "/stats/bounds/max/1": {
+          "min": 54.798,
+          "max": 55.905
+        },
+        "/stats/bounds/max/2": {
+          "min": 75.428,
+          "max": 76.952
+        }
+      }
+    }
+  ]
+}

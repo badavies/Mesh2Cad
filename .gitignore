@@ -33,3 +33,6 @@ __pycache__/
 # OS
 .DS_Store
 Thumbs.db
+
+# Golden scans: each folder under tests/golden keeps a local copy of its scan (tests/golden/README.md)
+/tests/golden/*/scan.*
