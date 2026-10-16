@@ -43,13 +43,14 @@ RpcServer::RpcServer(const CommandRegistry& registry,
 
 std::optional<Json> RpcServer::handle(const Json& message) {
     if (message.is_array()) {
-        if (message.empty()) return errorResponse(nullptr, kInvalidRequest, "empty batch");
+        if (message.empty())
+            return std::make_optional(errorResponse(nullptr, kInvalidRequest, "empty batch"));
         Json responses = Json::array();
         for (const Json& request : message) {
             if (auto r = handleOne(request)) responses.push_back(std::move(*r));
         }
         if (responses.empty()) return std::nullopt;
-        return responses;
+        return std::make_optional(std::move(responses));
     }
     return handleOne(message);
 }
@@ -68,9 +69,10 @@ std::string RpcServer::handleLine(std::string_view line) {
 std::optional<Json> RpcServer::handleOne(const Json& request) {
     if (!request.is_object() || request.value("jsonrpc", "") != "2.0" ||
         !request.contains("method") || !request["method"].is_string()) {
-        return errorResponse(request.is_object() ? request.value("id", Json()) : Json(),
-                             kInvalidRequest,
-                             "not a JSON-RPC 2.0 request");
+        return std::make_optional(
+            errorResponse(request.is_object() ? request.value("id", Json()) : Json(),
+                          kInvalidRequest,
+                          "not a JSON-RPC 2.0 request"));
     }
     const bool isNotification = !request.contains("id");
     const Json id = request.value("id", Json());
@@ -78,7 +80,7 @@ std::optional<Json> RpcServer::handleOne(const Json& request) {
     const Json params = request.value("params", Json::object());
     const auto reply = [&](Json response) -> std::optional<Json> {
         if (isNotification) return std::nullopt;
-        return response;
+        return std::make_optional(std::move(response));
     };
     const auto ok = [&](Json result) {
         return reply(Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}});
