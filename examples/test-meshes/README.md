@@ -26,7 +26,7 @@ cd examples/test-meshes
 
 The repository keeps only the PLY of meshes over 5000 faces (`--compact`). Running the script without `--compact` writes all three formats of every mesh, and `--large` adds `organic_large`, a 1.3M-face bumpy sphere for timing and memory, which is too big to commit.
 
-Behaviour worth knowing about, seen when these sessions were first run: `mesh.repair` on `box_defects` removes the duplicate and degenerate faces and splits the bowtie vertex, but leaves the fin (3 boundary edges) and still reports `self_intersecting` even with `remove_self_intersections`; and `holes.fill` with no limits on `cylinder_holes` closes the top with a faired dome that rises about 8 mm above the rim.
+Behaviour worth knowing about: `mesh.repair` on `box_defects` removes the duplicate and degenerate faces and the fin, and splits the bowtie vertex, leaving a watertight mesh. It still reports `self_intersecting` (the cube pushed through the top) until `remove_self_intersections` unites the cube with the box (volume 6117.33 mm³: box, the 108 mm³ of cube above the top and the tetrahedron). `holes.fill` with no limits on `cylinder_holes` closes the top with a flat cap at the rim: the walls meet the opening at a right angle, so the patch is not faired into a dome. `mesh.simplify` takes `organic_large` from 1.3M to 200k faces in seconds.
 
 ## Regenerating
 

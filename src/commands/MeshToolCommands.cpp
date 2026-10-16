@@ -30,14 +30,15 @@ Result<Json> afterEdit(CommandContext& context, ObjectId id, Json report) {
 void addMeshToolCommands(std::vector<Command>& out) {
     out.push_back(makeCommand(
         "mesh.repair",
-        "Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces, fix "
-        "non-manifold vertices and orient faces consistently (outward if closed). Holes stay open.",
+        "Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces and fins "
+        "on non-manifold edges, fix non-manifold vertices and orient faces consistently (outward "
+        "if closed). Holes stay open.",
         R"({
             "type":"object",
             "properties":{
                 "id":{"type":"integer","minimum":0},
                 "remove_self_intersections":{"type":"boolean","default":false,
-                    "description":"Also try to remove self-intersections locally (slow on large scans)."}
+                    "description":"Also remove self-intersections: locally within a shell, and by uniting closed shells that pass through each other (slow on large scans)."}
             },
             "required":["id"],"additionalProperties":false})",
         true,
@@ -65,7 +66,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
                 "id":{"type":"integer","minimum":0},
                 "max_perimeter_mm":{"type":"number","minimum":0,"default":0,"description":"Leave holes with a longer boundary open; 0 = no limit."},
                 "max_edges":{"type":"integer","minimum":0,"default":0,"description":"Leave holes with more boundary edges open; 0 = no limit."},
-                "fair":{"type":"boolean","default":true,"description":"Refine and fair the patch to match the surrounding curvature."}
+                "fair":{"type":"boolean","default":true,"description":"Refine and fair the patch to match the surrounding curvature. Where the surface meets the hole at more than 45 degrees (an open end) the patch stays flat instead of doming."}
             },
             "required":["id"],"additionalProperties":false})",
         true,
