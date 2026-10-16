@@ -4,6 +4,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <miniz.h>
 #include <sstream>
 #include <system_error>
@@ -141,6 +142,8 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
     if (!mz_zip_writer_finalize_heap_archive(&archive.zip, &buffer, &size)) {
         return fail(ErrorCode::Internal, "cannot finish the project archive");
     }
+    // The finished buffer is ours now; miniz no longer frees it in mz_zip_writer_end().
+    const std::unique_ptr<void, decltype(&mz_free)> ownedBuffer(buffer, &mz_free);
 
     std::filesystem::path temp = path;
     temp += ".partial";

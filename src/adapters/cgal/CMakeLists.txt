@@ -19,3 +19,9 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     target_compile_options(m2c_cgal PRIVATE
         -Wno-maybe-uninitialized -Wno-array-bounds -Wno-stringop-overflow -Wno-stringop-overread)
 endif()
+# MSVC's optimiser does the same in Release builds (seen with MSVC 19.44 and CGAL 6.2.1:
+# potentially uninitialized local, unreachable code). /external:W0 does not hide them because
+# they come from code generation, not parsing. Our own code is still checked in Debug builds.
+if(MSVC)
+    target_compile_options(m2c_cgal PRIVATE /wd4701 /wd4702 /wd4703)
+endif()
