@@ -563,6 +563,12 @@ std::optional<Hit> Viewport::pick(const QPointF& pos) const {
     return best;
 }
 
+bool Viewport::proxiesReady() const {
+    return std::ranges::all_of(gpu_, [](const auto& entry) {
+        return !entry.second.proxyRequested || entry.second.proxyIndexCount > 0;
+    });
+}
+
 // ---- Mouse ------------------------------------------------------------------------------------
 
 void Viewport::markInteracting() {

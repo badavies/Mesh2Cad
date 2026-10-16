@@ -10,6 +10,9 @@
 #include <QSurfaceFormat>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <iostream>
+#include <numbers>
 #include <thread>
 
 #include "m2c/io/MeshIO.h"
@@ -85,6 +88,43 @@ std::size_t countKind(const DocSnapshot& s, const char* kind) {
         std::count_if(s.objects.begin(), s.objects.end(), [&](const auto& o) {
             return std::string(o.kind()) == kind;
         }));
+}
+
+/// A closed, bumpy sphere standing in for a large organic scan: 2 * segments * (rings - 1)
+/// triangles.
+TriMesh makeBumpySphere(double radius, std::uint32_t rings, std::uint32_t segments) {
+    std::vector<Vec3d> positions;
+    positions.reserve(2 + std::size_t{rings - 1} * segments);
+    const auto at = [&](double theta, double phi) {
+        const double r = radius * (1.0 + 0.03 * std::sin(7 * theta) * std::cos(5 * phi) +
+                                   0.01 * std::sin(23 * theta) * std::sin(19 * phi));
+        return Vec3d{r * std::sin(theta) * std::cos(phi),
+                     r * std::sin(theta) * std::sin(phi),
+                     r * std::cos(theta)};
+    };
+    positions.push_back(at(0.0, 0.0));
+    for (std::uint32_t i = 1; i < rings; ++i) {
+        for (std::uint32_t j = 0; j < segments; ++j) {
+            positions.push_back(
+                at(std::numbers::pi * i / rings, 2 * std::numbers::pi * j / segments));
+        }
+    }
+    positions.push_back(at(std::numbers::pi, 0.0));
+    const auto ring = [&](std::uint32_t i, std::uint32_t j) {
+        return 1 + (i - 1) * segments + j % segments;
+    };
+    const auto south = static_cast<std::uint32_t>(positions.size() - 1);
+    std::vector<std::uint32_t> indices;
+    indices.reserve(6 * std::size_t{segments} * (rings - 1));
+    for (std::uint32_t j = 0; j < segments; ++j) {
+        indices.insert(indices.end(), {0, ring(1, j), ring(1, j + 1)});
+        for (std::uint32_t i = 1; i + 1 < rings; ++i) {
+            indices.insert(indices.end(), {ring(i, j), ring(i + 1, j), ring(i + 1, j + 1)});
+            indices.insert(indices.end(), {ring(i, j), ring(i + 1, j + 1), ring(i, j + 1)});
+        }
+        indices.insert(indices.end(), {ring(rings - 1, j), south, ring(rings - 1, j + 1)});
+    }
+    return makeMesh(std::move(positions), std::move(indices));
 }
 
 } // namespace
@@ -259,4 +299,73 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     CHECK((*params)["mode"] == "subtract");
     form.findChild<QLineEdit*>("centers")->setText("[[0,0,0],[1,1,1]]");
     CHECK(form.params()->at("centers").size() == 2);
+}
+
+// The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or
+// better. Hidden from normal runs; see tests/README.md for how to run it on a Release build.
+TEST_CASE("A 10M-triangle scan loads and orbits at 30 fps", "[.][perf][app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto scan = dir.path() / "scan.ply";
+    std::size_t triangles = 0;
+    {
+        const TriMesh mesh = makeBumpySphere(60.0, 1600, 3200);
+        triangles = mesh.faceCount();
+        REQUIRE(triangles >= 10'000'000);
+        REQUIRE(writeMesh(mesh, scan).has_value());
+    }
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1600, 1000);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    Viewport* view = window.viewport();
+    std::size_t frames = 0;
+    QObject::connect(view, &QOpenGLWidget::frameSwapped, [&] { ++frames; });
+    // Asks for a frame and spins the event loop until it is on screen.
+    const auto nextFrame = [&] {
+        const std::size_t before = frames;
+        view->update();
+        return waitFor([&] { return frames > before; }, 60000);
+    };
+
+    QElapsedTimer clock;
+    clock.start();
+    window.openFiles({QString::fromStdString(scan.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; },
+                    600000));
+    view->fitAll();
+    REQUIRE(nextFrame());
+    const double loadSeconds = static_cast<double>(clock.elapsed()) / 1000.0;
+
+    // Full resolution, camera still.
+    constexpr int kStillFrames = 30;
+    clock.restart();
+    for (int i = 0; i < kStillFrames; ++i) REQUIRE(nextFrame());
+    const double stillFps = kStillFrames / (static_cast<double>(clock.elapsed()) / 1000.0);
+
+    // Orbiting draws the coarse proxy, built in the background after loading.
+    clock.restart();
+    REQUIRE(waitFor([&] { return view->proxiesReady(); }, 600000));
+    const double proxySeconds = static_cast<double>(clock.elapsed()) / 1000.0;
+
+    constexpr int kFrames = 120;
+    const QPointF c(view->width() / 2.0, view->height() / 2.0);
+    mouse(view, QEvent::MouseButtonPress, c, Qt::LeftButton);
+    clock.restart();
+    for (int i = 1; i <= kFrames; ++i) {
+        mouse(view, QEvent::MouseMove, c + QPointF(3.0 * i, 0.5 * i), Qt::LeftButton);
+        REQUIRE(nextFrame());
+    }
+    const double orbitFps = kFrames / (static_cast<double>(clock.elapsed()) / 1000.0);
+    mouse(
+        view, QEvent::MouseButtonRelease, c + QPointF(3.0 * kFrames, 0.5 * kFrames), Qt::NoButton);
+
+    std::cout << "perf: " << triangles << " triangles; load " << loadSeconds << " s; still "
+              << stillFps << " fps; proxy ready " << proxySeconds << " s later; orbit " << orbitFps
+              << " fps\n";
+    CHECK(orbitFps >= 30.0);
 }
