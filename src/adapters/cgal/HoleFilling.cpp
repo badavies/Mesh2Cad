@@ -3,8 +3,16 @@
 #include <iterator>
 #include <vector>
 
-#include <CGAL/Polygon_mesh_processing/border.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
+// Newer CGAL (6.2.1 from vcpkg) moved extract_boundary_cycles() from Polygon_mesh_processing to
+// the BGL border header and deprecated the old one; the downloaded CGAL 6.0.1 has only the old one.
+#if __has_include(<CGAL/boost/graph/border.h>)
+#include <CGAL/boost/graph/border.h>
+#define M2C_CGAL_BORDER_NS CGAL
+#else
+#include <CGAL/Polygon_mesh_processing/border.h>
+#define M2C_CGAL_BORDER_NS CGAL::Polygon_mesh_processing
+#endif
 
 #include "m2c/adapters/cgal/MeshTools.h"
 
@@ -21,7 +29,7 @@ Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& par
         using Face = SurfaceMesh::Face_index;
 
         std::vector<Halfedge> cycles;
-        PMP::extract_boundary_cycles(mesh, std::back_inserter(cycles));
+        M2C_CGAL_BORDER_NS::extract_boundary_cycles(mesh, std::back_inserter(cycles));
 
         std::size_t filled = 0;
         std::size_t skipped = 0;
