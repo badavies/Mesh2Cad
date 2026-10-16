@@ -27,9 +27,9 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 
 | Dependency | Licence | Milestone | Purpose |
 | --- | --- | --- | --- |
-| oneTBB | Apache-2.0 | M1 | Parallelism (`parallel_deterministic_reduce`) |
-| json-schema-validator | MIT | M1 | Command parameter validation |
-| spdlog | MIT | M1 | Logging |
+| oneTBB | Apache-2.0 | When profiling needs it (not needed in M1) | Parallelism (`parallel_deterministic_reduce`) |
+| json-schema-validator | MIT | When schemas are enforced (not needed in M1) | Command parameter validation |
+| spdlog | MIT | When structured logs are needed (not needed in M1) | Logging |
 | Open CASCADE (OCCT) | LGPL-2.1 with exception | M2 | CAD kernel, STEP export |
 | OpenSubdiv | Apache-2.0 | M2 | Subdivision limit stencils |
 | QuadWild or Instant Meshes | GPL-3.0 / BSD-3-Clause | M2 | Quad layout (ADR-009, after the spike) |

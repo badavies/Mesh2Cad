@@ -1,6 +1,6 @@
 # Scan-to-CAD Reverse Engineering App — Architecture & Roadmap
 
-Last updated: 14 October 2026 (revision 2: technical review applied; see section 15)
+Last updated: 16 October 2026 (revision 3: brought in line with what M0 and M1 built; see "Status after M1" in section 12. Revision 2 applied a technical review; see section 15)
 
 ## 1. Purpose and scope
 
@@ -65,6 +65,8 @@ The core is C++23, licensed GPL-3.0-or-later, and every dependency must be GPL v
 | Logging | spdlog | MIT | Structured logs, stage reports, session command log |
 | Testing | Catch2 + libFuzzer | BSL 1.0 / Apache 2.0 | Unit, stage, golden, command and fuzz tests |
 
+**In use after M1.** C++23, CMake presets with vcpkg or pinned downloads (ADR-020, ADR-022), Qt 6 Widgets with the custom OpenGL viewport, CGAL, Eigen (plane fits, principal axes, symmetry, CGAL fairing), nlohmann/json, miniz and Catch2. Not used yet: oneTBB (everything is single-threaded apart from background index builds), json-schema-validator (schemas are published but each handler checks its own parameters), spdlog (the session log is plain JSON lines), OCCT, OpenSubdiv and a quad remesher. Own OBJ and PLY parsers replaced tinyobjloader and happly (ADR-021), and fuzzing uses a fixed-seed driver as well as a libFuzzer entry point, because MSVC and GCC have no libFuzzer. `THIRD_PARTY.md` lists what is actually linked.
+
 **Licence rules**
 
 - Every dependency is listed in `THIRD_PARTY.md` with its licence and why it is needed.
@@ -96,18 +98,20 @@ flowchart TB
 
 The command engine is the orchestrator: it calls pipeline and I/O functions, then commits their results to the document as one undo step. The document never calls processing code, which keeps it small, fast to compile and easy to test. All four front ends call the same command engine, so anything the UI can do can also be scripted, tested headless, or driven by an AI agent through MCP, with identical results.
 
+The rules below are enforced on every build by `scripts/check_layers.py` (a ctest and a CI step), which reads each file's `#include "m2c/<module>/..."` lines and rejects kernel headers outside `src/adapters/`.
+
 | Module | May depend on | Must never depend on |
 | --- | --- | --- |
-| app | commands, core, Qt | document internals, pipeline, adapters, any kernel header |
-| cli | commands, core | Qt, pipeline, adapters |
-| rpc (JSON channel) | commands, core | Qt, pipeline, adapters |
-| mcp | rpc, commands, core | Qt, pipeline, adapters |
+| app | commands, rpc, document (read-only snapshots from the engine thread), core, Qt | pipeline, io, adapters, any kernel header |
+| cli | commands, document, core | Qt, pipeline, io, adapters |
+| rpc (JSON channel) | commands, document, core | Qt, pipeline, io, adapters |
+| mcp | rpc, commands, document, core | Qt, pipeline, io, adapters |
 | commands | document, pipeline, io, core | Qt, adapters, any front end |
 | document | core | Qt, commands, pipeline, io, adapters |
-| pipeline | adapters, io, core | Qt, document, commands |
-| io | adapters, core, miniz | Qt, document, pipeline |
+| pipeline | adapters, core, Eigen | Qt, document, commands, io |
+| io | core, miniz (adapters from M2, for BREP in the project file) | Qt, document, pipeline |
 | adapters | core, their own third-party library | each other, anything above them |
-| core | Eigen, standard library | everything else |
+| core | standard library | everything else |
 
 ## 5. Core data model
 
@@ -135,6 +139,8 @@ Two further types support the tools in section 7. `ShellList` holds each connect
 **Document and provenance.** The document holds objects by id. Each object records the stage and parameters that produced it and the ids of its inputs. This gives a lightweight history: a stage can be re-run with new parameters without a full parametric feature tree.
 
 **Project file.** A zip (written with miniz) holding a versioned JSON manifest, meshes as binary PLY, selections as compressed bitsets and solids as OCCT BREP. Reading and writing it lives in the I/O module, because BREP serialisation needs the OCCT adapter; the command engine moves the loaded objects into the document. Each schema version has a migration function and a test.
+
+**As built (M1).** `TriMesh` holds positions and triangle indices only (no normals or attributes yet), each as a shared immutable buffer, plus two lazily built caches that copies share: the BVH (`spatialIndex()`) and the face adjacency (`faceAdjacency()`) that selection and smoothing use. `MeshSelection`, `Transform3d` (stored on each mesh as its accumulated alignment) and `Measurement` exist; shell lists are returned by `shells.detect` rather than stored. There is no `StageReport` type: each command returns a JSON `report`. The project file holds a version-1 manifest, meshes as binary PLY, selections as raw bitsets and measurements in the manifest; no migration exists yet because there is only one version. The other types in the table arrive with their milestones.
 
 **Decision point.** If profiling shows that converting `TriMesh` to CGAL and back dominates run time on large scans, record a decision to adopt `Surface_mesh` as the core mesh type. Do not make that change speculatively.
 
@@ -199,13 +205,13 @@ The tools fall into five groups: mesh tidy-up, selection and shell detection (M1
 
 | Tool | What it does | Implementation | Key parameters |
 | --- | --- | --- | --- |
-| Clean-up | Removes duplicate and degenerate faces, non-manifold edges, self-intersections and spikes | CGAL Polygon Mesh Processing | `tolerance_mm` |
-| Hole filling | Fills open boundaries with a patch that blends into the surrounding curvature; holes above a size limit are left so real openings survive | CGAL hole filling with fairing | `max_hole_perimeter_mm` |
-| Smoothing | Taubin smoothing (no shrinkage) or feature-preserving smoothing, on the whole mesh or a selection | CGAL shape smoothing, own Taubin filter | `iterations`, `strength`, `preserve_sharp_edges` |
-| Simplification | Reduces large meshes to a target triangle or vertex count, or to a maximum error, keeping boundaries and sharp edges | CGAL edge-collapse simplification | `target_count` or `max_error_mm` |
+| Clean-up | Removes duplicate and degenerate faces, non-manifold edges, self-intersections and spikes | CGAL Polygon Mesh Processing | `remove_self_intersections` (built as `mesh.repair`; spike removal is not implemented) |
+| Hole filling | Fills open boundaries with a patch that blends into the surrounding curvature; holes above a size limit are left so real openings survive. Rims CGAL cannot triangulate (every diagonal already an edge, as in folded pockets) get a refined and faired centroid fan | CGAL hole filling with fairing | `max_perimeter_mm`, `max_edges`, `fair` |
+| Smoothing | Taubin smoothing (no shrinkage), optionally keeping sharp edges, on the whole mesh or a selection | Own Taubin filter (CGAL shape smoothing not used yet) | `iterations`, `strength`, `preserve_sharp_edges`, `sharp_angle_deg` |
+| Simplification | Reduces large meshes to a target triangle count, or to a maximum error, whichever comes first, keeping open boundaries | CGAL Garland-Heckbert edge collapse with bounded-distance placement | `target_faces` or `target_ratio`, `max_error_mm` |
 | Remesh | Rebuilds an even triangle mesh at a set edge length | CGAL isotropic remeshing | `target_edge_mm` |
 | Shrink-wrap | Rebuilds a guaranteed watertight, manifold, self-intersection-free mesh around a badly damaged scan or polygon soup, as a fallback when surface repair fails | CGAL 3D Alpha Wrapping | `alpha_mm`, `offset_mm` (fine detail smaller than these is lost) |
-| Shell detection | Finds unconnected meshes (stray fragments, loose parts), marks the largest as the main part, and lists the rest with size and area | CGAL connected components | `min_triangles` or `min_area_mm2` |
+| Shell detection | Finds unconnected meshes (stray fragments, loose parts), marks the largest as the main part, and lists the rest with size and area | Own face components on the cached adjacency | `min_faces` or `min_area_mm2` (for `shells.clean`) |
 
 **Selection.** Brush, lasso, flood fill by crease angle, grow, shrink and invert are commands that produce a `MeshSelection` document object. Tools such as smoothing, deletion and primitive fitting take its `selection_id`, so the UI and an AI agent select regions the same way, and no command ever carries large index lists in JSON.
 
@@ -270,9 +276,9 @@ The UI is a thin shell over the document: Qt 6 Widgets for panels, a custom Open
 
 - **Every action is a command.** A command has a dotted name (`mesh.smooth`, `shells.detect`, `measure.distance`, `surface.build`), JSON Schemas for its parameters and result, a handler, and a kind: query (read-only) or mutation (undoable).
 - **One registry, four front ends.** UI menus and panels, CLI subcommands, JSON-RPC methods and MCP tools all come from the registry. A new command is available everywhere at once; no front end has private commands or extra logic.
-- **One dispatch path.** Validate parameters against the schema, run the handler (on a worker thread if long), apply the result to the document as one undo step, then emit an event. Queries never change the document.
+- **One dispatch path.** Validate parameters against the schema, run the handler (on a worker thread if long), apply the result to the document as one undo step, then emit an event. Queries never change the document. As built, each handler validates its own parameters (the schemas are published but not enforced, pending json-schema-validator), and the desktop app runs every command, from any source, on one engine thread (ADR-023).
 - **Stable ids, plain data.** Commands refer to objects by id and return ids and plain values, never pointers. Large data such as meshes travels by object id or file path, never inline in JSON.
-- **Long jobs.** Long commands return a job id; progress and completion arrive as events; `job.cancel` stops them.
+- **Long jobs.** Long commands return a job id; progress and completion arrive as events; `job.cancel` stops them. Not built yet: commands run to completion, and the app shows a busy state meanwhile.
 - **Undo is cheap.** Pipeline data is immutable, so undo stores the previous object pointers rather than copies. Undo of a 5M-triangle repair costs almost no memory.
 - **JSON channel.** JSON-RPC 2.0 over stdio (when a script or the MCP server launches a headless engine) or over a local socket or named pipe (to drive the running desktop app). Events are JSON-RPC notifications. No network listener; local connections need a per-session token.
 - **MCP server.** A separate thin process that talks to the engine over the JSON channel and exposes each command as an MCP tool with its schema and description. Mutating tools are marked as such so MCP clients can ask the user before running them.
@@ -293,24 +299,23 @@ The UI is a thin shell over the document: Qt 6 Widgets for panels, a custom Open
 Each top-level source folder is one CMake target, and `target_link_libraries` encodes the allowed dependencies from section 4. A wrong include fails the build instead of waiting for review.
 
 ```
-/src
-  /core              app-owned types, units, tolerances, reports (no third-party deps except Eigen)
-  /adapters/cgal     CGAL conversions and wrapped algorithms
-  /adapters/occt     OCCT conversions, sewing, booleans, STEP, tessellation, projection
-  /adapters/osd      OpenSubdiv wrapper
-  /adapters/quad     quad remesher wrapper
-  /io                STL/OBJ/PLY import; STEP/glTF/OBJ/STL export; project file read/write
-  /pipeline          one file pair per stage or tool (mesh tools, selection, align, shells, measure, deviation)
-  /document          objects, selections, provenance, undo history (depends on core only)
-  /commands          registry, schemas, dispatcher, jobs, events, session log
-  /app               Qt UI and viewport
-  /cli               command-line front end
-  /rpc               JSON-RPC 2.0 channel (stdio, local socket / named pipe)
-  /mcp               MCP server built on rpc
+/src                 each folder has a README: purpose, public API, what it must not depend on
+  /core              app-owned types: TriMesh, spatial index, selection, transform, stats (standard library only)
+  /adapters/cgal     CGAL conversions and wrapped algorithms (repair, holes, simplify, remesh, wrap)
+  /io                STL/OBJ/PLY import and export; project file read/write
+  /pipeline          one file pair per tool group (mesh tools, selection, align, shells, smooth, measure)
+  /document          objects, selections, measurements, provenance, undo history (depends on core only)
+  /commands          registry, parameter schemas, handlers, session-log hook (front ends write the file)
+  /app               Qt UI, viewport, the engine thread and the local-socket server for agents
+  /cli               command-line front end (`mesh2cad run`, `batch`, `list`)
+  /rpc               JSON-RPC 2.0 protocol, stdio server and local-socket client
+  /mcp               MCP server; the `mesh2cad-mcp` executable reaches the engine through rpc
+  (planned: /adapters/occt, /adapters/osd and /adapters/quad from M2)
 /tests
-  /unit  /stages  /commands (schema and replay tests)  /golden (scans in Git LFS)  /fuzz
+  /unit  /stages  /commands (registry, JSON-RPC and MCP give the same results)  /app (real window)
+  /golden (sessions and metrics; scans are local gitignored copies, ADR-025)  /fuzz  /support
 /docs
-  ARCHITECTURE.md  AI_GUIDELINES.md  COMMANDS.md (generated from the registry)  /adr
+  ARCHITECTURE.md  AI_GUIDELINES.md  COMMANDS.md (generated from the registry)  BASELINE.md  /adr
 AGENTS.md            short pointer file for AI coding tools
 THIRD_PARTY.md
 ```
@@ -318,17 +323,18 @@ THIRD_PARTY.md
 **Build and CI**
 
 - CMake presets for Windows (MSVC) and Linux (GCC; Clang only with libc++, see ADR-019). Both run in CI on every pull request.
-- Warnings as errors; clang-format and clang-tidy enforced in CI.
+- Warnings as errors in every preset; clang-format enforced in CI (clang-tidy is not run yet).
 - AddressSanitizer and UndefinedBehaviorSanitizer builds on Linux CI.
-- Floating-point flags are fixed in the CMake presets: `-ffp-contract=off` on GCC and Clang, `/fp:precise` on MSVC, and no fast-math anywhere. Parallel sums and reductions use `tbb::parallel_deterministic_reduce`, never `tbb::parallel_reduce`.
+- Floating-point flags are fixed in `cmake/Mesh2CadBuild.cmake`: `-ffp-contract=off` on GCC and Clang, `/fp:precise` on MSVC, and no fast-math anywhere. Parallel sums and reductions, once oneTBB is added, use `tbb::parallel_deterministic_reduce`, never `tbb::parallel_reduce`.
 - Language standard C++23 (`CMAKE_CXX_STANDARD 23`) on all presets.
-- A CI script fails the build if `app/`, `commands/`, `document/` or `pipeline/` include a CGAL, OCCT or OpenSubdiv header, or if `document/` includes anything outside `core/`.
+- `scripts/check_layers.py` fails the build if any module outside `adapters/` includes a CGAL, OCCT or OpenSubdiv header, or if a module includes one it may not depend on (section 4).
+- CI also runs nightly (and on demand): the full suite on every preset plus a long fuzzing run under the sanitizers.
 - macOS: best effort, not in CI until a decision says otherwise.
 
 **Code conventions**
 
 - Errors cross module boundaries as `std::expected<T, Error>` (C++23). Adapters catch OCCT and CGAL exceptions and convert them; no exception escapes an adapter.
-- One stage per file pair, with the same signature: `run(input, params, progress, cancel) -> expected<Output>` plus a `StageReport`.
+- One stage per file pair, with the same signature: `run(input, params, progress, cancel) -> expected<Output>` plus a `StageReport`. As built in M1, tools are plain functions `tool(const TriMesh&, const Params&) -> Result<Output>` without progress or cancel; those arrive with long jobs.
 - Parameters are plain structs with documented defaults and units in their names, for example `tolerance_mm`.
 - Each module has a README of at most one page: purpose, public API, what it must not depend on.
 
@@ -340,9 +346,9 @@ Geometry code fails in plausible-looking ways, so tests check measured outcomes 
 | --- | --- | --- | --- |
 | Unit | Core types, adapter round-trips (`TriMesh` to CGAL and back, patch to OCCT and back) | Every pull request | Exact equality where data should be unchanged |
 | Stage | Each stage on small synthetic shapes: sphere, torus, box with a hole, noisy cylinder | Every pull request | Metric thresholds, e.g. hole count 0, deviation below limit |
-| Golden | Full pipeline on 5–10 real scans: controller, mouse, bottle, bracket, figurine | Nightly, and before each milestone gate | Valid single solid; deviation, face count, run time and memory within stored limits. Same-platform reruns must be bit-identical; Windows and Linux are compared by metrics only |
+| Golden | Full pipeline on 5–10 real scans: controller, mouse, bottle, bracket, figurine (M1 set: DJI controller, Dewalt multitool, Siemens coffee machine lid, Tyranid figurine) | Before each milestone gate, on a machine with the scans (CI has none, ADR-025) | Valid single solid; deviation, face count, run time and memory within stored limits. Same-platform reruns must be bit-identical; Windows and Linux are compared by metrics only |
 | Export | Re-import every STEP with OCCT | Within golden and stage tests | `BRepCheck_Analyzer` valid, one closed solid |
-| Fuzz | STL, OBJ and PLY parsers with malformed input | Nightly | No crash, no sanitizer error |
+| Fuzz | STL, OBJ and PLY parsers with malformed input | Short run on every pull request; long run nightly under the sanitizers | No crash, no sanitizer error |
 | Manual | Golden STEP files opened in Fusion 360; GLB files opened in Blender | At each milestone gate | Written checklist signed off |
 
 **Golden metrics are versioned.** Each golden scan has a metrics file in the repository. A change that worsens a metric beyond its threshold fails. Updating a stored threshold is a separate, human-reviewed commit that explains why.
@@ -402,6 +408,19 @@ Six milestones lead to v1.0, ordered so the riskiest work (organic surfacing, M2
 - If M2 cannot pass its gate, stop and revisit the surfacing approach (for example direct per-patch fitting) before building M3 or M4. Polishing around an unproven core is the most expensive kind of creep.
 - Work items for the current milestone live as issues with acceptance criteria. Ideas for later milestones go into the backlog list, not into code.
 
+**Status after M1 (16 October 2026)**
+
+Built in M0 and M1: the command engine with 43 registered commands (`docs/COMMANDS.md`), core types with the cached spatial index and face adjacency, STL/OBJ/PLY import and export, the project file, the desktop app (viewport with a coarse proxy above two million faces, brush, lasso and crease selection, measurement, a form for every command, history with sources), the CLI, the JSON-RPC channel and the MCP server; the M1 mesh tools (repair, hole filling, smoothing, simplification by count or error, remeshing, shrink-wrap, shells), datum, principal-axes and symmetry-plane alignment, and point-to-point measurement. CI builds and tests Windows (MSVC) and Linux (GCC, plus a sanitizer build and the Qt app under Xvfb) on every pull request and nightly.
+
+Gate criteria:
+
+- M0, 10M-triangle scan orbits at 30 fps or better: the `[perf]` app test (`tests/README.md`) measures it; the result from the Windows machine is still to be recorded.
+- M0, CI green on both platforms: met.
+- M1, golden scans repair to closed, manifold meshes and sit square on the origin planes; CLI, JSON and MCP give the same results: met by the four golden scans on Linux; to be re-run on the Windows machine before sign-off.
+- Housekeeping (section 11): done in this revision; the baseline for the next gate is `docs/BASELINE.md`.
+
+Where M1 differs from the plan above: no oneTBB, spdlog or json-schema-validator yet (section 3); commands run to completion without job ids or cancel (section 8); tools take `(mesh, params)` without progress or cancel (section 9); golden scans are local, hash-checked copies rather than Git LFS files (ADR-025).
+
 ## 13. Risks and open decisions
 
 The biggest technical risk is the surfacing stage producing small gaps or kinks, which makes Fusion import loose surfaces instead of a solid. M2 exists to expose that risk early.
@@ -457,6 +476,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-022 | CGAL with Eigen; fetched CGAL 6.0.1 and Boost headers when not installed | Accepted | Builds without vcpkg; see `docs/adr/0022-cgal-eigen-boost-fallback.md` |
 | ADR-023 | Qt app optional in the build; one engine thread runs commands from every source | Accepted | Responsive UI, no interleaved undo steps; see `docs/adr/0023-desktop-app-and-engine-thread.md` |
 | ADR-024 | Lasso selection by CPU projection, reproducible from the command | Accepted | Same result from UI, CLI and agents; see `docs/adr/0024-lasso-by-projection.md` |
+| ADR-025 | Golden scans are local, gitignored copies checked by SHA-256, not Git LFS files | Accepted | Scans stay out of the repository; the hash proves which file the limits were set on; see `docs/adr/0025-golden-scans-as-local-copies.md` |
 
 ## 15. Review log
 

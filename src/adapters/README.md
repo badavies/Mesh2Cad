@@ -1,0 +1,33 @@
+# adapters (`Mesh2Cad::cgal`)
+
+The only code that sees kernel library types. Each adapter converts between core types and one
+third-party library and wraps its algorithms behind functions that take and return core types.
+Today there is one adapter, `adapters/cgal`, which wraps CGAL Polygon Mesh Processing. There is
+no `adapters` target of its own: each adapter folder is a separate CMake target.
+
+## Public API
+
+- `m2c/adapters/cgal/MeshTools.h` (namespace `m2c::cgal`):
+  - `repair` with `RepairParams` and `RepairResult`: merge duplicates, remove degenerate faces and fins, make manifold, orient, optionally remove self-intersections.
+  - `fillHoles` with `HoleFillParams` and `HoleFillResult`: fill holes up to a perimeter or edge limit, optionally refined and faired.
+  - `simplify` with `SimplifyParams`: Garland-Heckbert edge collapse to a target face count.
+  - `remesh` with `RemeshParams`: isotropic remeshing that keeps sharp edges.
+  - `shrinkWrap` with `WrapParams`: 3D alpha wrapping to a watertight, manifold mesh.
+
+Private to the adapter: `CgalMesh.h` (`toSurfaceMesh`, `fromSurfaceMesh`, `guarded`). Do not
+include it from outside `src/adapters/cgal`.
+
+## Dependencies
+
+May use: `core`; CGAL, Boost and Eigen through the private `m2c_cgal_deps` target.
+Must not depend on: `io`, `document`, `pipeline`, `commands`, `app`, `cli`, `rpc`, `mcp`, and
+other adapters. Enforced by `scripts/check_layers.py` (the script treats all of `src/adapters`
+as one module, so it does not catch one adapter including another).
+
+## Notes
+
+- The public header uses core types only, so nothing above this layer needs CGAL's include
+  paths or compile flags. Keep it that way.
+- No exception escapes an adapter. Wrap CGAL calls in `guarded`, which turns exceptions into
+  an `Error` with `ErrorCode::Internal`.
+- Results are new `TriMesh` objects; the input mesh is never changed.
