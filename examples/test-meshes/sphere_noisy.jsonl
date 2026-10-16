@@ -1,0 +1,12 @@
+{"command": "mesh.import", "params": {"path": "sphere_noisy.ply"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "mesh.smooth", "params": {"id": 1, "iterations": 10}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "select.brush", "params": {"id": 1, "center": [0, 0, 25], "radius_mm": 6, "name": "cap"}}
+{"command": "select.grow", "params": {"selection_id": 2, "rings": 2}}
+{"command": "select.shrink", "params": {"selection_id": 2, "rings": 1}}
+{"command": "select.invert", "params": {"selection_id": 2}}
+{"command": "mesh.simplify", "params": {"id": 1, "target_ratio": 0.25}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "mesh.remesh", "params": {"id": 1, "target_edge_mm": 2.0, "sharp_angle_deg": 0}}
+{"command": "mesh.info", "params": {"id": 1}}

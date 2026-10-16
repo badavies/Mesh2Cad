@@ -1,0 +1,9 @@
+{"command": "mesh.import", "params": {"path": "controller.ply"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "align.principal", "params": {"id": 1, "origin": "bounds_bottom_center"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "mesh.remesh", "params": {"id": 1, "target_edge_mm": 1.5}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "mesh.simplify", "params": {"id": 1, "target_faces": 4000}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "measure.distance", "params": {"a": {"point": [-80, 0, 20], "id": 1}, "b": {"point": [80, 0, 20], "id": 1}, "name": "width"}}

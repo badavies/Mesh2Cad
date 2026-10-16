@@ -46,9 +46,10 @@ jobs:
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-${{ matrix.preset }}-
 
-      - name: Install Ninja (Linux)
+      # vcpkg builds gmp and mpfr (CGAL dependencies) with autotools from the system.
+      - name: Install Ninja and autotools (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
 
       - name: Set up the MSVC environment (Windows)
         if: runner.os == 'Windows'

@@ -83,7 +83,7 @@ Json McpServer::callTool(const Json& params) {
 std::optional<Json> McpServer::handle(const Json& message) {
     if (!message.is_object() || !message.contains("method")) {
         if (message.is_object() && message.contains("id")) {
-            return errorResponse(message["id"], -32600, "invalid request");
+            return std::make_optional(errorResponse(message["id"], -32600, "invalid request"));
         }
         return std::nullopt; // a response or junk: nothing to answer
     }
@@ -93,23 +93,24 @@ std::optional<Json> McpServer::handle(const Json& message) {
     const Json params = message.value("params", Json::object());
 
     if (method == "initialize") {
-        return response(id,
-                        Json{{"protocolVersion", kProtocolVersion},
-                             {"capabilities", {{"tools", {{"listChanged", false}}}}},
-                             {"serverInfo", {{"name", "mesh2cad"}, {"version", MESH2CAD_VERSION}}},
-                             {"instructions",
-                              "Mesh2Cad scan-to-CAD engine. Start with doc_list to see the "
-                              "objects. Meshes, selections and measurements are referred to "
-                              "by id. Every change is one undo step (doc_undo)."}});
+        return std::make_optional(
+            response(id,
+                     Json{{"protocolVersion", kProtocolVersion},
+                          {"capabilities", {{"tools", {{"listChanged", false}}}}},
+                          {"serverInfo", {{"name", "mesh2cad"}, {"version", MESH2CAD_VERSION}}},
+                          {"instructions",
+                           "Mesh2Cad scan-to-CAD engine. Start with doc_list to see the "
+                           "objects. Meshes, selections and measurements are referred to "
+                           "by id. Every change is one undo step (doc_undo)."}}));
     }
-    if (method == "ping") return response(id, Json::object());
+    if (method == "ping") return std::make_optional(response(id, Json::object()));
     if (method == "tools/list") {
         auto tools = listTools();
-        if (!tools) return errorResponse(id, -32603, tools.error().message);
-        return response(id, *tools);
+        if (!tools) return std::make_optional(errorResponse(id, -32603, tools.error().message));
+        return std::make_optional(response(id, *tools));
     }
-    if (method == "tools/call") return response(id, callTool(params));
-    return errorResponse(id, -32601, "method not found: " + method);
+    if (method == "tools/call") return std::make_optional(response(id, callTool(params)));
+    return std::make_optional(errorResponse(id, -32601, "method not found: " + method));
 }
 
 } // namespace m2c

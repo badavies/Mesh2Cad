@@ -61,9 +61,16 @@ std::vector<Bytes> builtinSeeds() {
 }
 
 // Number strings that tend to break header and index handling.
-constexpr std::string_view kInteresting[] = {"0",          "-1",    "4294967295", "4294967296",
-                                             "2147483648", "1e308", "nan",        "inf",
-                                             "-0",         "999999999999"};
+constexpr std::string_view kInteresting[] = {"0",
+                                             "-1",
+                                             "4294967295",
+                                             "4294967296",
+                                             "2147483648",
+                                             "1e308",
+                                             "nan",
+                                             "inf",
+                                             "-0",
+                                             "999999999999"};
 
 class Mutator {
 public:

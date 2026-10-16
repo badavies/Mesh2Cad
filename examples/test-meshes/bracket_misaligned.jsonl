@@ -1,0 +1,13 @@
+{"command": "mesh.import", "params": {"path": "bracket_misaligned.obj"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "align.principal", "params": {"id": 1, "origin": "bounds_bottom_center"}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "align.reset", "params": {"id": 1}}
+{"command": "align.transform", "params": {"id": 1, "rotation": [0.56745493412, 0.630222558975, 0.529919266701, -0.814343631268, 0.524754822254, 0.247945263982, -0.121816985309, -0.572234153748, 0.81099241972], "translation": [-81.453134897947, 108.176475668791, -89.591786136096]}}
+{"command": "mesh.info", "params": {"id": 1}}
+{"command": "align.reset", "params": {"id": 1}}
+{"command": "select.crease", "params": {"id": 1, "face": 1, "name": "primary"}}
+{"command": "select.crease", "params": {"id": 1, "face": 2, "name": "secondary"}}
+{"command": "select.crease", "params": {"id": 1, "face": 0, "name": "tertiary"}}
+{"command": "align.datum", "params": {"id": 1, "primary": 2, "secondary": 3, "tertiary": 4}}
+{"command": "mesh.info", "params": {"id": 1}}

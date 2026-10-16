@@ -125,9 +125,10 @@ void runGolden(const fs::path& folder) {
         const Json reply =
             Json::parse(rpc.handleLine(rpcRequest(id++, step.command, step.params).dump()));
         REQUIRE(reply.contains("result"));
-        const Json called = *mcp.handle(rpcRequest(
-            id++, "tools/call",
-            {{"name", McpServer::toolName(step.command)}, {"arguments", step.params}}));
+        const Json called = *mcp.handle(
+            rpcRequest(id++,
+                       "tools/call",
+                       {{"name", McpServer::toolName(step.command)}, {"arguments", step.params}}));
         REQUIRE(called["result"]["isError"] == false);
     }
 
@@ -173,6 +174,8 @@ TEST_CASE("Golden scans meet their stored metrics through every front end", "[go
                                    << "; see tests/golden/README.md or set M2C_GOLDEN_DIR");
     }
     for (const auto& folder : scans) {
-        DYNAMIC_SECTION(folder.filename().string()) { runGolden(folder); }
+        DYNAMIC_SECTION(folder.filename().string()) {
+            runGolden(folder);
+        }
     }
 }
