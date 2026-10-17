@@ -4,6 +4,14 @@
     <option name="myCurrentProfile" value="qt-mingw-debug" />
     <option name="mySettingsPerProfile">
       <map>
+        <entry key="Qt 6.12 MinGW Release (with desktop app) (1)">
+          <value>
+            <PerProfileState>
+              <option name="myQmlPath" value="$PROJECT_DIR$/../../../../Qt/6.12.0/mingw_64/qml" />
+              <option name="myQtBinPath" value="$PROJECT_DIR$/../../../../Qt/6.12.0/mingw_64/bin" />
+            </PerProfileState>
+          </value>
+        </entry>
         <entry key="qt-mingw-debug">
           <value>
             <PerProfileState>
