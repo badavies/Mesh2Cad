@@ -68,7 +68,12 @@ public:
         return true;
     }
 
-    void reserveTriangles(std::size_t n) { indices_.reserve(n * 3); }
+    /// A closed mesh has about half as many vertices as triangles.
+    void reserveTriangles(std::size_t n) {
+        indices_.reserve(n * 3);
+        lookup_.reserve(n / 2);
+        positions_.reserve(n / 2);
+    }
     [[nodiscard]] std::size_t triangleCount() const noexcept { return indices_.size() / 3; }
     [[nodiscard]] std::size_t indexCount() const noexcept { return indices_.size(); }
 

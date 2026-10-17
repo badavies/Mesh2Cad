@@ -106,11 +106,17 @@ bool crosses(const Triangle& a, const Triangle& b) {
                CGAL::do_intersect(Kernel::Segment_3(b[(j + 1) % 3], b[(j + 2) % 3]), ta);
     }
     if (shared.size() == 2) {
+        // A corner matched twice means a face with coincident corners; leave it reported.
+        if (shared[0].first == shared[1].first || shared[0].second == shared[1].second) {
+            return true;
+        }
         // Sharing an edge, they overlap only if coplanar and on the same side of it.
         const Point& p = a[shared[0].first];
         const Point& q = a[shared[1].first];
         const Point& ra = a[3 - shared[0].first - shared[1].first];
         const Point& rb = b[3 - shared[0].second - shared[1].second];
+        // coplanar_orientation() needs p, q and ra not collinear: a flat face is reported too.
+        if (CGAL::collinear(p, q, ra)) return true;
         return CGAL::coplanar(p, q, ra, rb) &&
                CGAL::coplanar_orientation(p, q, ra, rb) == CGAL::POSITIVE;
     }

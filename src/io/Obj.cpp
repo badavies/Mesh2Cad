@@ -99,9 +99,14 @@ Result<void> writeObj(const TriMesh& mesh, std::ostream& out) {
         if (buffer.size() > 60000) flush();
     }
     for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
-        const auto [a, b, c] = mesh.face(f);
-        buffer += "f " + std::to_string(a + 1) + ' ' + std::to_string(b + 1) + ' ' +
-                  std::to_string(c + 1) + '\n';
+        buffer += 'f';
+        for (const std::uint32_t v : mesh.face(f)) {
+            const auto [ptr, ec] =
+                std::to_chars(number.data(), number.data() + number.size(), std::uint64_t{v} + 1);
+            buffer.push_back(' ');
+            buffer.append(number.data(), ptr);
+        }
+        buffer += '\n';
         if (buffer.size() > 60000) flush();
     }
     flush();

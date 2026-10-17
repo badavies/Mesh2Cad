@@ -192,6 +192,13 @@ Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
                             std::to_string(summary.freeEdges) + " free edges, " +
                             (summary.valid ? "valid" : "invalid") + ")");
         }
+        // A face that sewed into no shell is left out of the solid; the project file then
+        // could not be read back, as its face table would not match.
+        if (summary.faceCount != faces.size()) {
+            return fail(ErrorCode::InvalidState,
+                        "the sewn shell has " + std::to_string(summary.faceCount) + " of the " +
+                            std::to_string(faces.size()) + " faces");
+        }
         auto shape = std::make_shared<SolidShape>();
         shape->shape = solid;
         return Solid(std::move(shape),

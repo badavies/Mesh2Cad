@@ -255,7 +255,7 @@ private:
 constexpr std::uint64_t kMaxIndex = std::numeric_limits<std::uint32_t>::max();
 
 template <class Reader>
-Result<TriMesh> readBody(Reader& reader, const Header& header) {
+Result<TriMesh> readBody(Reader& reader, const Header& header, bool weld) {
     std::vector<Vec3d> positions;
     std::vector<std::uint32_t> indices;
     std::vector<std::uint32_t> poly;
@@ -295,6 +295,7 @@ Result<TriMesh> readBody(Reader& reader, const Header& header) {
             indices.reserve(safeReserve(element.count * 3));
             haveFaces = true;
         }
+        if (element.properties.empty()) continue; // nothing to read, however many rows
 
         for (std::uint64_t row = 0; row < element.count; ++row) {
             std::array<double, 3> xyz{};
@@ -303,7 +304,10 @@ Result<TriMesh> readBody(Reader& reader, const Header& header) {
                 const int slot = static_cast<int>(i);
                 if (p.isList) {
                     double countValue = 0.0;
-                    if (!reader.read(p.countType, countValue) || countValue < 0.0) {
+                    // The ASCII reader accepts any number here, so also refuse NaN and counts
+                    // too large to convert.
+                    if (!reader.read(p.countType, countValue) ||
+                        !(countValue >= 0.0 && countValue <= 4294967295.0)) {
                         return fail(ErrorCode::Parse,
                                     "truncated or invalid PLY list in '" + element.name +
                                         "' element");
@@ -348,20 +352,29 @@ Result<TriMesh> readBody(Reader& reader, const Header& header) {
     if (!haveVertices) return fail(ErrorCode::Parse, "PLY has no vertex element");
     if (!haveFaces)
         return fail(ErrorCode::Parse, "PLY has no face element (point clouds are not supported)");
+    if (!weld) return TriMesh::create(std::move(positions), std::move(indices));
     return weldAndCompact(positions, indices, "PLY");
+}
+
+Result<TriMesh> readMesh(std::istream& in, bool weld) {
+    auto header = readHeader(in);
+    if (!header) return std::unexpected(header.error());
+    if (header->format == Format::Ascii) {
+        AsciiReader reader(in);
+        return readBody(reader, *header, weld);
+    }
+    ByteReader reader(in, header->format == Format::BinaryBig);
+    return readBody(reader, *header, weld);
 }
 
 } // namespace
 
 Result<TriMesh> readPly(std::istream& in) {
-    auto header = readHeader(in);
-    if (!header) return std::unexpected(header.error());
-    if (header->format == Format::Ascii) {
-        AsciiReader reader(in);
-        return readBody(reader, *header);
-    }
-    ByteReader reader(in, header->format == Format::BinaryBig);
-    return readBody(reader, *header);
+    return readMesh(in, true);
+}
+
+Result<TriMesh> readPlyUnwelded(std::istream& in) {
+    return readMesh(in, false);
 }
 
 Result<void> writePly(const TriMesh& mesh, std::ostream& out) {

@@ -304,8 +304,11 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
     std::vector<double> history;
     // Each round starts with the rms of the previous round's result; the best result is kept, in
     // case a round makes things worse (samples entering or leaving the gate can do that).
+    // The best round's positions and their measurements, so they need not be measured again.
     std::vector<Vec3d> best = positions;
     double bestRms = std::numeric_limits<double>::infinity();
+    std::size_t bestUsed = 0;
+    double bestMax = 0.0;
     for (unsigned it = 0; it <= params.iterations; ++it) {
         auto tess = tessellate(**limit, (*limit)->patchPoints(positions), kSearchGrid);
         if (!tess) return std::unexpected(tess.error());
@@ -313,9 +316,12 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         // the sample itself (point-to-plane fitting converges in a few rounds; the point term
         // keeps the surface from sliding along itself).
         std::vector<Eigen::Triplet<double>> planeRows, pointRows;
+        planeRows.reserve(static_cast<std::size_t>(m) * 48); // 16 weights, 3 coordinates each
+        pointRows.reserve(static_cast<std::size_t>(m) * 48);
         Eigen::VectorXd planeTargets(m);
         Eigen::VectorXd pointTargets(3 * m);
         double sum2 = 0.0;
+        double maxD = 0.0;
         std::size_t used = 0;
         for (Eigen::Index k = 0; k < m; ++k) {
             const Vec3d& q = samples[static_cast<std::size_t>(k)];
@@ -324,6 +330,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
             for (Eigen::Index c = 0; c < 3; ++c) pointTargets(c * m + k) = 0.0;
             if (sp.distance > gate) continue; // an empty row: the sample is left out
             sum2 += sp.distance * sp.distance;
+            maxD = std::max(maxD, sp.distance);
             ++used;
             (*limit)->weights(sp.patch, sp.s, sp.t, w);
             const std::array<double, 3> nc{sp.normal.x, sp.normal.y, sp.normal.z};
@@ -340,8 +347,11 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
                 pointTargets(c * m + k) = qc[static_cast<std::size_t>(c)];
         }
         const double rms = std::sqrt(sum2 / double(std::max<std::size_t>(used, 1)));
-        if (rms < bestRms) {
+        // A round that leaves every sample out measures nothing; it is not a perfect fit.
+        if (used > 0 && rms < bestRms) {
             bestRms = rms;
+            bestUsed = used;
+            bestMax = maxD;
             best = positions;
         }
         if (it == params.iterations) break; // the last pass only measures
@@ -369,25 +379,14 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         }
     }
 
-    positions = std::move(best);
-    auto fitted = cage.withPositions(positions);
+    auto fitted = cage.withPositions(std::move(best));
     if (!fitted) return std::unexpected(fitted.error());
-    auto tess = tessellate(**limit, (*limit)->patchPoints(positions), kSearchGrid);
-    if (!tess) return std::unexpected(tess.error());
-    CageFitResult result{std::move(*fitted), 0, 0, 0.0, 0.0, std::move(history)};
-    double sum2 = 0.0;
-    for (const Vec3d& q : samples) {
-        const double d = locate(*tess, q).distance;
-        if (d > gate) {
-            ++result.ignoredSamples;
-            continue;
-        }
-        ++result.samples;
-        sum2 += d * d;
-        result.maxDistanceMm = std::max(result.maxDistanceMm, d);
-    }
-    result.rmsDistanceMm = std::sqrt(sum2 / double(std::max<std::size_t>(result.samples, 1)));
-    return result;
+    return CageFitResult{std::move(*fitted),
+                         bestUsed,
+                         samples.size() - bestUsed,
+                         bestUsed > 0 ? bestRms : 0.0,
+                         bestMax,
+                         std::move(history)};
 }
 
 Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& params) {

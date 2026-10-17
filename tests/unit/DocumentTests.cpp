@@ -165,3 +165,11 @@ TEST_CASE("Deviations follow their mesh and reference", "[document]") {
     CHECK_FALSE(doc.find(*dev).has_value());
     CHECK(doc.find(*id).has_value());
 }
+
+TEST_CASE("Loading a document never hands out id 0", "[document]") {
+    Document doc;
+    REQUIRE(doc.load({}, 0).has_value());
+    const auto id = doc.addMesh("Cube", cube());
+    REQUIRE(id.has_value());
+    CHECK(*id == 1);
+}

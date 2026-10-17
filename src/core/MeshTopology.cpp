@@ -29,28 +29,47 @@ FaceAdjacency buildFaceAdjacency(const TriMesh& mesh) {
         return l.key < r.key || (l.key == r.key && l.face < r.face);
     });
 
-    std::vector<std::pair<std::uint32_t, std::uint32_t>> pairs;
-    for (std::size_t i = 0; i < uses.size();) {
-        std::size_t j = i;
-        while (j < uses.size() && uses[j].key == uses[i].key) ++j;
-        for (std::size_t p = i; p < j; ++p) {
-            for (std::size_t q = p + 1; q < j; ++q) {
-                if (uses[p].face == uses[q].face) continue;
-                pairs.emplace_back(uses[p].face, uses[q].face);
-                pairs.emplace_back(uses[q].face, uses[p].face);
+    // Faces sharing an edge are neighbours. Count each face's neighbours, lay the lists out
+    // in place and then sort and deduplicate each face's short list, rather than sorting one
+    // list of every pair.
+    const auto forEachPair = [&](auto&& visit) {
+        for (std::size_t i = 0; i < uses.size();) {
+            std::size_t j = i;
+            while (j < uses.size() && uses[j].key == uses[i].key) ++j;
+            for (std::size_t p = i; p < j; ++p) {
+                for (std::size_t q = p + 1; q < j; ++q) {
+                    if (uses[p].face != uses[q].face) visit(uses[p].face, uses[q].face);
+                }
             }
+            i = j;
         }
-        i = j;
-    }
-    std::sort(pairs.begin(), pairs.end());
-    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
-
+    };
     FaceAdjacency adj;
     adj.offsets.assign(faceCount + 1, 0);
-    for (const auto& [f, g] : pairs) ++adj.offsets[f + 1];
+    forEachPair([&](std::uint32_t f, std::uint32_t g) {
+        ++adj.offsets[f + 1];
+        ++adj.offsets[g + 1];
+    });
     std::partial_sum(adj.offsets.begin(), adj.offsets.end(), adj.offsets.begin());
-    adj.neighbours.reserve(pairs.size());
-    for (const auto& [f, g] : pairs) adj.neighbours.push_back(g);
+    adj.neighbours.resize(adj.offsets.back());
+    std::vector<std::uint32_t> next(adj.offsets.begin(), adj.offsets.end() - 1);
+    forEachPair([&](std::uint32_t f, std::uint32_t g) {
+        adj.neighbours[next[f]++] = g;
+        adj.neighbours[next[g]++] = f;
+    });
+    std::uint32_t begin = 0;
+    std::uint32_t kept = 0;
+    for (std::size_t f = 0; f < faceCount; ++f) {
+        const std::uint32_t end = adj.offsets[f + 1];
+        std::uint32_t* const first = adj.neighbours.data() + begin;
+        std::sort(first, adj.neighbours.data() + end);
+        const std::uint32_t* const last = std::unique(first, adj.neighbours.data() + end);
+        adj.offsets[f] = kept;
+        for (const std::uint32_t* g = first; g != last; ++g) adj.neighbours[kept++] = *g;
+        begin = end;
+    }
+    adj.offsets[faceCount] = kept;
+    adj.neighbours.resize(kept);
     return adj;
 }
 

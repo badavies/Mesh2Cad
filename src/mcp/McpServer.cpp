@@ -56,17 +56,22 @@ Result<Json> McpServer::listTools() {
 }
 
 Json McpServer::callTool(const Json& params) {
-    const std::string name = params.value("name", "");
+    const auto failed = [](const std::string& text) {
+        return Json{{"content", {{{"type", "text"}, {"text", text}}}}, {"isError", true}};
+    };
+    if (!params.is_object() || !params.contains("name") || !params["name"].is_string()) {
+        return failed("tools/call needs the tool's name");
+    }
+    const std::string name = params["name"].get<std::string>();
     if (commandForTool_.empty()) (void)listTools();
+    // Only listed tools: internal methods such as rpc.auth are not tools.
     const auto it = commandForTool_.find(name);
-    const std::string command = it != commandForTool_.end() ? it->second : name;
-    const Json arguments = params.value("arguments", Json::object());
+    if (it == commandForTool_.end()) return failed("unknown tool '" + name + "'");
+    const std::string& command = it->second;
+    const Json arguments = params.contains("arguments") ? params["arguments"] : Json::object();
 
     const auto reply = call_(command, arguments);
-    if (!reply) {
-        return Json{{"content", {{{"type", "text"}, {"text", reply.error().message}}}},
-                    {"isError", true}};
-    }
+    if (!reply) return failed(reply.error().message);
     if (reply->contains("error")) {
         const Json& e = (*reply)["error"];
         return Json{
@@ -87,10 +92,13 @@ std::optional<Json> McpServer::handle(const Json& message) {
         }
         return std::nullopt; // a response or junk: nothing to answer
     }
-    const std::string method = message["method"].get<std::string>();
     if (!message.contains("id")) return std::nullopt; // notifications (initialized, cancelled)
     const Json id = message["id"];
-    const Json params = message.value("params", Json::object());
+    if (!message["method"].is_string()) {
+        return std::make_optional(errorResponse(id, -32600, "invalid request"));
+    }
+    const std::string method = message["method"].get<std::string>();
+    const Json params = message.contains("params") ? message["params"] : Json::object();
 
     if (method == "initialize") {
         return std::make_optional(

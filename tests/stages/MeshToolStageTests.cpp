@@ -359,3 +359,23 @@ TEST_CASE("Deleting, keeping and flipping faces", "[stages][faces]") {
     CHECK_THAT(computeStats(*flipFaces(cube)).signedVolume, WithinAbs(-1.0, 1e-12));
     CHECK_FALSE(deleteFaces(cube, MeshSelection(5)).has_value());
 }
+
+TEST_CASE("Smoothing a selection keeps its border, so other faces keep their shape",
+          "[stages][smooth]") {
+    const TriMesh box = addNoise(makeBox(10, 10, 10, 6), 0.05);
+    MeshSelection top(box.faceCount());
+    for (std::size_t f = 0; f < box.faceCount(); ++f) {
+        if (faceNormal(box, f).z > 0.9) top.set(f);
+    }
+    const auto smoothed = smoothTaubin(box, SmoothParams{10, 0.5, false, 40.0}, &top);
+    REQUIRE(smoothed.has_value());
+    std::size_t moved = 0;
+    for (std::size_t f = 0; f < box.faceCount(); ++f) {
+        for (const std::uint32_t v : box.face(f)) {
+            if (box.positions()[v] == smoothed->positions()[v]) continue;
+            ++moved;
+            CHECK(top.test(f)); // only vertices whose faces are all selected move
+        }
+    }
+    CHECK(moved > 0);
+}

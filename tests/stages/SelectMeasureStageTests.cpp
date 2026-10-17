@@ -82,3 +82,13 @@ TEST_CASE("Measurement snaps to vertices, edges and surfaces", "[stages][measure
     REQUIRE(hit.has_value());
     CHECK_THAT(hit->point.z, WithinAbs(10.0, 1e-12));
 }
+
+TEST_CASE("Measurement snaps to a vertex of a neighbouring face", "[stages][measure]") {
+    // Two triangles across the edge x = 1; the query lands on the first, nearest the second's
+    // far corner (1.05, 0.5), which the first triangle does not have.
+    const TriMesh strip =
+        makeMesh({{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {1.05, 0.5, 0}}, {0, 1, 2, 1, 3, 2});
+    const PickedPoint p = snapToMesh(strip, 1, {0.99, 0.5, 0.0}, 0.1);
+    CHECK(p.snap == SnapKind::Vertex);
+    CHECK(p.position == Vec3d{1.05, 0.5, 0});
+}

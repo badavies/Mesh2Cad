@@ -169,3 +169,15 @@ TEST_CASE("readMesh and writeMesh choose the format by extension", "[io]") {
     }
     CHECK(readMesh(dir.path() / "x.3mf").error().code == ErrorCode::Unsupported);
 }
+
+TEST_CASE("PLY reader refuses a NaN list count and skips empty elements quickly", "[io][ply]") {
+    const std::string head = "ply\nformat ascii 1.0\nelement vertex 3\nproperty float x\n"
+                             "property float y\nproperty float z\nelement face 1\n"
+                             "property list uchar int vertex_indices\n";
+    CHECK_FALSE(plyFrom(head + "end_header\n0 0 0\n1 0 0\n0 1 0\nnan 0 1 2\n").has_value());
+    // An element with no properties and a huge count holds no data to read.
+    const auto mesh = plyFrom(head + "element nothing 999999999999\nend_header\n"
+                                     "0 0 0\n1 0 0\n0 1 0\n3 0 1 2\n");
+    REQUIRE(mesh.has_value());
+    CHECK(mesh->faceCount() == 1);
+}

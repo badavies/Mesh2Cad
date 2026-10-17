@@ -146,3 +146,14 @@ TEST_CASE("Display proxies shrink big meshes and keep their shape", "[core][prox
     for (const Vec3d& v : proxy.positions()) CHECK(std::abs(length(v) - 10.0) < 1.0);
     CHECK(buildDisplayProxy(sphere, 100000).faceCount() == sphere.faceCount());
 }
+
+TEST_CASE("Ray casts and closest points cope with -0.0 and flat triangles", "[core][spatial]") {
+    // A direction of -0.0 across an axis on which the origin lies on the boxes' faces.
+    const TriMesh cube = makeCube();
+    const auto hit = cube.spatialIndex().raycast({0.0, 0.5, 5.0}, {-0.0, 0.0, -1.0});
+    REQUIRE(hit.has_value());
+    CHECK_THAT(hit->distance, WithinAbs(4.0, 1e-12));
+    // A triangle with two equal corners is the segment between its two distinct corners.
+    CHECK(closestPointOnTriangle({2, 1, 0}, {0, 0, 0}, {0, 0, 0}, {2, 0, 0}) == Vec3d{2, 0, 0});
+    CHECK(closestPointOnTriangle({1, 1, 0}, {0, 0, 0}, {2, 0, 0}, {2, 0, 0}) == Vec3d{1, 0, 0});
+}

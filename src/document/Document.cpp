@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/document/Document.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace m2c {
@@ -245,7 +246,7 @@ Result<void> Document::load(std::vector<DocumentObject> objects, ObjectId nextId
             return ok;
         }
     }
-    nextId_ = nextId;
+    nextId_ = std::max<ObjectId>(nextId, 1); // 0 is never an object's id
     undo_.clear();
     redo_.clear();
     ++revision_;

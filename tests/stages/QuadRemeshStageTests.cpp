@@ -65,6 +65,8 @@ TEST_CASE("Cage creation rejects malformed faces", "[stages][quad]") {
     CHECK_FALSE(QuadLayout::create(p, {0, 2}, {0, 1}));    // two vertices
     CHECK_FALSE(QuadLayout::create(p, {0, 3}, {0, 1, 1})); // repeated vertex
     CHECK_FALSE(QuadLayout::create(p, {0, 3}, {0, 1, 5})); // out of range
+    // An offset past the end of the vertex list, followed by one that is in range.
+    CHECK_FALSE(QuadLayout::create(p, {0, 1000, 6}, {0, 1, 2, 0, 2, 3}));
     CHECK_FALSE(QuadLayout::create(p, {0, 4}, {0, 1, 2})); // offsets past the end
     CHECK_FALSE(QuadLayout::create({}, {0}, {}));          // empty
     CHECK(QuadLayout::create(p, {0, 3}, {0, 1, 2}));

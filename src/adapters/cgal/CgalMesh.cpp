@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
 
 namespace m2c::cgal {
@@ -21,7 +22,12 @@ SurfaceMesh toSurfaceMesh(const TriMesh& mesh) {
         const auto [a, b, c] = mesh.face(f);
         faces.push_back({a, b, c});
     }
-    // Handles non-manifold input by duplicating vertices where needed.
+    // The conversion skips faces it cannot add to a manifold mesh. Orienting the soup first
+    // splits non-manifold vertices and flips faces into a consistent orientation, so no face is
+    // lost on a mesh that was not repaired.
+    if (!CGAL::Polygon_mesh_processing::is_polygon_soup_a_polygon_mesh(faces)) {
+        CGAL::Polygon_mesh_processing::orient_polygon_soup(points, faces);
+    }
     CGAL::Polygon_mesh_processing::polygon_soup_to_polygon_mesh(points, faces, out);
     return out;
 }

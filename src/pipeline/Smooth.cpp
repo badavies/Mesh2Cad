@@ -19,28 +19,45 @@ struct VertexRing {
     std::vector<std::uint32_t> neighbours;
 };
 
-/// One-ring vertex neighbours (sorted, unique) from the faces.
+/// One-ring vertex neighbours (sorted, unique) from the faces: counted, laid out in place, then
+/// each vertex's short list sorted and deduplicated.
 VertexRing buildVertexRing(const TriMesh& mesh) {
-    std::vector<std::pair<std::uint32_t, std::uint32_t>> pairs;
-    pairs.reserve(mesh.faceCount() * 6);
-    for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
-        const auto v = mesh.face(f);
-        for (int k = 0; k < 3; ++k) {
-            const std::uint32_t a = v[static_cast<std::size_t>(k)];
-            const std::uint32_t b = v[static_cast<std::size_t>((k + 1) % 3)];
-            if (a == b) continue;
-            pairs.emplace_back(a, b);
-            pairs.emplace_back(b, a);
+    const auto forEachEdge = [&](auto&& visit) {
+        for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
+            const auto v = mesh.face(f);
+            for (int k = 0; k < 3; ++k) {
+                const std::uint32_t a = v[static_cast<std::size_t>(k)];
+                const std::uint32_t b = v[static_cast<std::size_t>((k + 1) % 3)];
+                if (a != b) visit(a, b);
+            }
         }
-    }
-    std::sort(pairs.begin(), pairs.end());
-    pairs.erase(std::unique(pairs.begin(), pairs.end()), pairs.end());
+    };
     VertexRing ring;
     ring.offsets.assign(mesh.vertexCount() + 1, 0);
-    for (const auto& [a, b] : pairs) ++ring.offsets[a + 1];
+    forEachEdge([&](std::uint32_t a, std::uint32_t b) {
+        ++ring.offsets[a + 1];
+        ++ring.offsets[b + 1];
+    });
     std::partial_sum(ring.offsets.begin(), ring.offsets.end(), ring.offsets.begin());
-    ring.neighbours.reserve(pairs.size());
-    for (const auto& [a, b] : pairs) ring.neighbours.push_back(b);
+    ring.neighbours.resize(ring.offsets.back());
+    std::vector<std::uint32_t> next(ring.offsets.begin(), ring.offsets.end() - 1);
+    forEachEdge([&](std::uint32_t a, std::uint32_t b) {
+        ring.neighbours[next[a]++] = b;
+        ring.neighbours[next[b]++] = a;
+    });
+    std::uint32_t begin = 0;
+    std::uint32_t kept = 0;
+    for (std::size_t v = 0; v < mesh.vertexCount(); ++v) {
+        const std::uint32_t end = ring.offsets[v + 1];
+        std::uint32_t* const first = ring.neighbours.data() + begin;
+        std::sort(first, ring.neighbours.data() + end);
+        const std::uint32_t* const last = std::unique(first, ring.neighbours.data() + end);
+        ring.offsets[v] = kept;
+        for (const std::uint32_t* w = first; w != last; ++w) ring.neighbours[kept++] = *w;
+        begin = end;
+    }
+    ring.offsets[mesh.vertexCount()] = kept;
+    ring.neighbours.resize(kept);
     return ring;
 }
 
@@ -61,6 +78,12 @@ smoothTaubin(const TriMesh& mesh, const SmoothParams& params, const MeshSelectio
     if (selection != nullptr) {
         for (const std::uint32_t f : selection->indices()) {
             for (const std::uint32_t v : mesh.face(f)) movable[v] = true;
+        }
+        // Vertices on the selection's border are outside it too: moving them would bend the
+        // unselected faces around the selection.
+        for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
+            if (selection->test(f)) continue;
+            for (const std::uint32_t v : mesh.face(f)) movable[v] = false;
         }
     }
     // Fix open-boundary vertices and, if asked, vertices on sharp edges.

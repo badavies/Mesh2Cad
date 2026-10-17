@@ -101,19 +101,10 @@ const void* drawSource(const DocumentObject& o) {
     return nullptr;
 }
 
-Aabb boundsOf(const std::vector<Vec3d>& points) {
-    Aabb box{{1e300, 1e300, 1e300}, {-1e300, -1e300, -1e300}};
-    for (const Vec3d& p : points) {
-        box.min = {std::min(box.min.x, p.x), std::min(box.min.y, p.y), std::min(box.min.z, p.z)};
-        box.max = {std::max(box.max.x, p.x), std::max(box.max.y, p.y), std::max(box.max.z, p.z)};
-    }
-    return box;
-}
-
 Aabb drawnBounds(const DocumentObject& o) {
     if (const MeshData* m = o.mesh()) return m->mesh->bounds();
     if (const SolidData* s = o.solid()) return s->solid.display().bounds();
-    return boundsOf(o.quadLayout()->cage.positions());
+    return o.quadLayout()->cage.bounds();
 }
 
 /// Each cage edge once, as pairs of vertex indices.
@@ -188,10 +179,10 @@ double Viewport::aspect() const {
 
 void Viewport::setSnapshot(std::shared_ptr<const DocSnapshot> snapshot) {
     const bool hadMeshes =
-        snapshot_ && std::any_of(snapshot_->objects.begin(), snapshot_->objects.end(), isMesh);
+        snapshot_ && std::any_of(snapshot_->objects.begin(), snapshot_->objects.end(), isDrawn);
     snapshot_ = std::move(snapshot);
     const bool hasMeshes =
-        std::any_of(snapshot_->objects.begin(), snapshot_->objects.end(), isMesh);
+        std::any_of(snapshot_->objects.begin(), snapshot_->objects.end(), isDrawn);
     if (!hadMeshes && hasMeshes) fitPending_ = true;
     if (hover_ && snapshot_->find(hover_->meshId) == nullptr) hover_.reset();
     update();
@@ -432,7 +423,7 @@ void Viewport::syncGpu() {
                 gpu.keepAlive = std::move(solid);
             } else {
                 auto cage = std::make_shared<const QuadLayout>(o.quadLayout()->cage);
-                const Aabb box = boundsOf(cage->positions());
+                const Aabb& box = cage->bounds();
                 gpu.offset = (box.min + box.max) * 0.5;
                 gpu.lines = true;
                 upload(gpu,
@@ -577,6 +568,11 @@ std::optional<QPointF> Viewport::project(const Vec3d& p) const {
     return QPointF((x / w + 1.0) * 0.5 * width(), (1.0 - y / w) * 0.5 * height());
 }
 
+double Viewport::snapMm(const Vec3d& at) const {
+    constexpr double kSnapPixels = 8.0;
+    return kSnapPixels / pixelsPerMm(at);
+}
+
 double Viewport::pixelsPerMm(const Vec3d& at) const {
     const double depth = std::max(dot(at - camera_.eye(), camera_.forward()), 1e-9);
     const double focal = height() / (2.0 * std::tan(camera_.fovYDeg * 3.14159265358979 / 360.0));
@@ -588,7 +584,7 @@ void Viewport::drawOverlay() {
     painter.setRenderHint(QPainter::Antialiasing);
     const QColor accent(255, 140, 40);
 
-    if (!snapshot_ || std::none_of(snapshot_->objects.begin(), snapshot_->objects.end(), isMesh)) {
+    if (!snapshot_ || std::none_of(snapshot_->objects.begin(), snapshot_->objects.end(), isDrawn)) {
         painter.setPen(QColor(170, 175, 185));
         painter.drawText(rect(),
                          Qt::AlignCenter,
@@ -696,15 +692,17 @@ void Viewport::drawOverlay() {
 const DocumentObject* Viewport::legendDeviation() const {
     if (!snapshot_) return nullptr;
     const DocumentObject* first = nullptr;
+    const DocumentObject* current = nullptr;
     for (const DocumentObject& o : snapshot_->objects) {
         const DeviationData* d = o.deviation();
         if (d == nullptr || !o.visible) continue;
         const DocumentObject* mesh = snapshot_->find(d->meshId);
         if (mesh == nullptr || !mesh->visible) continue;
-        if (d->meshId == currentMesh_) return &o;
+        // The newest one, which is the one syncColors() paints.
+        if (d->meshId == currentMesh_) current = &o;
         if (first == nullptr) first = &o;
     }
-    return first;
+    return current != nullptr ? current : first;
 }
 
 void Viewport::drawLegend(QPainter& painter, const DocumentObject& deviation) {

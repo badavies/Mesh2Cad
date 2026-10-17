@@ -140,3 +140,21 @@ TEST_CASE("Version 1 project files still open", "[io][project]") {
     writeVersion1(path, R"([{"id":1,"name":"C","kind":"quad_layout","file":"meshes/1.ply"}])");
     CHECK(readProject(path).error().code == ErrorCode::Parse);
 }
+
+TEST_CASE("Project files keep coincident vertices apart", "[io][project]") {
+    // Two triangles meeting at one corner through two vertices at the same place, as repair
+    // leaves a split non-manifold vertex: reading the project must not weld them back.
+    const TempDir dir;
+    ProjectData project;
+    project.nextId = 2;
+    const auto split = std::make_shared<const TriMesh>(makeMesh(
+        {{0, 0, 0}, {1, 0, 0}, {0, 1, 0}, {0, 0, 0}, {-1, 0, 0}, {0, -1, 0}}, {0, 1, 2, 3, 4, 5}));
+    project.objects.push_back({1, "Scan", true, ProjectMesh{split, {}}, "mesh.repair", "{}", {}});
+    const auto path = dir.path() / "split.m2c";
+    REQUIRE(writeProject(project, path).has_value());
+    const auto back = readProject(path);
+    REQUIRE(back.has_value());
+    const auto& mesh = std::get<ProjectMesh>(back->objects[0].data);
+    CHECK(mesh.mesh->positions() == split->positions());
+    CHECK(mesh.mesh->indices() == split->indices());
+}

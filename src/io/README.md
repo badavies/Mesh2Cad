@@ -10,7 +10,7 @@ document objects.
 - `m2c/io/MeshIO.h`: `readMesh` and `writeMesh`, which pick STL, OBJ or PLY from the file extension.
 - `m2c/io/Stl.h`: `readStl` (binary or ASCII) and `writeStl` (binary, float coordinates).
 - `m2c/io/Obj.h`: `readObj` (positions and faces only) and `writeObj` (round-trips exactly).
-- `m2c/io/Ply.h`: `readPly` (ASCII or binary, either byte order) and `writePly` (binary little-endian, double precision).
+- `m2c/io/Ply.h`: `readPly` (ASCII or binary, either byte order), `readPlyUnwelded` (the project file's mesh reader, which keeps vertices as stored) and `writePly` (binary little-endian, double precision).
 - `m2c/io/Step.h`: `writeStep` (AP242, millimetres) and `readStep` returning a `SolidSummary` of the whole file, from the Open CASCADE adapter.
 - `m2c/io/Report.h`: `writeDeviationReport`, a deviation's statistics and histogram as CSV.
 - `m2c/io/Project.h`: `ProjectData`, `ProjectObject`, `ProjectMesh`, `ProjectSelection`, `ProjectDeviation`, `kProjectFormatVersion`, `writeProject` and `readProject`.

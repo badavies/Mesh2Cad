@@ -23,6 +23,7 @@
 #include <QStatusBar>
 #include <QToolBar>
 #include <QTreeWidget>
+#include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
 #include <map>
 
@@ -145,14 +146,31 @@ void MainWindow::buildDocks() {
         QTreeWidgetItem* item = tree_->itemAt(pos);
         if (item == nullptr) return;
         const auto id = item->data(0, kIdRole).value<ObjectId>();
+        const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
         QMenu menu;
         menu.addAction(tr("Fit view"), this, [this, id] { viewport_->fitObject(id); });
-        menu.addAction(tr("Rename"), this, [this, item] { tree_->editItem(item, 0); });
-        menu.addAction(tr("Info"), this, [this, id] {
-            run("mesh.info", {{"id", id}}, [this](const Result<Json>& r) {
-                if (r) log_->appendPlainText(QString::fromStdString(r->dump(2)));
-            });
+        // An edit (an agent's, say) can rebuild the tree while the menu is open, deleting
+        // `item`, so find the object's item again.
+        menu.addAction(tr("Rename"), this, [this, id] {
+            for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
+                if ((*it)->data(0, kIdRole).value<ObjectId>() == id) {
+                    tree_->editItem(*it, 0);
+                    return;
+                }
+            }
         });
+        const char* info = o == nullptr                ? nullptr
+                           : o->mesh() != nullptr      ? "mesh.info"
+                           : o->solid() != nullptr     ? "solid.info"
+                           : o->deviation() != nullptr ? "deviation.report"
+                                                       : nullptr;
+        if (info != nullptr) {
+            menu.addAction(tr("Info"), this, [this, id, info] {
+                run(info, {{"id", id}}, [this](const Result<Json>& r) {
+                    if (r) log_->appendPlainText(QString::fromStdString(r->dump(2)));
+                });
+            });
+        }
         menu.addSeparator();
         menu.addAction(tr("Delete"), this, [this, id] { run("object.delete", {{"id", id}}); });
         menu.exec(tree_->viewport()->mapToGlobal(pos));
@@ -542,9 +560,31 @@ Json MainWindow::formDefaults(const Command& command) const {
     const auto isRequired = [&](const std::string& k) {
         return std::find(required.begin(), required.end(), k) != required.end();
     };
+    // The selected object of a kind, else the newest one.
+    const auto pick = [this](const std::string& kind) -> ObjectId {
+        if (!snapshot_) return 0;
+        const DocumentObject* o = snapshot_->find(selected_);
+        if (o != nullptr && o->kind() == kind) return o->id;
+        for (auto it = snapshot_->objects.rbegin(); it != snapshot_->objects.rend(); ++it) {
+            if (it->kind() == kind) return it->id;
+        }
+        return 0;
+    };
+    // Commands whose "id" is not a mesh.
+    static const std::map<std::string, std::string> kIdKind{{"surface.build", "quad_layout"},
+                                                            {"solid.info", "solid"},
+                                                            {"solid.export", "solid"},
+                                                            {"deviation.report", "deviation"}};
     if (properties.contains("id")) {
-        const ObjectId id = command.name.rfind("object.", 0) == 0 ? selected_ : currentMesh();
+        const auto kind = kIdKind.find(command.name);
+        const ObjectId id = kind != kIdKind.end()                   ? pick(kind->second)
+                            : command.name.rfind("object.", 0) == 0 ? selected_
+                                                                    : currentMesh();
         if (id != 0) values["id"] = id;
+    }
+    if (properties.contains("mesh_id") && currentMesh() != 0) values["mesh_id"] = currentMesh();
+    if (properties.contains("reference_id")) {
+        if (const ObjectId solid = pick("solid")) values["reference_id"] = solid;
     }
     if (properties.contains("selection_id") && isRequired("selection_id") && currentSelection()) {
         values["selection_id"] = currentSelection();
@@ -651,9 +691,11 @@ void MainWindow::onFaceClicked(Hit hit, bool subtract, bool add) {
 }
 
 void MainWindow::onMeasured(Hit a, Hit b) {
+    // Points snap to a vertex or edge within a few pixels of the click.
     run("measure.distance",
         {{"a", {{"id", a.meshId}, {"point", toJson(a.point)}}},
-         {"b", {{"id", b.meshId}, {"point", toJson(b.point)}}}},
+         {"b", {{"id", b.meshId}, {"point", toJson(b.point)}}},
+         {"snap_mm", std::min(viewport_->snapMm(a.point), viewport_->snapMm(b.point))}},
         [this](const Result<Json>& r) {
             if (r && r->contains("distance_mm")) {
                 status_->setText(
