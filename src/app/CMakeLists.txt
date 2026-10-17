@@ -7,6 +7,7 @@ add_library(m2c_app STATIC
     Engine.h
     Camera.cpp
     Camera.h
+    DeviationColors.h
     Viewport.cpp
     Viewport.h
     ParamForm.cpp

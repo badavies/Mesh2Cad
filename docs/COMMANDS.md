@@ -63,6 +63,29 @@ Apply a rigid transform (rotation matrix and translation) to a mesh. *(changes t
 
 List every registered command with its summary and parameter schema. *(read-only)*
 
+## deviation
+
+### `deviation.compute`
+
+Signed distance from every vertex of a mesh to a solid (exact, onto its B-spline faces) or to another mesh, positive outside the reference, with statistics. Adds a deviation object that belongs to the mesh: it goes when the mesh or the reference is removed or changed. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The mesh whose vertices are measured. |
+| `name` | string |  |  |
+| `reference_id` | integer | yes | The solid or mesh to measure to. |
+| `tolerance_mm` | number |  | Distances within this count as in tolerance. Default `0.1`. |
+
+### `deviation.report`
+
+Write a deviation's statistics and a histogram of its distances to a CSV file. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `bins` | integer |  | Histogram bins from the smallest to the largest distance. Default `20`. |
+| `id` | integer | yes | The deviation. |
+| `path` | string | yes | The .csv file to write. |
+
 ## doc
 
 ### `doc.history`
@@ -71,7 +94,7 @@ List the undo and redo steps, with the source (ui, cli, json, mcp) of each. *(re
 
 ### `doc.list`
 
-List the objects in the document: meshes, selections and measurements. *(read-only)*
+List the objects in the document: meshes, selections, measurements and quad layouts. *(read-only)*
 
 ### `doc.redo`
 
@@ -273,11 +296,25 @@ Open a project file, replacing the current document. Clears the undo history. *(
 
 ### `project.save`
 
-Save every object (meshes, selections, measurements, alignments) to a project file (.m2c). *(read-only)*
+Save every object (meshes, selections, measurements, alignments, quad layouts, solids and deviations) to a project file (.m2c). *(read-only)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `path` | string | yes |  |
+
+## quad
+
+### `quad.remesh`
+
+Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges and loose fragments are dropped, open loops filled and faces pointed outward. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `crease_angle_deg` | number |  | Align the quads to edges sharper than this; 0 = treat the surface as smooth. Default `0`. |
+| `id` | integer | yes |  |
+| `name` | string |  |  |
+| `smooth_iterations` | integer |  | Rounds of smoothing that pull the cage vertices back onto the mesh. Default `2`. |
+| `target_faces` | integer |  | Approximate number of quads in the cage. Default `2000`. |
 
 ## select
 
@@ -417,3 +454,41 @@ Split every shell except the main part into its own mesh object. *(changes the d
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
+
+## solid
+
+### `solid.export`
+
+Write a solid to a STEP AP242 file in millimetres, then read the file back and check it holds one valid closed solid with the same volume (within 0.1%). Fails, writing nothing, if the solid is not valid. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The solid. |
+| `path` | string | yes | The .step or .stp file to write. |
+| `product_name` | string |  | Product name in the file; the object name if omitted. |
+
+### `solid.info`
+
+Describe a solid: face, edge and shell counts, whether it is closed and valid, its volume, area and bounds. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The solid. |
+
+## surface
+
+### `surface.build`
+
+Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `fit` | boolean |  | Fit the cage to the mesh first. Default `true`. |
+| `id` | integer | yes | The quad layout. |
+| `isolation_level` | integer |  | Refinement around irregular vertices: higher gives smaller caps and more faces' pieces. Default `2`. |
+| `iterations` | integer |  | Rounds of fitting. Default `3`. |
+| `max_sample_distance_mm` | number |  | Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length. Default `0`. |
+| `max_samples` | integer |  | Mesh vertices used for fitting (evenly thinned beyond this). Default `60000`. |
+| `mesh_id` | integer |  | The mesh to fit to; required unless fit is false. |
+| `name` | string |  |  |
+| `smoothing` | number |  | How strongly the cage keeps its own shape while fitting. Default `0.05`. |

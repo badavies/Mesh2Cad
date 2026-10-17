@@ -15,6 +15,7 @@ Headers live in this folder (no `m2c/app/` prefix); everything is in namespace `
 - `Viewport.h`: `Viewport` (OpenGL 3.3 view of a `DocSnapshot`), interaction `Mode` and `Hit`.
 - `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema.
 - `Camera.h`: `Camera` (orbit camera, +Z up) and `Mat4d` (double-precision 4x4 matrix).
+- `DeviationColors.h`: `deviationColor` and `deviationRange`, the deviation colour scale.
 
 ## Dependencies
 
@@ -28,5 +29,9 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
   thread and sends commands with `Engine::run`.
 - The viewport never changes the document either: tools emit signals that `MainWindow` turns
   into commands. Never add a UI-only code path; add a command instead.
+- Solids draw from their display mesh, quad layouts as orange edges. A mesh with a visible
+  deviation object is coloured by its newest one (green within tolerance, warm outward, cold
+  inward; **View > Colour-blind-safe deviation colours** switches to grey, orange and purple),
+  with a legend in the top right corner.
 - `--screenshot out.png FILE` renders and quits (CI smoke test). `--no-agent-socket` turns the
   local socket off.

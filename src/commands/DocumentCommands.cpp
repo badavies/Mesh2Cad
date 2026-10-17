@@ -48,7 +48,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
 
     out.push_back(makeCommand(
         "doc.list",
-        "List the objects in the document: meshes, selections and measurements.",
+        "List the objects in the document: meshes, selections, measurements and quad layouts.",
         kNoParams,
         false,
         [](CommandContext& context, const Json&) -> Result<Json> {
@@ -195,6 +195,9 @@ Result<void> registerBuiltinCommands(CommandRegistry& registry) {
     cmd::addSelectionCommands(commands);
     cmd::addAlignMeasureCommands(commands);
     cmd::addProjectCommands(commands);
+    cmd::addQuadCommands(commands);
+    cmd::addSurfaceCommands(commands);
+    cmd::addDeviationCommands(commands);
     for (Command& command : commands) {
         if (auto added = registry.add(std::move(command)); !added) return added;
     }

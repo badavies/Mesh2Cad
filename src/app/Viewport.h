@@ -3,6 +3,7 @@
 
 #include <QOpenGLShaderProgram>
 #include <QOpenGLWidget>
+#include <QPainter>
 #include <QPolygonF>
 #include <QTimer>
 #include <array>
@@ -45,6 +46,8 @@ struct Hit {
 /// - Meshes over two million faces get a coarse proxy built in the background; it is drawn
 ///   while the camera moves.
 /// - Picking for brushing and hovering uses the mesh's own BVH at full resolution.
+/// - Solids draw shaded from their display mesh and quad layouts as their edges. A visible
+///   deviation colours its mesh per vertex, with a legend (DeviationColors.h).
 ///
 /// The viewport never changes the document: tools emit signals that the main window turns into
 /// commands, so everything a person does here is a command an agent could also send.
@@ -67,6 +70,8 @@ public:
     [[nodiscard]] double creaseAngle() const noexcept { return creaseAngle_; }
     void setWireframe(bool on);
     void setShowBackFaces(bool on);
+    void setColorBlindPalette(bool on);
+    [[nodiscard]] bool colorBlindPalette() const noexcept { return colorBlind_; }
 
     void fitAll();
     void fitObject(ObjectId id);
@@ -106,8 +111,9 @@ protected:
 
 private:
     struct GpuMesh {
-        const TriMesh* source{nullptr}; ///< Identity of the uploaded version.
-        std::shared_ptr<const TriMesh> keepAlive;
+        const void* source{nullptr}; ///< Identity of the uploaded version.
+        std::shared_ptr<const void> keepAlive;
+        bool lines{false}; ///< A quad layout's edges rather than triangles.
         Vec3d offset;
         GLuint vao{0}, vbo{0}, ebo{0};
         GLsizei indexCount{0};
@@ -115,6 +121,10 @@ private:
         std::vector<std::pair<const MeshSelection*, bool>> selectionKey; ///< (faces, is current)
         GLuint selBuffer{0}, selTexture{0};
         bool hasSelection{false};
+        // Deviation colours, one per vertex.
+        std::pair<const DeviationField*, bool> colorKey{nullptr, false}; ///< (field, colour-blind)
+        GLuint colorBuffer{0};
+        bool hasColors{false};
         // Coarse proxy for fast camera moves on huge meshes.
         std::shared_ptr<const TriMesh> proxy;
         GLuint pvao{0}, pvbo{0}, pebo{0};
@@ -124,9 +134,18 @@ private:
 
     void cleanupGl();
     void syncGpu();
-    void upload(
-        GpuMesh& gpu, const TriMesh& mesh, GLuint& vao, GLuint& vbo, GLuint& ebo, GLsizei& count);
+    void upload(GpuMesh& gpu,
+                const std::vector<Vec3d>& positions,
+                const std::vector<std::uint32_t>& indices,
+                GLuint& vao,
+                GLuint& vbo,
+                GLuint& ebo,
+                GLsizei& count);
     void syncSelection(GpuMesh& gpu, const DocumentObject& mesh);
+    void syncColors(GpuMesh& gpu, const DocumentObject& mesh);
+    /// The deviation whose legend is shown: on the current mesh if it has one, else the first.
+    [[nodiscard]] const DocumentObject* legendDeviation() const;
+    void drawLegend(QPainter& painter, const DocumentObject& deviation);
     void release(GpuMesh& gpu);
     void drawOverlay();
 
@@ -153,6 +172,7 @@ private:
     double creaseAngle_{20.0};
     bool wireframe_{false};
     bool showBackFaces_{true};
+    bool colorBlind_{false};
 
     // Mouse state.
     enum class Drag {

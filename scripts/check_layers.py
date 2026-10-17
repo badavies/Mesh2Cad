@@ -20,7 +20,7 @@ from pathlib import Path
 ALLOWED: dict[str, set[str]] = {
     "core": set(),
     "adapters": {"core"},
-    "io": {"core"},
+    "io": {"core", "adapters"},  # adapters from M2, for B-rep files (ARCHITECTURE.md section 4)
     "document": {"core"},
     "pipeline": {"core", "adapters"},
     "commands": {"core", "document", "io", "pipeline"},
@@ -30,8 +30,9 @@ ALLOWED: dict[str, set[str]] = {
     "mcp": {"core", "document", "commands", "rpc"},
 }
 
+# Open CASCADE headers all end in .hxx (and nothing else here uses that suffix).
 KERNEL_INCLUDE = re.compile(
-    r'^\s*#\s*include\s*[<"](CGAL/|opensubdiv/|opencascade/|TopoDS|BRep|Standard_|gp_)', re.M)
+    r'^\s*#\s*include\s*[<"](CGAL/|opensubdiv/|opencascade/|[A-Za-z0-9_]+\.hxx)', re.M)
 PROJECT_INCLUDE = re.compile(r'^\s*#\s*include\s*"m2c/([a-z_]+)/', re.M)
 SOURCE_SUFFIXES = {".h", ".hpp", ".cpp", ".cc", ".cxx", ".ipp"}
 

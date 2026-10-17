@@ -1,6 +1,6 @@
 # Scan-to-CAD Reverse Engineering App — Architecture & Roadmap
 
-Last updated: 16 October 2026 (revision 3: brought in line with what M0 and M1 built; see "Status after M1" in section 12. Revision 2 applied a technical review; see section 15)
+Last updated: 17 October 2026 (revision 4: brought in line with what M2 built; see "Status after M2" in section 12. Revision 3 did the same for M0 and M1; revision 2 applied a technical review, see section 15)
 
 ## 1. Purpose and scope
 
@@ -54,7 +54,7 @@ The core is C++23, licensed GPL-3.0-or-later, and every dependency must be GPL v
 | UI | Qt 6 Widgets | LGPL v3 | Windows, docks, panels, dialogs |
 | Viewport | Custom OpenGL renderer in a Qt widget | n/a | Large-mesh rendering with level of detail |
 | Mesh processing | CGAL | GPL v3 / LGPL v3 | Repair, hole filling, smoothing, simplification, shells, alpha wrapping, shape detection, AABB trees |
-| Quad remeshing | QuadWild (bi-MDF variant) as front-runner; Instant Meshes as comparison baseline; confirmed by the M2 spike | GPL v3 (QuadWild), BSD (Instant Meshes): check both in the spike | Automatic quad patch layout |
+| Quad remeshing | Instant Meshes core, single-threaded (ADR-009); QuadWild (bi-MDF) to revisit at M3 | BSD-3-Clause | Automatic quad patch layout |
 | Subdivision | OpenSubdiv | Apache 2.0 | Quad mesh to B-spline patches |
 | Linear algebra | Eigen | MPL 2.0 | Least-squares surface fitting |
 | CAD kernel | Open CASCADE (OCCT) | LGPL 2.1 + exception | B-rep, sewing, booleans, STEP, tessellation, point projection |
@@ -109,7 +109,7 @@ The rules below are enforced on every build by `scripts/check_layers.py` (a ctes
 | commands | document, pipeline, io, core | Qt, adapters, any front end |
 | document | core | Qt, commands, pipeline, io, adapters |
 | pipeline | adapters, core, Eigen | Qt, document, commands, io |
-| io | core, miniz (adapters from M2, for BREP in the project file) | Qt, document, pipeline |
+| io | core, adapters (for BREP in the project file and STEP), miniz | Qt, document, pipeline |
 | adapters | core, their own third-party library | each other, anything above them |
 | core | standard library | everything else |
 
@@ -421,6 +421,22 @@ Gate criteria:
 
 Where M1 differs from the plan above: no oneTBB, spdlog or json-schema-validator yet (section 3); commands run to completion without job ids or cancel (section 8); tools take `(mesh, params)` without progress or cancel (section 9); golden scans are local, hash-checked copies rather than Git LFS files (ADR-025).
 
+**Status after M2 (17 October 2026)**
+
+Built in M2: Open CASCADE, OpenSubdiv and Instant Meshes in the build, from vcpkg or the system or else from source at configure time (ADR-026); six new commands, 49 in all (`docs/COMMANDS.md`): `quad.remesh` (Instant Meshes, single-threaded, with cage clean-up; ADR-009), `surface.build` (cage fitting through limit stencils, B-spline extraction, sewing), `solid.info`, `solid.export` (STEP AP242, read back and checked), `deviation.compute` (to a solid or a mesh) and `deviation.report` (CSV); project file format 2, which keeps quad layouts, solids and deviations and still opens format 1; and in the app, solids, quad cages as orange edges, and deviation colour maps with a legend and a colour-blind-safe palette.
+
+As built, where M2 differs from sections 5 to 7:
+
+- Surface build fits the cage by point-to-plane least squares (Eigen `SimplicialLDLT`) with a small point term and a smoothing term, in a few rounds that keep the best; samples far from the surface (parts the cage does not cover) are left out. Regular regions convert exactly to bicubic pieces; each cap at an extraordinary vertex is also bicubic, not a degree-5 `GeomPlate` patch: its boundary curves are the neighbours' and its four interior poles are fitted to the limit surface under the neighbours' tangent planes. On the controller the largest cap error is 0.003 mm and the largest angle across any edge is 1.4 degrees. Faces are sewn with `BRepBuilderAPI_Sewing` and closed with `ShapeFix_Solid`; the command fails unless the result is one valid closed solid.
+- There is no `SurfaceModel` or `SolidRef` type. A core `Solid` holds an opaque shape owned by the OCCT adapter, the B-spline faces (`SurfacePatch`, one per cage quad, for exact distance queries) and a triangulation for display. `QuadLayout` has no link to scan regions yet. Patch merging is M3, so the controller solid has 1,954 faces.
+- Deviation to a solid starts from the closest display triangle and projects onto that face with `ShapeAnalysis_Surface`; it runs single-threaded (no oneTBB, as in M1). The colour range is set from the data (the larger of the 95th percentile and twice the tolerance) rather than by the user, and there is no probe, worst-regions list or report screenshot yet; the report is the statistics and a histogram as CSV.
+
+Gate criteria:
+
+- M2, the controller scan opens in Fusion 360 as one solid body: the golden session `tests/golden/dji_controller_3_surface` builds one valid closed solid with one shell and no free edges, and its STEP file reads back with Open CASCADE as the same solid, on Linux, through the CLI path, JSON-RPC and MCP with identical results (47 s for the session in a Release build). The Fusion 360 check (`docs/FUSION_CHECKLIST.md`) on the Windows machine is still to be signed off.
+- M2, deviation colour map and report: met. On the controller the 95th percentile is 0.78 mm and 70% of points are within 0.1 mm; the largest deviation, 26.2 mm, is at the two thumbstick posts, which the quad remesher drops as separate components (#25). The rest is the 2,000-quad cage smoothing over button detail. These values are stored as golden limits for M3 to tighten towards its 0.1 mm gate.
+- Housekeeping (section 11): done in this revision; the baseline for the next gate is `docs/BASELINE.md`.
+
 ## 13. Risks and open decisions
 
 The biggest technical risk is the surfacing stage producing small gaps or kinks, which makes Fusion import loose surfaces instead of a solid. M2 exists to expose that risk early.
@@ -441,7 +457,7 @@ The biggest technical risk is the surfacing stage producing small gaps or kinks,
 
 **Open decisions**
 
-- [ ] Quad remesher: QuadWild (bi-MDF) is the front-runner because it targets clean patch layouts; confirm against Instant Meshes in an M2 spike on three golden scans, including a licence check.
+- [x] Quad remesher: Instant Meshes for M2, after a spike on three golden scans (ADR-009). QuadWild could not be built in the spike; revisit it at M3 if the layout limits accuracy.
 - [ ] Platforms: Windows and Linux in CI; decide whether macOS is supported.
 - [ ] Rust import module: revisit after M1 fuzzing shows whether the C++ parsers cause real problems.
 - [ ] Sketch constraint solver: backlog; decide only if fitted sketches prove insufficient.
@@ -460,7 +476,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-006 | Subdivision-to-B-spline as the first surfacing path | Accepted | Smooth, mostly exact patches with the least custom fitting code |
 | ADR-007 | App-owned core types; kernel types confined to adapters | Accepted | Libraries stay replaceable; UI and pipeline stay simple |
 | ADR-008 | Qt 6 Widgets with a custom OpenGL viewport | Accepted (ADR-023) | Full control of large-mesh rendering; mature desktop widgets |
-| ADR-009 | Quad remesher choice | Proposed | Decided by the M2 spike |
+| ADR-009 | Quad remesher: Instant Meshes, single-threaded, with cage clean-up | Accepted | Builds as a library with no new runtime dependency; QuadWild could not be built in the spike; see `docs/adr/0009-quad-remesher.md` |
 | ADR-010 | Every action is a registered command; UI, CLI, JSON channel and MCP server are thin front ends | Accepted | One code path to test; automation and AI agents get every feature for free |
 | ADR-011 | JSON-RPC 2.0 over stdio or local socket; MCP server written in C++ on top of it | Accepted (ADR-023) | Reuses the same message code; avoids a second language |
 | ADR-012 | Language standard C++23 (supersedes C++20 in ADR-001) | Accepted | `std::expected` is C++23; avoids an extra dependency |
@@ -477,6 +493,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-023 | Qt app optional in the build; one engine thread runs commands from every source | Accepted | Responsive UI, no interleaved undo steps; see `docs/adr/0023-desktop-app-and-engine-thread.md` |
 | ADR-024 | Lasso selection by CPU projection, reproducible from the command | Accepted | Same result from UI, CLI and agents; see `docs/adr/0024-lasso-by-projection.md` |
 | ADR-025 | Golden scans are local, gitignored copies checked by SHA-256, not Git LFS files | Accepted | Scans stay out of the repository; the hash proves which file the limits were set on; see `docs/adr/0025-golden-scans-as-local-copies.md` |
+| ADR-026 | Open CASCADE and OpenSubdiv from vcpkg or the system, else built from source at configure time | Accepted | Builds without vcpkg, as ADR-020 requires; see `docs/adr/0026-occt-opensubdiv-source-fallback.md` |
 
 ## 15. Review log
 

@@ -129,3 +129,39 @@ TEST_CASE("Selections follow their mesh", "[document]") {
     REQUIRE(doc.remove(*id).has_value());
     CHECK(doc.objects().empty());
 }
+
+TEST_CASE("Deviations follow their mesh and reference", "[document]") {
+    Document doc;
+    const auto mesh = cube();
+    const auto id = doc.addMesh("m", mesh);
+    const auto ref = doc.addMesh("r", cube());
+    REQUIRE(id.has_value());
+    REQUIRE(ref.has_value());
+    const auto field = *DeviationField::create(std::vector<double>(8, 0.1), 0.5);
+    const auto dev = doc.add("d", DeviationData{*id, *ref, field});
+    REQUIRE(dev.has_value());
+    CHECK(std::string(doc.find(*dev)->kind()) == "deviation");
+
+    // Wrong size, missing mesh or missing reference is refused.
+    CHECK_FALSE(doc.add("bad", DeviationData{*id, *ref, *DeviationField::create({1.0}, 0.5)}));
+    CHECK(doc.add("bad", DeviationData{99, *ref, field}).error().code == ErrorCode::NotFound);
+    CHECK(doc.add("bad", DeviationData{*id, 99, field}).error().code == ErrorCode::NotFound);
+
+    // Moving the vertices invalidates the distances, even with the same faces.
+    std::vector<Vec3d> moved = mesh->positions();
+    for (Vec3d& v : moved) v.z += 1.0;
+    const auto shifted = std::make_shared<const TriMesh>(
+        *TriMesh::create(std::make_shared<const std::vector<Vec3d>>(moved), mesh->sharedIndices()));
+    REQUIRE(doc.replaceMesh(*id, shifted, {}).has_value());
+    CHECK_FALSE(doc.find(*dev).has_value());
+    REQUIRE(doc.undo().has_value());
+    CHECK(doc.find(*dev).has_value());
+
+    // So does changing or removing the reference.
+    REQUIRE(doc.replaceMesh(*ref, cube(), {}).has_value());
+    CHECK_FALSE(doc.find(*dev).has_value());
+    REQUIRE(doc.undo().has_value());
+    REQUIRE(doc.remove(*ref).has_value());
+    CHECK_FALSE(doc.find(*dev).has_value());
+    CHECK(doc.find(*id).has_value());
+}

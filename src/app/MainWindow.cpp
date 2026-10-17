@@ -56,6 +56,10 @@ QString groupTitle(const std::string& prefix) {
         {"align", QObject::tr("Align")},
         {"plane", QObject::tr("Fit")},
         {"measure", QObject::tr("Measure")},
+        {"quad", QObject::tr("Quad layout")},
+        {"surface", QObject::tr("Surface")},
+        {"solid", QObject::tr("Solid")},
+        {"deviation", QObject::tr("Deviation")},
         {"object", QObject::tr("Object")},
         {"project", QObject::tr("Project")},
     };
@@ -337,6 +341,9 @@ void MainWindow::buildMenus() {
     back->setCheckable(true);
     back->setChecked(true);
     connect(back, &QAction::toggled, viewport_, &Viewport::setShowBackFaces);
+    QAction* palette = view->addAction(tr("&Colour-blind-safe deviation colours"));
+    palette->setCheckable(true);
+    connect(palette, &QAction::toggled, viewport_, &Viewport::setColorBlindPalette);
     view->addSeparator();
     for (QDockWidget* dock : findChildren<QDockWidget*>())
         view->addAction(dock->toggleViewAction());
@@ -449,6 +456,10 @@ void MainWindow::refreshTree() {
             auto* item = makeItem(o, tr("%L1 faces").arg(m->mesh->faceCount()));
             tree_->addTopLevelItem(item);
             meshes[o.id] = item;
+        } else if (const QuadLayoutData* q = o.quadLayout()) {
+            tree_->addTopLevelItem(makeItem(o, tr("%L1 quads").arg(q->cage.faceCount())));
+        } else if (const SolidData* d = o.solid()) {
+            tree_->addTopLevelItem(makeItem(o, tr("%L1 faces").arg(d->solid.summary().faceCount)));
         }
     }
     for (const DocumentObject& o : snapshot_->objects) {
@@ -460,6 +471,9 @@ void MainWindow::refreshTree() {
         } else if (const MeasurementData* m = o.measurement()) {
             item = makeItem(o, QStringLiteral("%1 mm").arg(m->measurement.distance(), 0, 'f', 3));
             parent = m->measurement.a.objectId;
+        } else if (const DeviationData* d = o.deviation()) {
+            item = makeItem(o, tr("RMS %1 mm").arg(d->field.stats().rmsMm, 0, 'f', 3));
+            parent = d->meshId;
         } else {
             continue;
         }
@@ -494,6 +508,7 @@ ObjectId MainWindow::currentMesh() const {
     if (const DocumentObject* o = snapshot_->find(selected_)) {
         if (o->mesh() != nullptr) return o->id;
         if (const SelectionData* s = o->selection()) return s->meshId;
+        if (const DeviationData* d = o->deviation()) return d->meshId;
         if (const MeasurementData* m = o->measurement()) {
             if (m->measurement.a.objectId != 0) return m->measurement.a.objectId;
         }

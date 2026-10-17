@@ -7,7 +7,12 @@
     "nlohmann-json",
     "eigen3",
     "miniz",
-    "cgal"
+    "cgal",
+    {
+      "name": "opencascade",
+      "default-features": false
+    },
+    "opensubdiv"
   ],
   "default-features": [
     "tests"

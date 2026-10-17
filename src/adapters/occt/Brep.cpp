@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#include "m2c/adapters/occt/Brep.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <exception>
+#include <mutex>
+#include <sstream>
+#include <utility>
+
+#include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <BRepGProp.hxx>
+#include <BRepTools.hxx>
+#include <BRep_Builder.hxx>
+#include <BRep_Tool.hxx>
+#include <Bnd_Box.hxx>
+#include <GProp_GProps.hxx>
+#include <Geom_BSplineSurface.hxx>
+#include <IFSelect_ReturnStatus.hxx>
+#include <Interface_Static.hxx>
+#include <Message.hxx>
+#include <Message_Messenger.hxx>
+#include <NCollection_Array1.hxx>
+#include <NCollection_Array2.hxx>
+#include <NCollection_IndexedDataMap.hxx>
+#include <NCollection_IndexedMap.hxx>
+#include <NCollection_List.hxx>
+#include <Precision.hxx>
+#include <STEPControl_Reader.hxx>
+#include <STEPControl_Writer.hxx>
+#include <ShapeAnalysis_Surface.hxx>
+#include <ShapeFix_Solid.hxx>
+#include <Standard_Failure.hxx>
+#include <Standard_Version.hxx>
+#include <TopExp.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopTools_ShapeMapHasher.hxx>
+#include <TopoDS.hxx>
+#include <TopoDS_Edge.hxx>
+#include <TopoDS_Face.hxx>
+#include <TopoDS_Shell.hxx>
+#include <TopoDS_Solid.hxx>
+#include <TopoDS_Vertex.hxx>
+#include <gp_Pnt2d.hxx>
+#include <gp_Vec.hxx>
+
+#include "m2c/core/SpatialIndex.h"
+
+#include "Shape.h"
+
+namespace m2c::occt {
+
+namespace {
+
+const char* message(const Standard_Failure& e) {
+#if OCC_VERSION_HEX >= 0x080000
+    return e.what(); // Standard_Failure is a std::exception from OCCT 8
+#else
+    return e.GetMessageString();
+#endif
+}
+
+/// Open CASCADE reports progress through its default messenger, which prints to standard output;
+/// the CLI and the JSON channel use standard output for results, so it is silenced once.
+void silenceKernel() {
+    static std::once_flag once;
+    std::call_once(once, [] { Message::DefaultMessenger()->ChangePrinters().Clear(); });
+}
+
+/// Runs f, turning kernel exceptions into errors.
+template <class F>
+auto guarded(const char* what, F&& f) -> decltype(f()) {
+    silenceKernel();
+    try {
+        return f();
+    } catch (const Standard_Failure& e) {
+        return fail(ErrorCode::Internal,
+                    std::string(what) + " failed in Open CASCADE: " + message(e));
+    } catch (const std::exception& e) {
+        return fail(ErrorCode::Internal, std::string(what) + " failed: " + e.what());
+    }
+}
+
+std::string utf8(const std::filesystem::path& path) {
+    const std::u8string s = path.u8string();
+    return {s.begin(), s.end()};
+}
+
+opencascade::handle<Geom_BSplineSurface> toSurface(const SurfacePatch& patch) {
+    const auto row = static_cast<int>(patch.polesPerRow());
+    NCollection_Array2<gp_Pnt> poles(1, row, 1, row);
+    for (int j = 0; j < row; ++j) {
+        for (int i = 0; i < row; ++i) {
+            const Vec3d& p = patch.poles[static_cast<std::size_t>(j * row + i)];
+            poles.SetValue(i + 1, j + 1, gp_Pnt(p.x, p.y, p.z));
+        }
+    }
+    // Pieces meet with position continuity: interior knots of multiplicity three.
+    const auto spans = static_cast<int>(patch.spans);
+    NCollection_Array1<double> knots(1, spans + 1);
+    NCollection_Array1<int> mults(1, spans + 1);
+    for (int k = 0; k <= spans; ++k) {
+        knots.SetValue(k + 1, static_cast<double>(k) / spans);
+        mults.SetValue(k + 1, k == 0 || k == spans ? 4 : 3);
+    }
+    return new Geom_BSplineSurface(poles, knots, knots, mults, mults, 3, 3);
+}
+
+SolidSummary summarise(const TopoDS_Shape& shape) {
+    SolidSummary s;
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faces, edges, vertices;
+    TopExp::MapShapes(shape, TopAbs_FACE, faces);
+    TopExp::MapShapes(shape, TopAbs_EDGE, edges);
+    TopExp::MapShapes(shape, TopAbs_VERTEX, vertices);
+    for (TopExp_Explorer it(shape, TopAbs_SHELL); it.More(); it.Next()) ++s.shellCount;
+    for (TopExp_Explorer it(shape, TopAbs_SOLID); it.More(); it.Next()) ++s.solidCount;
+    s.faceCount = static_cast<std::size_t>(faces.Extent());
+    s.edgeCount = static_cast<std::size_t>(edges.Extent());
+    s.vertexCount = static_cast<std::size_t>(vertices.Extent());
+    NCollection_IndexedDataMap<TopoDS_Shape,
+                               NCollection_List<TopoDS_Shape>,
+                               TopTools_ShapeMapHasher>
+        edgeFaces;
+    TopExp::MapShapesAndAncestors(shape, TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    for (int i = 1; i <= edgeFaces.Extent(); ++i) {
+        const TopoDS_Edge& edge = TopoDS::Edge(edgeFaces.FindKey(i));
+        if (!BRep_Tool::Degenerated(edge) && edgeFaces(i).Extent() < 2) ++s.freeEdges;
+        s.maxToleranceMm = std::max(s.maxToleranceMm, BRep_Tool::Tolerance(edge));
+    }
+    for (int i = 1; i <= vertices.Extent(); ++i) {
+        s.maxToleranceMm =
+            std::max(s.maxToleranceMm, BRep_Tool::Tolerance(TopoDS::Vertex(vertices(i))));
+    }
+    s.closed = s.shellCount > 0 && s.freeEdges == 0;
+    s.valid = BRepCheck_Analyzer(shape).IsValid();
+    Bnd_Box box;
+    BRepBndLib::AddOptimal(shape, box, false, false); // tight: from the surfaces, not poles
+    if (!box.IsVoid()) {
+        double x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
+        box.Get(x0, y0, z0, x1, y1, z1);
+        s.bounds = {{x0, y0, z0}, {x1, y1, z1}};
+    }
+    GProp_GProps volume, area;
+    BRepGProp::VolumeProperties(shape, volume);
+    BRepGProp::SurfaceProperties(shape, area);
+    s.volumeMm3 = volume.Mass();
+    s.areaMm2 = area.Mass();
+    return s;
+}
+
+} // namespace
+
+Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
+                        std::shared_ptr<const TriMesh> display,
+                        const SewParams& params) {
+    if (faces.empty()) return fail(ErrorCode::InvalidArgument, "no faces to sew");
+    if (!(params.toleranceMm > 0.0)) {
+        return fail(ErrorCode::InvalidArgument, "the sewing tolerance must be positive");
+    }
+    if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
+    return guarded("sewing", [&]() -> Result<Solid> {
+        BRepBuilderAPI_Sewing sewing(params.toleranceMm);
+        for (const SurfacePatch& patch : faces) {
+            BRepBuilderAPI_MakeFace face(toSurface(patch), Precision::Confusion());
+            if (!face.IsDone()) {
+                return fail(ErrorCode::Internal, "Open CASCADE could not make a face");
+            }
+            sewing.Add(face.Face());
+        }
+        sewing.Perform();
+        const TopoDS_Shape sewn = sewing.SewedShape();
+        std::vector<TopoDS_Shell> shells;
+        for (TopExp_Explorer it(sewn, TopAbs_SHELL); it.More(); it.Next()) {
+            shells.push_back(TopoDS::Shell(it.Current()));
+        }
+        if (shells.size() != 1) {
+            return fail(ErrorCode::InvalidState,
+                        "the faces sewed into " + std::to_string(shells.size()) +
+                            " shells instead of one (" + std::to_string(sewing.NbFreeEdges()) +
+                            " free edges)");
+        }
+        // A solid bounded by the shell, oriented so its normals point outward.
+        const TopoDS_Solid solid = ShapeFix_Solid().SolidFromShell(shells.front());
+        const SolidSummary summary = summarise(solid);
+        if (summary.solidCount != 1 || !summary.closed || !summary.valid) {
+            return fail(ErrorCode::InvalidState,
+                        "the sewn faces are not one valid closed solid (" +
+                            std::to_string(summary.freeEdges) + " free edges, " +
+                            (summary.valid ? "valid" : "invalid") + ")");
+        }
+        auto shape = std::make_shared<SolidShape>();
+        shape->shape = solid;
+        return Solid(std::move(shape),
+                     std::make_shared<const std::vector<SurfacePatch>>(std::move(faces)),
+                     std::move(display),
+                     summary);
+    });
+}
+
+Result<void>
+writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name) {
+    return guarded("STEP export", [&]() -> Result<void> {
+        if (!BRepCheck_Analyzer(solid.shape().shape).IsValid()) {
+            return fail(ErrorCode::InvalidState, "the solid is not valid; nothing was written");
+        }
+        STEPControl_Writer writer; // initialises the STEP parameters set below
+        Interface_Static::SetCVal("write.step.schema", "AP242DIS");
+        Interface_Static::SetCVal("write.step.unit", "MM");
+        Interface_Static::SetCVal("write.step.product.name", name.c_str());
+        if (writer.Transfer(solid.shape().shape, STEPControl_AsIs) != IFSelect_RetDone) {
+            return fail(ErrorCode::Internal, "Open CASCADE could not convert the solid to STEP");
+        }
+        if (writer.Write(utf8(path).c_str()) != IFSelect_RetDone) {
+            return fail(ErrorCode::Io, "could not write " + utf8(path));
+        }
+        return {};
+    });
+}
+
+Result<std::string> writeBrep(const Solid& solid) {
+    return guarded("BREP export", [&]() -> Result<std::string> {
+        std::ostringstream out;
+        BRepTools::Write(solid.shape().shape, out);
+        if (!out) return fail(ErrorCode::Internal, "Open CASCADE could not write the solid");
+        return out.str();
+    });
+}
+
+Result<Solid> readBrep(const std::string& brep,
+                       std::vector<SurfacePatch> faces,
+                       std::shared_ptr<const TriMesh> display) {
+    if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
+    return guarded("BREP import", [&]() -> Result<Solid> {
+        std::istringstream in(brep);
+        TopoDS_Shape shape;
+        BRepTools::Read(shape, in, BRep_Builder());
+        if (shape.IsNull()) return fail(ErrorCode::Parse, "the BREP data holds no shape");
+        const SolidSummary summary = summarise(shape);
+        if (summary.solidCount != 1 || !summary.closed || !summary.valid) {
+            return fail(ErrorCode::Parse, "the BREP data is not one valid closed solid");
+        }
+        if (summary.faceCount != faces.size()) {
+            return fail(ErrorCode::Parse, "the BREP data does not match the solid's faces");
+        }
+        auto stored = std::make_shared<SolidShape>();
+        for (TopExp_Explorer it(shape, TopAbs_SOLID); it.More(); it.Next()) {
+            stored->shape = it.Current();
+        }
+        return Solid(std::move(stored),
+                     std::make_shared<const std::vector<SurfacePatch>>(std::move(faces)),
+                     std::move(display),
+                     summary);
+    });
+}
+
+Result<std::vector<double>> signedDistances(const Solid& solid, const std::vector<Vec3d>& points) {
+    const std::vector<SurfacePatch>& faces = solid.faces();
+    const TriMesh& display = solid.display();
+    // The display mesh is tessellate(faces, n): 2 n^2 triangles per face, face by face.
+    const std::size_t perFace = faces.empty() ? 0 : display.faceCount() / faces.size();
+    const auto n = static_cast<std::size_t>(std::lround(std::sqrt(double(perFace) / 2.0)));
+    if (faces.empty() || n == 0 || 2 * n * n * faces.size() != display.faceCount()) {
+        return fail(ErrorCode::InvalidState, "the solid's display mesh does not match its faces");
+    }
+    const auto corners = [&](std::size_t t) {
+        const auto v = display.face(t);
+        const auto& p = display.positions();
+        return std::array<Vec3d, 3>{p[v[0]], p[v[1]], p[v[2]]};
+    };
+    // Faces point outward when the display mesh, which follows their u x v, has positive volume.
+    double volume6 = 0.0;
+    for (std::size_t t = 0; t < display.faceCount(); ++t) {
+        const auto [a, b, c] = corners(t);
+        volume6 += dot(a, cross(b, c));
+    }
+    const double outward = volume6 >= 0.0 ? 1.0 : -1.0;
+    return guarded("distance to the solid", [&]() -> Result<std::vector<double>> {
+        std::vector<opencascade::handle<ShapeAnalysis_Surface>> surfaces(faces.size());
+        const SpatialIndex& index = display.spatialIndex();
+        std::vector<double> out;
+        out.reserve(points.size());
+        const double step = 1.0 / double(n);
+        for (const Vec3d& p : points) {
+            const ClosestPoint near = index.closestPoint(p);
+            const std::size_t f = near.face / (2 * n * n);
+            const std::size_t cell = (near.face % (2 * n * n)) / 2;
+            const double i = double(cell % n), j = double(cell / n);
+            // Corners of the triangle in face parameters (see tessellate), then barycentric
+            // weights of the closest point.
+            const bool lower = near.face % 2 == 0;
+            const std::array<std::array<double, 2>, 3> uv{
+                {{i, j}, {i + 1, lower ? j : j + 1}, {lower ? i + 1 : i, j + 1}}};
+            const auto [a, b, c] = corners(near.face);
+            const Vec3d e0 = b - a, e1 = c - a, e2 = near.point - a;
+            const double d00 = dot(e0, e0), d01 = dot(e0, e1), d11 = dot(e1, e1);
+            const double d20 = dot(e2, e0), d21 = dot(e2, e1);
+            const double den = d00 * d11 - d01 * d01;
+            const double wb = den > 0.0 ? (d11 * d20 - d01 * d21) / den : 0.0;
+            const double wc = den > 0.0 ? (d00 * d21 - d01 * d20) / den : 0.0;
+            const double u0 =
+                (uv[0][0] + wb * (uv[1][0] - uv[0][0]) + wc * (uv[2][0] - uv[0][0])) * step;
+            const double v0 =
+                (uv[0][1] + wb * (uv[1][1] - uv[0][1]) + wc * (uv[2][1] - uv[0][1])) * step;
+            if (surfaces[f].IsNull()) surfaces[f] = new ShapeAnalysis_Surface(toSurface(faces[f]));
+            const gp_Pnt target(p.x, p.y, p.z);
+            const gp_Pnt2d at = surfaces[f]->NextValueOfUV(gp_Pnt2d(u0, v0), target, 1e-7);
+            gp_Pnt q;
+            gp_Vec du, dv;
+            surfaces[f]->Surface()->D1(
+                std::clamp(at.X(), 0.0, 1.0), std::clamp(at.Y(), 0.0, 1.0), q, du, dv);
+            const gp_Vec normal = du.Crossed(dv);
+            const gp_Vec offset(q, target);
+            const double side = offset.Dot(normal) * outward >= 0.0 ? 1.0 : -1.0;
+            out.push_back(side * offset.Magnitude());
+        }
+        return out;
+    });
+}
+
+Result<SolidSummary> readStep(const std::filesystem::path& path) {
+    return guarded("STEP import", [&]() -> Result<SolidSummary> {
+        STEPControl_Reader reader;
+        if (reader.ReadFile(utf8(path).c_str()) != IFSelect_RetDone) {
+            return fail(ErrorCode::Parse, "could not read " + utf8(path) + " as STEP");
+        }
+        reader.TransferRoots();
+        return summarise(reader.OneShape());
+    });
+}
+
+} // namespace m2c::occt

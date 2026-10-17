@@ -1,0 +1,49 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+#pragma once
+// Quad layout stage (ARCHITECTURE.md section 6): a repaired scan in, a closed quad control cage
+// out. The remesher comes from the quad adapter (ADR-009); this file turns its raw output into a
+// cage the surface build accepts.
+
+#include <cstddef>
+
+#include "m2c/adapters/quad/QuadRemesh.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/TriMesh.h"
+
+namespace m2c {
+
+using quad::QuadRemeshParams;
+
+/// What closeCage() changed.
+struct CageCleanup {
+    std::size_t droppedFaces{0};      ///< Faces on edges shared by more than two faces.
+    std::size_t droppedComponents{0}; ///< Loose fragments apart from the main part.
+    std::size_t droppedComponentFaces{0};
+    std::size_t splitVertices{0};     ///< Copies made where faces met only at a vertex.
+    std::size_t filledLoops{0};       ///< Open loops closed with one polygon each.
+    std::size_t largestLoop{0};       ///< Vertices of the largest polygon added.
+    std::size_t dissolvedVertices{0}; ///< Vertices shared by only two faces, removed.
+    bool flipped{false};              ///< Faces were reversed to point outward.
+};
+
+/// Makes a cage closed, manifold and outward: drops faces on non-manifold edges, keeps the
+/// largest connected part, orients faces consistently, splits vertices where separate fans meet,
+/// closes each open loop with one polygon, points faces outward and dissolves valence-2
+/// vertices. Fails with InvalidState when the faces cannot be oriented consistently or nothing
+/// valid is left.
+[[nodiscard]] Result<QuadLayout> closeCage(const QuadLayout& raw, CageCleanup& report);
+
+struct QuadRemeshResult {
+    QuadLayout cage;
+    CageCleanup cleanup;
+    CageStats stats;
+    double maxDistanceMm{0.0};  ///< From a cage vertex to the scan.
+    double meanDistanceMm{0.0}; ///< Mean over cage vertices.
+};
+
+/// Remeshes a scan into a quad cage and closes it (closeCage()).
+[[nodiscard]] Result<QuadRemeshResult> quadRemesh(const TriMesh& scan,
+                                                  const QuadRemeshParams& params);
+
+} // namespace m2c

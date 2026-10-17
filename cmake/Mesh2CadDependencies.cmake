@@ -123,6 +123,197 @@ if(MINGW)
     target_compile_options(m2c_cgal_deps INTERFACE $<$<CONFIG:Debug>:-Og>)
 endif()
 
+# ---- Building a dependency from source at configure time (ADR 0026) ----------------------------
+# m2c_build_from_source(<name> SOURCE_DIR <dir> CONFIG <config> ARGS <cmake arguments...>)
+#
+# Configures, builds and installs a CMake project into <build>/_deps/<name>-install with this
+# project's generator and compilers, while this project configures. It runs once per build folder:
+# later configures find the stamp file and skip it. Sets <name>_INSTALL_DIR in the caller.
+function(m2c_build_from_source name)
+    cmake_parse_arguments(ARG "" "SOURCE_DIR;CONFIG" "ARGS" ${ARGN})
+    set(prefix "${CMAKE_BINARY_DIR}/_deps/${name}-install")
+    set(build "${CMAKE_BINARY_DIR}/_deps/${name}-build")
+    set(${name}_INSTALL_DIR "${prefix}" PARENT_SCOPE)
+    string(SHA1 settings "${ARG_CONFIG};${ARG_ARGS};${CMAKE_CXX_COMPILER}")
+    set(stamp "${prefix}/m2c-${settings}.stamp")
+    if(EXISTS "${stamp}")
+        return()
+    endif()
+    message(STATUS "Mesh2Cad: building ${name} from source into ${prefix}. This happens once "
+                   "per build folder and can take 15 to 40 minutes.")
+
+    set(generator -G "${CMAKE_GENERATOR}")
+    if(CMAKE_GENERATOR_PLATFORM)
+        list(APPEND generator -A "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    if(CMAKE_GENERATOR_TOOLSET)
+        list(APPEND generator -T "${CMAKE_GENERATOR_TOOLSET}")
+    endif()
+    set(tools "-DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}")
+    # This project enables C++ only, so find the matching C compiler next to the C++ one.
+    set(c_compiler "${CMAKE_C_COMPILER}")
+    if(NOT c_compiler AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        get_filename_component(dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        get_filename_component(file "${CMAKE_CXX_COMPILER}" NAME)
+        string(REPLACE "g++" "gcc" file "${file}")
+        set(c_compiler "${dir}/${file}")
+    elseif(NOT c_compiler AND MSVC)
+        set(c_compiler "${CMAKE_CXX_COMPILER}")
+    endif()
+    if(c_compiler)
+        list(APPEND tools "-DCMAKE_C_COMPILER=${c_compiler}")
+    endif()
+    foreach(var CMAKE_MAKE_PROGRAM CMAKE_TOOLCHAIN_FILE)
+        if(${var})
+            list(APPEND tools "-D${var}=${${var}}")
+        endif()
+    endforeach()
+
+    execute_process(
+        COMMAND "${CMAKE_COMMAND}" -S "${ARG_SOURCE_DIR}" -B "${build}" ${generator} ${tools}
+                "-DCMAKE_BUILD_TYPE=${ARG_CONFIG}" "-DCMAKE_INSTALL_PREFIX=${prefix}" ${ARG_ARGS}
+        RESULT_VARIABLE failed)
+    if(NOT failed)
+        execute_process(
+            COMMAND "${CMAKE_COMMAND}" --build "${build}" --config "${ARG_CONFIG}" --parallel
+            RESULT_VARIABLE failed)
+    endif()
+    if(NOT failed)
+        execute_process(COMMAND "${CMAKE_COMMAND}" --install "${build}" --config "${ARG_CONFIG}"
+                        RESULT_VARIABLE failed)
+    endif()
+    if(failed)
+        message(FATAL_ERROR "Building ${name} from source failed (see the output above; the build "
+                            "folder is ${build}). Install ${name} and point CMAKE_PREFIX_PATH at it, "
+                            "or use a vcpkg preset.")
+    endif()
+    file(WRITE "${stamp}" "")
+endfunction()
+
+# MSVC cannot mix Debug and Release runtimes, so a source build matches this build's
+# configuration there; GCC and MinGW always get an optimised build.
+if(MSVC AND CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(m2c_source_build_config Debug)
+else()
+    set(m2c_source_build_config Release)
+endif()
+
+# ---- Open CASCADE (ADR 0026) --------------------------------------------------------------------
+# vcpkg, a system package or CMAKE_PREFIX_PATH first; otherwise the pinned release is built from
+# source with only the toolkits the OCCT adapter needs (no visualisation drivers, no Draw).
+find_package(OpenCASCADE CONFIG QUIET)
+if(OpenCASCADE_FOUND)
+    message(STATUS "Mesh2Cad: Open CASCADE ${OpenCASCADE_VERSION} found by find_package "
+                   "(vcpkg or system)")
+else()
+    FetchContent_Declare(occt
+        GIT_REPOSITORY https://github.com/Open-Cascade-SAS/OCCT.git
+        GIT_TAG        V8_0_1
+        GIT_SHALLOW    TRUE
+        ${m2c_no_cmake})
+    FetchContent_MakeAvailable(occt)
+    set(occt_args
+        -DBUILD_LIBRARY_TYPE=Shared
+        -DBUILD_MODULE_Draw=OFF -DBUILD_MODULE_Visualization=OFF
+        -DBUILD_MODULE_ApplicationFramework=OFF -DBUILD_MODULE_DataExchange=OFF
+        "-DBUILD_ADDITIONAL_TOOLKITS=TKDESTEP"
+        -DUSE_FREETYPE=OFF -DUSE_OPENGL=OFF -DUSE_GLES2=OFF -DUSE_XLIB=OFF -DUSE_TK=OFF
+        -DUSE_FREEIMAGE=OFF -DUSE_RAPIDJSON=OFF -DUSE_DRACO=OFF -DUSE_TBB=OFF -DUSE_VTK=OFF
+        -DBUILD_DOC_Overview=OFF -DINSTALL_TEST_CASES=OFF -DINSTALL_DIR_LAYOUT=Unix)
+    if(MINGW)
+        list(APPEND occt_args "-DCMAKE_CXX_FLAGS=-Wa,-mbig-obj")
+    endif()
+    if(NOT WIN32)
+        list(APPEND occt_args "-DCMAKE_INSTALL_RPATH=\$ORIGIN")
+    endif()
+    m2c_build_from_source(occt SOURCE_DIR "${occt_SOURCE_DIR}"
+                          CONFIG ${m2c_source_build_config} ARGS ${occt_args})
+    find_package(OpenCASCADE CONFIG REQUIRED PATHS "${occt_INSTALL_DIR}" NO_DEFAULT_PATH
+                 NO_CMAKE_FIND_ROOT_PATH)
+    message(STATUS "Mesh2Cad: Open CASCADE ${OpenCASCADE_VERSION} built from source")
+endif()
+# The toolkits the OCCT adapter uses. OCCT 7.8 merged the STEP toolkits into TKDESTEP.
+set(m2c_occt_toolkits
+    TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo TKTopAlgo TKPrim TKBO TKShHealing
+    TKMesh TKXSBase)
+if(TARGET TKDESTEP)
+    list(APPEND m2c_occt_toolkits TKDESTEP TKDE)
+else()
+    list(APPEND m2c_occt_toolkits TKSTEP TKSTEPBase TKSTEPAttr TKSTEP209)
+endif()
+add_library(m2c_occt_deps INTERFACE)
+target_link_libraries(m2c_occt_deps INTERFACE ${m2c_occt_toolkits})
+if(WIN32)
+    # OCCT's headers use M_PI, which MinGW's <cmath> hides in strict ISO mode.
+    target_compile_definitions(m2c_occt_deps INTERFACE _USE_MATH_DEFINES)
+endif()
+if(OpenCASCADE_INCLUDE_DIR)
+    target_include_directories(m2c_occt_deps SYSTEM INTERFACE "${OpenCASCADE_INCLUDE_DIR}")
+endif()
+
+# ---- OpenSubdiv (ADR 0026) ----------------------------------------------------------------------
+# Only the CPU library (Far) is used. vcpkg's package config is used as is. Elsewhere the library
+# is looked up directly, because Ubuntu's config names a static library the package does not ship;
+# when it is not found, the pinned release is built from source as a static library.
+add_library(m2c_osd_deps INTERFACE)
+if(VCPKG_TOOLCHAIN)
+    find_package(OpenSubdiv 3.5 CONFIG REQUIRED)
+    message(STATUS "Mesh2Cad: OpenSubdiv ${OpenSubdiv_VERSION} from vcpkg")
+else()
+    find_path(M2C_OSD_INCLUDE_DIR opensubdiv/version.h)
+    find_library(M2C_OSD_CPU_LIBRARY NAMES osdCPU)
+    if(M2C_OSD_INCLUDE_DIR AND M2C_OSD_CPU_LIBRARY)
+        target_include_directories(m2c_osd_deps SYSTEM INTERFACE "${M2C_OSD_INCLUDE_DIR}")
+        target_link_libraries(m2c_osd_deps INTERFACE "${M2C_OSD_CPU_LIBRARY}")
+        message(STATUS "Mesh2Cad: OpenSubdiv found at ${M2C_OSD_CPU_LIBRARY}")
+    else()
+        FetchContent_Declare(opensubdiv
+            GIT_REPOSITORY https://github.com/PixarAnimationStudios/OpenSubdiv.git
+            GIT_TAG        v3_5_0
+            GIT_SHALLOW    TRUE
+            ${m2c_no_cmake})
+        FetchContent_MakeAvailable(opensubdiv)
+        set(osd_args
+            -DBUILD_SHARED_LIBS=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DMSVC_STATIC_CRT=OFF
+            -DNO_EXAMPLES=ON -DNO_TUTORIALS=ON -DNO_REGRESSION=ON -DNO_DOC=ON -DNO_TESTS=ON
+            -DNO_GLTESTS=ON -DNO_PTEX=ON -DNO_OMP=ON -DNO_TBB=ON -DNO_CUDA=ON -DNO_OPENCL=ON
+            -DNO_CLEW=ON -DNO_OPENGL=ON -DNO_METAL=ON -DNO_DX=ON -DNO_GLEW=ON -DNO_GLFW=ON
+            -DNO_GLFW_X11=ON)
+        m2c_build_from_source(opensubdiv SOURCE_DIR "${opensubdiv_SOURCE_DIR}"
+                              CONFIG ${m2c_source_build_config} ARGS ${osd_args})
+        find_package(OpenSubdiv CONFIG REQUIRED PATHS "${opensubdiv_INSTALL_DIR}" NO_DEFAULT_PATH
+                     NO_CMAKE_FIND_ROOT_PATH)
+        message(STATUS "Mesh2Cad: OpenSubdiv ${OpenSubdiv_VERSION} built from source")
+    endif()
+endif()
+if(TARGET OpenSubdiv::osdCPU_static)
+    target_link_libraries(m2c_osd_deps INTERFACE OpenSubdiv::osdCPU_static)
+elseif(TARGET OpenSubdiv::osdCPU)
+    target_link_libraries(m2c_osd_deps INTERFACE OpenSubdiv::osdCPU)
+endif()
+# OpenSubdiv's exported targets carry no include directory; its config sets this variable.
+if(OpenSubdiv_INCLUDE_DIR)
+    target_include_directories(m2c_osd_deps SYSTEM INTERFACE "${OpenSubdiv_INCLUDE_DIR}")
+endif()
+
+# ---- Instant Meshes (ADR 0009) ------------------------------------------------------------------
+# Not packaged anywhere: its field and extraction sources are compiled into the quad adapter
+# (src/adapters/quad). Submodules are not fetched; the two small headers it needs come separately.
+FetchContent_Declare(instant_meshes
+    GIT_REPOSITORY https://github.com/wjakob/instant-meshes.git
+    GIT_TAG        7b3160864a2e1025af498c84cfed91cbfb613698
+    GIT_SUBMODULES ""
+    ${m2c_no_cmake})
+FetchContent_Declare(pcg32
+    GIT_REPOSITORY https://github.com/wjakob/pcg32.git
+    GIT_TAG        0ef13e68ca0be5506e1cfc0db76831e6f916e9e9
+    ${m2c_no_cmake})
+FetchContent_Declare(dset
+    GIT_REPOSITORY https://github.com/wjakob/dset.git
+    GIT_TAG        7967ef0e6041cd9d73b9c7f614ab8ae92e9e587a
+    ${m2c_no_cmake})
+FetchContent_MakeAvailable(instant_meshes pcg32 dset)
+
 # ---- Qt 6 (ADR 0023): optional, the desktop app is built only when Qt is found -----------------
 set(MESH2CAD_BUILD_APP "AUTO" CACHE STRING "Build the Qt desktop app: AUTO, ON or OFF")
 set_property(CACHE MESH2CAD_BUILD_APP PROPERTY STRINGS AUTO ON OFF)

@@ -1,0 +1,115 @@
+{
+  "scan": {
+    "file": "../dji_controller_3/scan.obj",
+    "source": "D:\\Revopoint\\DJI Controller 3.obj",
+    "bytes": 49034218,
+    "sha256": "a3d20e5b05527ebb0e725855bc8fd7751732d70e4a53cb116820d3bbeb4fc32f"
+  },
+  "session": "session.jsonl",
+  "max_seconds": 200,
+  "checks": [
+    {
+      "command": "mesh.info",
+      "params": {
+        "id": 1
+      },
+      "expect": {
+        "/stats/is_watertight": true,
+        "/stats/non_manifold_edge_count": 0,
+        "/stats/boundary_edge_count": 0,
+        "/stats/signed_volume_mm3": {
+          "min": 489642.198,
+          "max": 509627.593
+        },
+        "/stats/face_count": {
+          "min": 612575,
+          "max": 677056
+        },
+        "/stats/bounds/min/2": {
+          "min": -0.001,
+          "max": 0.001
+        },
+        "/stats/bounds/min/0": {
+          "min": -82.96,
+          "max": -81.317
+        },
+        "/stats/bounds/min/1": {
+          "min": -60.271,
+          "max": -59.078
+        },
+        "/stats/bounds/max/0": {
+          "min": 81.317,
+          "max": 82.96
+        },
+        "/stats/bounds/max/1": {
+          "min": 59.078,
+          "max": 60.271
+        },
+        "/stats/bounds/max/2": {
+          "min": 80.109,
+          "max": 81.728
+        }
+      }
+    },
+    {
+      "command": "solid.info",
+      "params": {
+        "id": 3
+      },
+      "expect": {
+        "/summary/valid": true,
+        "/summary/closed": true,
+        "/summary/solid_count": 1,
+        "/summary/shell_count": 1,
+        "/summary/free_edges": 0,
+        "/summary/face_count": {
+          "min": 1856,
+          "max": 2052
+        },
+        "/summary/volume_mm3": {
+          "min": 488128.793,
+          "max": 508052.417
+        }
+      }
+    },
+    {
+      "command": "solid.export",
+      "params": {
+        "id": 3,
+        "path": "scan.step"
+      },
+      "expect": {
+        "/check/passed": true,
+        "/check/solid_count": 1
+      }
+    },
+    {
+      "command": "deviation.report",
+      "params": {
+        "id": 4,
+        "path": "scan.deviation.csv"
+      },
+      "expect": {
+        "/stats/count": {
+          "min": 306288,
+          "max": 338528
+        },
+        "/stats/rms_mm": {
+          "max": 4.0
+        },
+        "/stats/p95_abs_mm": {
+          "max": 0.9
+        },
+        "/stats/max_mm": {
+          "max": 30.0
+        },
+        "/stats/min_mm": {
+          "min": -2.5
+        },
+        "/stats/within_tolerance": {
+          "min": 0.65
+        }
+      }
+    }
+  ]
+}

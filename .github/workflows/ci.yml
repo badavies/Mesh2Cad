@@ -51,16 +51,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/cache@v4
+      # The newest cache for this preset; saved again after Configure only if vcpkg built
+      # something, so a long first build of Open CASCADE survives a cancelled or failed run.
+      - uses: actions/cache/restore@v4
         with:
           path: .vcpkg-cache
-          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: vcpkg-${{ matrix.preset }}-
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}
+          restore-keys: |
+            vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-${{ matrix.preset }}-
 
-      # vcpkg builds gmp and mpfr (CGAL dependencies) with autotools from the system.
-      - name: Install Ninja and autotools (Linux)
+      # vcpkg builds gmp and mpfr (CGAL dependencies) with autotools from the system, and Open
+      # CASCADE's visualisation toolkits against the system OpenGL and X11 headers.
+      - name: Install Ninja, autotools, OpenGL and X11 headers (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
+        run: >-
+          sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive
+          automake libtool libgl1-mesa-dev libx11-dev libxext-dev
 
       - name: Set up the MSVC environment (Windows)
         if: runner.os == 'Windows'
@@ -81,9 +88,30 @@ jobs:
             "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
           fi
           echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+          echo "VCPKG_CACHE_BEFORE=$(find .vcpkg-cache -type f | sort | sha1sum)" >> "$GITHUB_ENV"
 
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
+      - name: Look for new vcpkg packages
+        id: vcpkg_new
+        if: always()
+        shell: bash
+        run: |
+          after=$(find .vcpkg-cache -type f | sort | sha1sum)
+          echo "changed=$([ "$after" = "$VCPKG_CACHE_BEFORE" ] && echo false || echo true)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/save@v4
+        if: always() && steps.vcpkg_new.outputs.changed == 'true'
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # vcpkg's build trees for a fresh Open CASCADE build (debug and sanitized in particular)
+      # take most of the runner's disk; the installed packages are all the build needs.
+      - name: Free the disk vcpkg used for building
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$VCPKG_ROOT/buildtrees" "$VCPKG_ROOT/packages" "$VCPKG_ROOT/downloads"
+          df -h .
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
@@ -113,10 +141,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install Qt, CGAL, Eigen and a virtual display
+      - name: Install Qt, CGAL, Eigen, Open CASCADE, OpenSubdiv and a virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build qt6-base-dev libgl1-mesa-dev libcgal-dev libeigen3-dev xvfb
+          sudo apt-get install -y ninja-build qt6-base-dev libgl1-mesa-dev libcgal-dev libeigen3-dev \
+            libocct-data-exchange-dev libtbb-dev libosd-dev xvfb
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMESH2CAD_WARNINGS_AS_ERRORS=ON -DMESH2CAD_BUILD_APP=ON
       - name: Build

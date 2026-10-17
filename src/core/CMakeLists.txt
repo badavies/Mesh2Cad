@@ -1,9 +1,12 @@
 m2c_add_library(core
     SOURCES
         MeshSelection.cpp
+        DeviationField.cpp
         DisplayProxy.cpp
         MeshStats.cpp
         MeshTopology.cpp
+        QuadLayout.cpp
+        Solid.cpp
         SpatialIndex.cpp
         Transform.cpp
         TriMesh.cpp)

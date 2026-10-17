@@ -14,6 +14,11 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 | [Boost](https://www.boost.org) (headers) | from vcpkg/system with CGAL; fallback 1.86.0 | BSL-1.0 | Required by CGAL | via CGAL |
 | [Eigen](https://eigen.tuxfamily.org) | 3.3+ from vcpkg/system; fallback 3.4.0 | MPL-2.0 | Plane fitting, principal axes, CGAL fairing (ADR-022) | `src/pipeline`, `src/adapters/cgal` |
 | [miniz](https://github.com/richgel999/miniz) | vcpkg baseline; fallback 3.0.2 | MIT | Project file (zip) (ADR-017) | `src/io` |
+| [Open CASCADE (OCCT)](https://github.com/Open-Cascade-SAS/OCCT) | 7.6+ from vcpkg/system; fallback V8_0_1 built from source | LGPL-2.1 with the OCCT exception (dynamically linked) | B-spline faces, sewing, solid checks, STEP AP242 export (ADR-003, ADR-026) | `src/adapters/occt` only |
+| [OpenSubdiv](https://github.com/PixarAnimationStudios/OpenSubdiv) | 3.5 from vcpkg/system; fallback v3_5_0 built from source | Apache-2.0 (modified) | Catmull-Clark limit stencils and patch extraction (ADR-015, ADR-026) | `src/adapters/osd` only |
+| [Instant Meshes](https://github.com/wjakob/instant-meshes) (field and extraction sources) | commit 7b31608 | BSD-3-Clause | Quad layout (ADR-009) | `src/adapters/quad` only |
+| [pcg32](https://github.com/wjakob/pcg32) | commit 0ef13e6 | Apache-2.0 | Random numbers inside Instant Meshes | via Instant Meshes |
+| [dset](https://github.com/wjakob/dset) | commit 7967ef0 | zlib | Union-find inside Instant Meshes | via Instant Meshes |
 | [Qt 6](https://www.qt.io) (Widgets, OpenGL, OpenGLWidgets, Network) | 6.4+ from the Qt installer, vcpkg (`app` feature) or the system; never fetched | LGPL-3.0 (dynamically linked) | Desktop app and viewport (ADR-008, ADR-023) | `src/app` only |
 
 ## Build tooling (not distributed)
@@ -30,8 +35,6 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 | oneTBB | Apache-2.0 | When profiling needs it (not needed in M1) | Parallelism (`parallel_deterministic_reduce`) |
 | json-schema-validator | MIT | When schemas are enforced (not needed in M1) | Command parameter validation |
 | spdlog | MIT | When structured logs are needed (not needed in M1) | Logging |
-| Open CASCADE (OCCT) | LGPL-2.1 with exception | M2 | CAD kernel, STEP export |
-| OpenSubdiv | Apache-2.0 | M2 | Subdivision limit stencils |
-| QuadWild or Instant Meshes | GPL-3.0 / BSD-3-Clause | M2 | Quad layout (ADR-009, after the spike) |
+| QuadWild (bi-MDF) | GPL-3.0 | M3, to revisit (ADR-009) | Feature-aligned quad layout |
 
 OBJ and PLY are read by our own parsers (ADR-021), so tinyobjloader and happly are not used.

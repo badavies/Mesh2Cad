@@ -120,6 +120,30 @@ inline TriMesh makeSphere(double r = 1.0, int levels = 3, Vec3d c = {}) {
     return makeMesh(std::move(p), std::move(f));
 }
 
+/// Torus around the z axis with tube centre radius R and tube radius r, n x m quads split into
+/// triangles, outward. Genus 1.
+inline TriMesh makeTorus(double R = 3.0, double r = 1.0, int n = 48, int m = 24) {
+    std::vector<Vec3d> p;
+    std::vector<std::uint32_t> idx;
+    for (int i = 0; i < n; ++i) {
+        const double u = 2.0 * 3.14159265358979323846 * i / n;
+        for (int j = 0; j < m; ++j) {
+            const double v = 2.0 * 3.14159265358979323846 * j / m;
+            p.push_back({(R + r * std::cos(v)) * std::cos(u),
+                         (R + r * std::cos(v)) * std::sin(u),
+                         r * std::sin(v)});
+        }
+    }
+    const auto at = [&](int i, int j) { return static_cast<std::uint32_t>((i % n) * m + j % m); };
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < m; ++j) {
+            const auto a = at(i, j), b = at(i + 1, j), c = at(i + 1, j + 1), d = at(i, j + 1);
+            idx.insert(idx.end(), {a, b, c, a, c, d});
+        }
+    }
+    return makeMesh(std::move(p), std::move(idx));
+}
+
 /// Moves every vertex along a random direction by up to `amount` (seeded, reproducible).
 inline TriMesh addNoise(const TriMesh& mesh, double amount, unsigned seed = 7) {
     std::mt19937 rng(seed);

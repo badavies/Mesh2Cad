@@ -17,6 +17,8 @@
 #include "m2c/core/MeshTopology.h"
 #include "m2c/core/SpatialIndex.h"
 
+#include "DeviationColors.h"
+
 namespace m2c::app {
 
 namespace {
@@ -27,30 +29,36 @@ constexpr std::size_t kProxyFaces = 400'000;
 
 constexpr const char* kVertexShader = R"(#version 330 core
 layout(location = 0) in vec3 position;
+layout(location = 1) in vec3 color;
 uniform mat4 mvp;
 uniform mat4 mv;
 out vec3 viewPos;
+out vec3 vertexColor;
 void main() {
     viewPos = (mv * vec4(position, 1.0)).xyz;
+    vertexColor = color;
     gl_Position = mvp * vec4(position, 1.0);
 }
 )";
 
 constexpr const char* kFragmentShader = R"(#version 330 core
 in vec3 viewPos;
+in vec3 vertexColor;
 uniform vec3 baseColor;
 uniform vec3 backColor;
+uniform vec3 lineColor;
 uniform int hasSelection;
+uniform int hasColors;
 uniform int lineMode;
 uniform usamplerBuffer selection;
 out vec4 fragColor;
 void main() {
-    if (lineMode == 1) { fragColor = vec4(0.08, 0.09, 0.10, 1.0); return; }
+    if (lineMode == 1) { fragColor = vec4(lineColor, 1.0); return; }
     // Flat shading: the face normal from screen-space derivatives of the view position.
     vec3 n = normalize(cross(dFdx(viewPos), dFdy(viewPos)));
     vec3 toEye = normalize(-viewPos);
     float diffuse = abs(dot(n, toEye));
-    vec3 color = gl_FrontFacing ? baseColor : backColor;
+    vec3 color = gl_FrontFacing ? (hasColors == 1 ? vertexColor : baseColor) : backColor;
     if (hasSelection == 1) {
         uint s = texelFetch(selection, gl_PrimitiveID).r;
         if (s == 1u) color = mix(color, vec3(1.0, 0.50, 0.10), 0.8);
@@ -78,6 +86,49 @@ Mat4d translation(const Vec3d& t) {
 
 bool isMesh(const DocumentObject& o) {
     return o.mesh() != nullptr;
+}
+
+/// Meshes, solids (their display mesh) and quad layouts (their edges) are drawn.
+bool isDrawn(const DocumentObject& o) {
+    return o.mesh() != nullptr || o.solid() != nullptr || o.quadLayout() != nullptr;
+}
+
+/// Identity of what an object draws, shared by every snapshot copy of it.
+const void* drawSource(const DocumentObject& o) {
+    if (const MeshData* m = o.mesh()) return m->mesh.get();
+    if (const SolidData* s = o.solid()) return &s->solid.display();
+    if (const QuadLayoutData* q = o.quadLayout()) return &q->cage.positions();
+    return nullptr;
+}
+
+Aabb boundsOf(const std::vector<Vec3d>& points) {
+    Aabb box{{1e300, 1e300, 1e300}, {-1e300, -1e300, -1e300}};
+    for (const Vec3d& p : points) {
+        box.min = {std::min(box.min.x, p.x), std::min(box.min.y, p.y), std::min(box.min.z, p.z)};
+        box.max = {std::max(box.max.x, p.x), std::max(box.max.y, p.y), std::max(box.max.z, p.z)};
+    }
+    return box;
+}
+
+Aabb drawnBounds(const DocumentObject& o) {
+    if (const MeshData* m = o.mesh()) return m->mesh->bounds();
+    if (const SolidData* s = o.solid()) return s->solid.display().bounds();
+    return boundsOf(o.quadLayout()->cage.positions());
+}
+
+/// Each cage edge once, as pairs of vertex indices.
+std::vector<std::uint32_t> cageEdges(const QuadLayout& cage) {
+    std::vector<std::uint32_t> edges;
+    for (std::size_t f = 0; f + 1 < cage.faceStarts().size(); ++f) {
+        const std::uint32_t begin = cage.faceStarts()[f], end = cage.faceStarts()[f + 1];
+        for (std::uint32_t k = begin; k < end; ++k) {
+            const std::uint32_t a = cage.faceVertices()[k];
+            const std::uint32_t b = cage.faceVertices()[k + 1 < end ? k + 1 : begin];
+            // A closed cage has each edge in two faces, once in each direction.
+            if (a < b) edges.insert(edges.end(), {a, b});
+        }
+    }
+    return edges;
 }
 
 } // namespace
@@ -180,12 +231,17 @@ void Viewport::setShowBackFaces(bool on) {
     update();
 }
 
+void Viewport::setColorBlindPalette(bool on) {
+    colorBlind_ = on;
+    update();
+}
+
 Aabb Viewport::visibleBounds(std::optional<ObjectId> only) const {
     Aabb box{{1e300, 1e300, 1e300}, {-1e300, -1e300, -1e300}};
     if (!snapshot_) return box;
     for (const DocumentObject& o : snapshot_->objects) {
-        if (!isMesh(o) || (only ? o.id != *only : !o.visible)) continue;
-        const Aabb& b = o.mesh()->mesh->bounds();
+        if (!isDrawn(o) || (only ? o.id != *only : !o.visible)) continue;
+        const Aabb b = drawnBounds(o);
         box.min = {std::min(box.min.x, b.min.x),
                    std::min(box.min.y, b.min.y),
                    std::min(box.min.z, b.min.z)};
@@ -223,18 +279,23 @@ Mat4d Viewport::viewProjection() const {
 
 void Viewport::release(GpuMesh& gpu) {
     const GLuint vaos[] = {gpu.vao, gpu.pvao};
-    const GLuint buffers[] = {gpu.vbo, gpu.ebo, gpu.pvbo, gpu.pebo, gpu.selBuffer};
+    const GLuint buffers[] = {gpu.vbo, gpu.ebo, gpu.pvbo, gpu.pebo, gpu.selBuffer, gpu.colorBuffer};
     glDeleteVertexArrays(2, vaos);
-    glDeleteBuffers(5, buffers);
+    glDeleteBuffers(6, buffers);
     glDeleteTextures(1, &gpu.selTexture);
     gpu = GpuMesh{};
 }
 
-void Viewport::upload(
-    GpuMesh& gpu, const TriMesh& mesh, GLuint& vao, GLuint& vbo, GLuint& ebo, GLsizei& count) {
+void Viewport::upload(GpuMesh& gpu,
+                      const std::vector<Vec3d>& positions,
+                      const std::vector<std::uint32_t>& indices,
+                      GLuint& vao,
+                      GLuint& vbo,
+                      GLuint& ebo,
+                      GLsizei& count) {
     std::vector<float> xyz;
-    xyz.reserve(mesh.vertexCount() * 3);
-    for (const Vec3d& p : mesh.positions()) {
+    xyz.reserve(positions.size() * 3);
+    for (const Vec3d& p : positions) {
         const Vec3d r = p - gpu.offset;
         xyz.insert(xyz.end(),
                    {static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.z)});
@@ -254,11 +315,11 @@ void Viewport::upload(
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 static_cast<GLsizeiptr>(mesh.indices().size() * sizeof(std::uint32_t)),
-                 mesh.indices().data(),
+                 static_cast<GLsizeiptr>(indices.size() * sizeof(std::uint32_t)),
+                 indices.data(),
                  GL_STATIC_DRAW);
     glBindVertexArray(0);
-    count = static_cast<GLsizei>(mesh.indices().size());
+    count = static_cast<GLsizei>(indices.size());
 }
 
 void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
@@ -295,12 +356,55 @@ void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
     gpu.hasSelection = true;
 }
 
+void Viewport::syncColors(GpuMesh& gpu, const DocumentObject& mesh) {
+    // The newest visible deviation of this mesh colours it.
+    const DocumentObject* deviation = nullptr;
+    for (const DocumentObject& o : snapshot_->objects) {
+        if (o.deviation() != nullptr && o.deviation()->meshId == mesh.id && o.visible) {
+            deviation = &o;
+        }
+    }
+    const DeviationField* field = deviation ? &deviation->deviation()->field : nullptr;
+    const std::pair<const DeviationField*, bool> key{field, colorBlind_};
+    if (key == gpu.colorKey) return;
+    gpu.colorKey = key;
+    gpu.hasColors = false;
+    glBindVertexArray(gpu.vao);
+    if (field == nullptr) {
+        glDisableVertexAttribArray(1);
+        glBindVertexArray(0);
+        return;
+    }
+    const DeviationStats& stats = field->stats();
+    const double range = deviationRange(stats.p95AbsMm, stats.toleranceMm);
+    std::vector<float> rgb;
+    rgb.reserve(field->distances().size() * 3);
+    for (const double d : field->distances()) {
+        const QColor c = deviationColor(d, stats.toleranceMm, range, colorBlind_);
+        rgb.insert(rgb.end(),
+                   {static_cast<float>(c.redF()),
+                    static_cast<float>(c.greenF()),
+                    static_cast<float>(c.blueF())});
+    }
+    if (gpu.colorBuffer == 0) glGenBuffers(1, &gpu.colorBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, gpu.colorBuffer);
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(rgb.size() * sizeof(float)),
+                 rgb.data(),
+                 GL_DYNAMIC_DRAW);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+    gpu.hasColors = true;
+}
+
 void Viewport::syncGpu() {
     if (!snapshot_) return;
     // Drop buffers of meshes that are gone.
     for (auto it = gpu_.begin(); it != gpu_.end();) {
         const DocumentObject* o = snapshot_->find(it->first);
-        if (o == nullptr || !isMesh(*o)) {
+        if (o == nullptr || !isDrawn(*o)) {
             release(it->second);
             it = gpu_.erase(it);
         } else {
@@ -308,15 +412,48 @@ void Viewport::syncGpu() {
         }
     }
     for (const DocumentObject& o : snapshot_->objects) {
-        if (!isMesh(o)) continue;
-        const std::shared_ptr<const TriMesh>& mesh = o.mesh()->mesh;
+        if (!isDrawn(o)) continue;
         GpuMesh& gpu = gpu_[o.id];
+        if (o.solid() != nullptr || o.quadLayout() != nullptr) {
+            if (gpu.source == drawSource(o)) continue;
+            if (gpu.vao != 0) release(gpu);
+            gpu.source = drawSource(o);
+            if (const SolidData* s = o.solid()) {
+                auto solid = std::make_shared<const Solid>(s->solid);
+                const TriMesh& display = solid->display();
+                gpu.offset = (display.bounds().min + display.bounds().max) * 0.5;
+                upload(gpu,
+                       display.positions(),
+                       display.indices(),
+                       gpu.vao,
+                       gpu.vbo,
+                       gpu.ebo,
+                       gpu.indexCount);
+                gpu.keepAlive = std::move(solid);
+            } else {
+                auto cage = std::make_shared<const QuadLayout>(o.quadLayout()->cage);
+                const Aabb box = boundsOf(cage->positions());
+                gpu.offset = (box.min + box.max) * 0.5;
+                gpu.lines = true;
+                upload(gpu,
+                       cage->positions(),
+                       cageEdges(*cage),
+                       gpu.vao,
+                       gpu.vbo,
+                       gpu.ebo,
+                       gpu.indexCount);
+                gpu.keepAlive = std::move(cage);
+            }
+            continue;
+        }
+        const std::shared_ptr<const TriMesh>& mesh = o.mesh()->mesh;
         if (gpu.source != mesh.get()) {
             if (gpu.vao != 0) release(gpu);
             gpu.source = mesh.get();
             gpu.keepAlive = mesh;
             gpu.offset = (mesh->bounds().min + mesh->bounds().max) * 0.5;
-            upload(gpu, *mesh, gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
+            upload(
+                gpu, mesh->positions(), mesh->indices(), gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
             // Build the picking tree, the adjacency the selection tools use (and a proxy for
             // huge meshes) off the UI thread.
             const bool wantProxy = mesh->faceCount() > kProxyThreshold;
@@ -341,9 +478,16 @@ void Viewport::syncGpu() {
             }).detach();
         }
         if (gpu.proxy && gpu.pvao == 0) {
-            upload(gpu, *gpu.proxy, gpu.pvao, gpu.pvbo, gpu.pebo, gpu.proxyIndexCount);
+            upload(gpu,
+                   gpu.proxy->positions(),
+                   gpu.proxy->indices(),
+                   gpu.pvao,
+                   gpu.pvbo,
+                   gpu.pebo,
+                   gpu.proxyIndexCount);
         }
         syncSelection(gpu, o);
+        syncColors(gpu, o);
     }
 }
 
@@ -371,19 +515,29 @@ void Viewport::paintGL() {
         const Mat4d projection = camera_.projection(aspect());
         const Mat4d view = camera_.viewRelative();
         for (const DocumentObject& o : snapshot_->objects) {
-            if (!isMesh(o) || !o.visible) continue;
+            if (!isDrawn(o) || !o.visible) continue;
             const auto it = gpu_.find(o.id);
             if (it == gpu_.end()) continue;
             const GpuMesh& gpu = it->second;
             const Mat4d mv = view * translation(gpu.offset - camera_.target);
             program_.setUniformValue("mv", toQt(mv));
             program_.setUniformValue("mvp", toQt(projection * mv));
+            if (gpu.lines) {
+                program_.setUniformValue("lineMode", 1);
+                program_.setUniformValue("lineColor", QVector3D(0.95f, 0.60f, 0.20f));
+                glBindVertexArray(gpu.vao);
+                glDrawElements(GL_LINES, gpu.indexCount, GL_UNSIGNED_INT, nullptr);
+                continue;
+            }
             const bool current = o.id == currentMesh_;
             program_.setUniformValue("baseColor",
-                                     current ? QVector3D(0.80f, 0.82f, 0.86f)
-                                             : QVector3D(0.66f, 0.68f, 0.70f));
+                                     o.solid() != nullptr ? QVector3D(0.55f, 0.66f, 0.82f)
+                                     : current            ? QVector3D(0.80f, 0.82f, 0.86f)
+                                                          : QVector3D(0.66f, 0.68f, 0.70f));
             program_.setUniformValue("backColor", QVector3D(0.72f, 0.30f, 0.30f));
+            program_.setUniformValue("lineColor", QVector3D(0.08f, 0.09f, 0.10f));
             const bool proxy = interacting_ && gpu.proxyIndexCount > 0;
+            program_.setUniformValue("hasColors", (!proxy && gpu.hasColors) ? 1 : 0);
             program_.setUniformValue("hasSelection", (!proxy && gpu.hasSelection) ? 1 : 0);
             if (!proxy && gpu.hasSelection) {
                 glActiveTexture(GL_TEXTURE0);
@@ -517,6 +671,8 @@ void Viewport::drawOverlay() {
         }
     }
 
+    if (const DocumentObject* deviation = legendDeviation()) drawLegend(painter, *deviation);
+
     // Axis triad, bottom left.
     const QPointF origin(42, height() - 42);
     const Mat4d v = camera_.viewRelative();
@@ -534,6 +690,67 @@ void Viewport::drawOverlay() {
         painter.setPen(QPen(a.color, 2));
         painter.drawLine(origin, tip);
         painter.drawText(tip + QPointF(3, 4), QString::fromLatin1(a.name));
+    }
+}
+
+const DocumentObject* Viewport::legendDeviation() const {
+    if (!snapshot_) return nullptr;
+    const DocumentObject* first = nullptr;
+    for (const DocumentObject& o : snapshot_->objects) {
+        const DeviationData* d = o.deviation();
+        if (d == nullptr || !o.visible) continue;
+        const DocumentObject* mesh = snapshot_->find(d->meshId);
+        if (mesh == nullptr || !mesh->visible) continue;
+        if (d->meshId == currentMesh_) return &o;
+        if (first == nullptr) first = &o;
+    }
+    return first;
+}
+
+void Viewport::drawLegend(QPainter& painter, const DocumentObject& deviation) {
+    const DeviationStats& s = deviation.deviation()->field.stats();
+    const double range = deviationRange(s.p95AbsMm, s.toleranceMm);
+    const QFontMetrics fm = painter.fontMetrics();
+    const int line = fm.height();
+    const QRect bar(width() - 150, 34 + line, 18, 200);
+    const QStringList stats{
+        tr("min %1 mm, max %2 mm").arg(s.minMm, 0, 'f', 3).arg(s.maxMm, 0, 'f', 3),
+        tr("mean %1 mm, RMS %2 mm").arg(s.meanMm, 0, 'f', 3).arg(s.rmsMm, 0, 'f', 3),
+        tr("95%: |d| ≤ %1 mm").arg(s.p95AbsMm, 0, 'f', 3),
+        tr("%1% within ±%2 mm").arg(100.0 * s.withinTolerance, 0, 'f', 1).arg(s.toleranceMm)};
+    int textWidth = fm.horizontalAdvance(QString::fromStdString(deviation.name));
+    for (const QString& t : stats) textWidth = std::max(textWidth, fm.horizontalAdvance(t));
+    const QRect panel(std::min(bar.left() - 8, width() - textWidth - 24),
+                      12,
+                      std::max(textWidth + 16, 150),
+                      bar.height() + line * (static_cast<int>(stats.size()) + 3) + 12);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(20, 20, 24, 210));
+    painter.drawRoundedRect(panel, 4, 4);
+    painter.setPen(QColor(230, 232, 236));
+    painter.drawText(panel.left() + 8, panel.top() + line, QString::fromStdString(deviation.name));
+
+    // The bar runs from +range (top) to -range (bottom), one colour per pixel row.
+    for (int y = 0; y < bar.height(); ++y) {
+        const double d = range * (1.0 - 2.0 * (y + 0.5) / bar.height());
+        painter.setPen(deviationColor(d, s.toleranceMm, range, colorBlind_));
+        painter.drawLine(bar.left(), bar.top() + y, bar.right(), bar.top() + y);
+    }
+    painter.setPen(QColor(230, 232, 236));
+    const auto tick = [&](double d, const QString& text) {
+        const int y =
+            bar.top() + static_cast<int>(std::lround((1.0 - d / range) * 0.5 * bar.height()));
+        painter.drawLine(bar.right() + 1, y, bar.right() + 5, y);
+        painter.drawText(bar.right() + 8, y + fm.ascent() / 2, text);
+    };
+    tick(range, tr("≥ +%1 mm").arg(range, 0, 'f', 3));
+    tick(s.toleranceMm, tr("+%1").arg(s.toleranceMm, 0, 'f', 3));
+    tick(-s.toleranceMm, tr("−%1").arg(s.toleranceMm, 0, 'f', 3));
+    tick(-range, tr("≤ −%1 mm").arg(range, 0, 'f', 3));
+    int y = bar.bottom() + line + 6;
+    for (const QString& t : stats) {
+        painter.drawText(panel.left() + 8, y, t);
+        y += line;
     }
 }
 

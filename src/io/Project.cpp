@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/io/Project.h"
 
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <iterator>
@@ -8,9 +9,11 @@
 #include <miniz.h>
 #include <sstream>
 #include <system_error>
+#include <type_traits>
 
 #include <nlohmann/json.hpp>
 
+#include "m2c/adapters/occt/Brep.h"
 #include "m2c/io/Ply.h"
 
 namespace m2c {
@@ -45,6 +48,104 @@ PickedPoint pickedFrom(const Json& j) {
         if (snap == toString(k)) p.snap = k;
     }
     return p;
+}
+
+// Binary arrays are stored in the host's byte order, which is little-endian on every platform
+// Mesh2Cad builds for (x86-64, ARM64), as the selection bitsets always were.
+static_assert(sizeof(Vec3d) == 3 * sizeof(double));
+
+template <class T>
+void append(std::string& out, const std::vector<T>& values) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    const std::uint64_t count = values.size();
+    out.append(reinterpret_cast<const char*>(&count), sizeof count);
+    if (!values.empty()) {
+        out.append(reinterpret_cast<const char*>(values.data()), values.size() * sizeof(T));
+    }
+}
+
+/// Reads back what append() wrote, checking every length against the data.
+class ByteReader {
+public:
+    explicit ByteReader(const std::string& data) : data_(data) {}
+
+    template <class T>
+    Result<std::vector<T>> take() {
+        std::uint64_t count = 0;
+        if (data_.size() - pos_ < sizeof count) return truncated();
+        std::memcpy(&count, data_.data() + pos_, sizeof count);
+        pos_ += sizeof count;
+        if (count > (data_.size() - pos_) / sizeof(T)) return truncated();
+        std::vector<T> values(static_cast<std::size_t>(count));
+        if (count > 0) std::memcpy(values.data(), data_.data() + pos_, values.size() * sizeof(T));
+        pos_ += values.size() * sizeof(T);
+        return values;
+    }
+    [[nodiscard]] bool done() const noexcept { return pos_ == data_.size(); }
+
+private:
+    static std::unexpected<Error> truncated() {
+        return fail(ErrorCode::Parse, "truncated data in project archive");
+    }
+    const std::string& data_;
+    std::size_t pos_{0};
+};
+
+std::string encode(const QuadLayout& cage) {
+    std::string out;
+    append(out, cage.positions());
+    append(out, cage.faceStarts());
+    append(out, cage.faceVertices());
+    return out;
+}
+
+Result<QuadLayout> decodeQuadLayout(const std::string& data) {
+    ByteReader in(data);
+    auto positions = in.take<Vec3d>();
+    if (!positions) return std::unexpected(positions.error());
+    auto starts = in.take<std::uint32_t>();
+    if (!starts) return std::unexpected(starts.error());
+    auto vertices = in.take<std::uint32_t>();
+    if (!vertices) return std::unexpected(vertices.error());
+    return QuadLayout::create(std::move(*positions), std::move(*starts), std::move(*vertices));
+}
+
+/// Per face: {cage face, spans, cap pieces} then its poles.
+std::string encode(const std::vector<SurfacePatch>& faces) {
+    std::string out;
+    append(out, std::vector<std::uint64_t>{faces.size()});
+    for (const SurfacePatch& f : faces) {
+        append(out, std::vector<std::uint64_t>{f.cageFace, f.spans, f.capPieces});
+        append(out, f.poles);
+    }
+    return out;
+}
+
+Result<std::vector<SurfacePatch>> decodeFaces(const std::string& data) {
+    ByteReader in(data);
+    auto count = in.take<std::uint64_t>();
+    if (!count) return std::unexpected(count.error());
+    if (count->size() != 1) return fail(ErrorCode::Parse, "bad face list in project archive");
+    std::vector<SurfacePatch> faces;
+    for (std::uint64_t i = 0; i < count->front(); ++i) {
+        auto header = in.take<std::uint64_t>();
+        if (!header) return std::unexpected(header.error());
+        auto poles = in.take<Vec3d>();
+        if (!poles) return std::unexpected(poles.error());
+        if (header->size() != 3 || (*header)[1] < 1 || (*header)[1] > 1024) {
+            return fail(ErrorCode::Parse, "bad face in project archive");
+        }
+        SurfacePatch f;
+        f.cageFace = static_cast<std::uint32_t>((*header)[0]);
+        f.spans = static_cast<std::size_t>((*header)[1]);
+        f.capPieces = static_cast<std::size_t>((*header)[2]);
+        f.poles = std::move(*poles);
+        if (f.poles.size() != f.polesPerRow() * f.polesPerRow()) {
+            return fail(ErrorCode::Parse, "bad face in project archive");
+        }
+        faces.push_back(std::move(f));
+    }
+    return faces;
 }
 
 /// Owns a miniz writer or reader and always ends it.
@@ -121,11 +222,40 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             j["file"] = file;
             j["mesh_id"] = s->meshId;
             j["face_count"] = s->faces->size();
-        } else {
-            const auto& measurement = std::get<Measurement>(o.data);
+        } else if (const auto* measurement = std::get_if<Measurement>(&o.data)) {
             j["kind"] = "measurement";
-            j["a"] = pickedJson(measurement.a);
-            j["b"] = pickedJson(measurement.b);
+            j["a"] = pickedJson(measurement->a);
+            j["b"] = pickedJson(measurement->b);
+        } else if (const auto* cage = std::get_if<QuadLayout>(&o.data)) {
+            const std::string file = "quad_layouts/" + std::to_string(o.id) + ".bin";
+            if (auto ok = addEntry(archive, file, encode(*cage), MZ_BEST_SPEED); !ok) return ok;
+            j["kind"] = "quad_layout";
+            j["file"] = file;
+        } else if (const auto* solid = std::get_if<Solid>(&o.data)) {
+            const std::string base = "solids/" + std::to_string(o.id);
+            auto brep = occt::writeBrep(*solid);
+            if (!brep) return std::unexpected(brep.error());
+            if (auto ok = addEntry(archive, base + ".brep", *brep, MZ_BEST_SPEED); !ok) return ok;
+            const std::string faces = encode(solid->faces());
+            if (auto ok = addEntry(archive, base + ".faces", faces, MZ_BEST_SPEED); !ok) return ok;
+            // The display mesh is tessellate(faces, n), so n is all it takes to rebuild it.
+            const double perFace = double(solid->display().faceCount()) /
+                                   double(std::max<std::size_t>(solid->faces().size(), 1));
+            j["kind"] = "solid";
+            j["brep_file"] = base + ".brep";
+            j["faces_file"] = base + ".faces";
+            j["display_grid"] = std::lround(std::sqrt(perFace / 2.0));
+        } else {
+            const auto& d = std::get<ProjectDeviation>(o.data);
+            const std::string file = "deviations/" + std::to_string(o.id) + ".bin";
+            std::string bytes;
+            append(bytes, d.field.distances());
+            if (auto ok = addEntry(archive, file, bytes, MZ_BEST_SPEED); !ok) return ok;
+            j["kind"] = "deviation";
+            j["file"] = file;
+            j["mesh_id"] = d.meshId;
+            j["reference_id"] = d.referenceId;
+            j["tolerance_mm"] = d.field.stats().toleranceMm;
         }
         objects.push_back(std::move(j));
     }
@@ -189,7 +319,8 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                         ")");
     }
     if (version < 1) return fail(ErrorCode::Parse, "project has an invalid format version");
-    // Version 1 is the first format, so there is nothing to migrate yet.
+    // Version 1 holds meshes, selections and measurements, stored as in version 2, so it needs no
+    // migration; the object kinds version 2 added are refused in a version 1 file.
 
     try {
         ProjectData project;
@@ -228,6 +359,37 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                                          MeshSelection::fromWords(std::move(words), faceCount))};
             } else if (kind == "measurement") {
                 o.data = Measurement{pickedFrom(j.at("a")), pickedFrom(j.at("b"))};
+            } else if (version >= 2 && kind == "quad_layout") {
+                auto raw = readEntry(archive, j.at("file").get<std::string>());
+                if (!raw) return std::unexpected(raw.error());
+                auto cage = decodeQuadLayout(*raw);
+                if (!cage) return std::unexpected(cage.error());
+                o.data = std::move(*cage);
+            } else if (version >= 2 && kind == "solid") {
+                auto brep = readEntry(archive, j.at("brep_file").get<std::string>());
+                if (!brep) return std::unexpected(brep.error());
+                auto raw = readEntry(archive, j.at("faces_file").get<std::string>());
+                if (!raw) return std::unexpected(raw.error());
+                auto faces = decodeFaces(*raw);
+                if (!faces) return std::unexpected(faces.error());
+                auto display = tessellate(*faces, j.at("display_grid").get<int>());
+                if (!display) return std::unexpected(display.error());
+                auto solid = occt::readBrep(
+                    *brep, std::move(*faces), std::make_shared<const TriMesh>(std::move(*display)));
+                if (!solid) return std::unexpected(solid.error());
+                o.data = std::move(*solid);
+            } else if (version >= 2 && kind == "deviation") {
+                auto raw = readEntry(archive, j.at("file").get<std::string>());
+                if (!raw) return std::unexpected(raw.error());
+                ByteReader in(*raw);
+                auto distances = in.take<double>();
+                if (!distances) return std::unexpected(distances.error());
+                auto field = DeviationField::create(std::move(*distances),
+                                                    j.at("tolerance_mm").get<double>());
+                if (!field) return std::unexpected(field.error());
+                o.data = ProjectDeviation{j.at("mesh_id").get<std::uint64_t>(),
+                                          j.at("reference_id").get<std::uint64_t>(),
+                                          std::move(*field)};
             } else {
                 return fail(ErrorCode::Parse, "unknown object kind '" + kind + "' in project");
             }

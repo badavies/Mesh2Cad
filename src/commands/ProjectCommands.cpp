@@ -2,6 +2,7 @@
 // project.save, project.open, project.new.
 
 #include <filesystem>
+#include <string>
 
 #include "m2c/io/Project.h"
 
@@ -13,8 +14,8 @@ namespace m2c::cmd {
 void addProjectCommands(std::vector<Command>& out) {
     out.push_back(makeCommand(
         "project.save",
-        "Save every object (meshes, selections, measurements, alignments) to a project file "
-        "(.m2c).",
+        "Save every object (meshes, selections, measurements, alignments, quad layouts, solids "
+        "and deviations) to a project file (.m2c).",
         R"({"type":"object","properties":{"path":{"type":"string"}},
             "required":["path"],"additionalProperties":false})",
         false,
@@ -34,8 +35,15 @@ void addProjectCommands(std::vector<Command>& out) {
                     p.data = ProjectMesh{m->mesh, m->alignment};
                 } else if (const SelectionData* s = o.selection()) {
                     p.data = ProjectSelection{s->meshId, s->faces};
+                } else if (const MeasurementData* d = o.measurement()) {
+                    p.data = d->measurement;
+                } else if (const QuadLayoutData* q = o.quadLayout()) {
+                    p.data = q->cage;
+                } else if (const SolidData* solid = o.solid()) {
+                    p.data = solid->solid;
                 } else {
-                    p.data = o.measurement()->measurement;
+                    const DeviationData& dev = *o.deviation();
+                    p.data = ProjectDeviation{dev.meshId, dev.referenceId, dev.field};
                 }
                 project.objects.push_back(std::move(p));
             }
@@ -43,36 +51,43 @@ void addProjectCommands(std::vector<Command>& out) {
             return Json{{"path", *path}, {"object_count", project.objects.size()}};
         }));
 
-    Command open =
-        makeCommand("project.open",
-                    "Open a project file, replacing the current document. Clears the undo history.",
-                    R"({"type":"object","properties":{"path":{"type":"string"}},
+    Command open = makeCommand(
+        "project.open",
+        "Open a project file, replacing the current document. Clears the undo history.",
+        R"({"type":"object","properties":{"path":{"type":"string"}},
             "required":["path"],"additionalProperties":false})",
-                    true,
-                    [](CommandContext& context, const Json& params) -> Result<Json> {
-                        M2C_TRY(path, requireString(params, "path"));
-                        M2C_TRY(project, readProject(std::filesystem::path(*path)));
-                        std::vector<DocumentObject> objects;
-                        for (ProjectObject& p : project->objects) {
-                            DocumentObject o;
-                            o.id = p.id;
-                            o.name = std::move(p.name);
-                            o.visible = p.visible;
-                            o.provenance = Provenance{
-                                std::move(p.madeBy), std::move(p.madeWith), std::move(p.inputs)};
-                            if (auto* m = std::get_if<ProjectMesh>(&p.data)) {
-                                o.data = MeshData{m->mesh, m->alignment};
-                            } else if (auto* s = std::get_if<ProjectSelection>(&p.data)) {
-                                o.data = SelectionData{s->meshId, s->faces};
-                            } else {
-                                o.data = MeasurementData{std::get<Measurement>(p.data)};
-                            }
-                            objects.push_back(std::move(o));
-                        }
-                        const std::size_t count = objects.size();
-                        M2C_TRY(loaded, context.document.load(std::move(objects), project->nextId));
-                        return Json{{"path", *path}, {"object_count", count}};
-                    });
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(path, requireString(params, "path"));
+            M2C_TRY(project, readProject(std::filesystem::path(*path)));
+            std::vector<DocumentObject> objects;
+            for (ProjectObject& p : project->objects) {
+                DocumentObject o;
+                o.id = p.id;
+                o.name = std::move(p.name);
+                o.visible = p.visible;
+                o.provenance =
+                    Provenance{std::move(p.madeBy), std::move(p.madeWith), std::move(p.inputs)};
+                if (auto* m = std::get_if<ProjectMesh>(&p.data)) {
+                    o.data = MeshData{m->mesh, m->alignment};
+                } else if (auto* s = std::get_if<ProjectSelection>(&p.data)) {
+                    o.data = SelectionData{s->meshId, s->faces};
+                } else if (auto* d = std::get_if<Measurement>(&p.data)) {
+                    o.data = MeasurementData{*d};
+                } else if (auto* q = std::get_if<QuadLayout>(&p.data)) {
+                    o.data = QuadLayoutData{std::move(*q)};
+                } else if (auto* solid = std::get_if<Solid>(&p.data)) {
+                    o.data = SolidData{std::move(*solid)};
+                } else {
+                    auto& dev = std::get<ProjectDeviation>(p.data);
+                    o.data = DeviationData{dev.meshId, dev.referenceId, std::move(dev.field)};
+                }
+                objects.push_back(std::move(o));
+            }
+            const std::size_t count = objects.size();
+            M2C_TRY(loaded, context.document.load(std::move(objects), project->nextId));
+            return Json{{"path", *path}, {"object_count", count}};
+        });
     open.opensUndoStep = false;
     out.push_back(std::move(open));
 
