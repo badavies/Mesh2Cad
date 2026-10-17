@@ -104,6 +104,14 @@ jobs:
         with:
           path: .vcpkg-cache
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+      # vcpkg's build trees for a fresh Open CASCADE build (debug and sanitized in particular)
+      # take most of the runner's disk; the installed packages are all the build needs.
+      - name: Free the disk vcpkg used for building
+        if: always()
+        shell: bash
+        run: |
+          rm -rf "$VCPKG_ROOT/buildtrees" "$VCPKG_ROOT/packages" "$VCPKG_ROOT/downloads"
+          df -h .
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
