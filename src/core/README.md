@@ -11,6 +11,7 @@ millimetres. Errors cross module boundaries as `Result<T>` (`std::expected<T, Er
 - `m2c/core/TriMesh.h`: `TriMesh` (immutable indexed triangle mesh, built with `TriMesh::create`) and `Aabb`.
 - `m2c/core/MeshStats.h`: `MeshStats` and `computeStats` (counts, boundary and non-manifold edges, area, volume, bounds).
 - `m2c/core/MeshTopology.h`: `FaceAdjacency`, `buildFaceAdjacency`, `faceComponents`, `faceNormal`, `faceArea`, `extractFaces`.
+- `m2c/core/QuadLayout.h`: `QuadLayout` (immutable polygon control cage, mostly quads, with `withPositions`), `CageStats` with `cageStats`, and `signedVolume`.
 - `m2c/core/SpatialIndex.h`: `SpatialIndex` (BVH with `raycast`, `closestPoint`, `facesWithin`), `RayHit`, `ClosestPoint`, `closestPointOnTriangle`.
 - `m2c/core/MeshSelection.h`: `MeshSelection`, a bitset of face indices on one mesh.
 - `m2c/core/Transform.h`: `Transform3d` (rigid rotation plus translation) and `transformMesh`.

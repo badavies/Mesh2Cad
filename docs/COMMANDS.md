@@ -71,7 +71,7 @@ List the undo and redo steps, with the source (ui, cli, json, mcp) of each. *(re
 
 ### `doc.list`
 
-List the objects in the document: meshes, selections and measurements. *(read-only)*
+List the objects in the document: meshes, selections, measurements and quad layouts. *(read-only)*
 
 ### `doc.redo`
 
@@ -278,6 +278,20 @@ Save every object (meshes, selections, measurements, alignments) to a project fi
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `path` | string | yes |  |
+
+## quad
+
+### `quad.remesh`
+
+Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges and loose fragments are dropped, open loops filled and faces pointed outward. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `crease_angle_deg` | number |  | Align the quads to edges sharper than this; 0 = treat the surface as smooth. Default `0`. |
+| `id` | integer | yes |  |
+| `name` | string |  |  |
+| `smooth_iterations` | integer |  | Rounds of smoothing that pull the cage vertices back onto the mesh. Default `2`. |
+| `target_faces` | integer |  | Approximate number of quads in the cage. Default `2000`. |
 
 ## select
 

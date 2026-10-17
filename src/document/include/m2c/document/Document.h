@@ -12,6 +12,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/QuadLayout.h"
 #include "m2c/core/Transform.h"
 #include "m2c/core/TriMesh.h"
 
@@ -37,7 +38,13 @@ struct MeasurementData {
     Measurement measurement;
 };
 
-using ObjectData = std::variant<MeshData, SelectionData, MeasurementData>;
+/// A quad control cage made from a mesh (ARCHITECTURE.md section 6, Quad layout). It stays when
+/// that mesh changes or is removed; its provenance names the mesh.
+struct QuadLayoutData {
+    QuadLayout cage;
+};
+
+using ObjectData = std::variant<MeshData, SelectionData, MeasurementData, QuadLayoutData>;
 
 /// Which command made an object, with what parameters (a JSON text, so this module needs no JSON
 /// library) and from which inputs. A stage can be re-run from this record.
@@ -61,7 +68,10 @@ struct DocumentObject {
     [[nodiscard]] const MeasurementData* measurement() const noexcept {
         return std::get_if<MeasurementData>(&data);
     }
-    /// "mesh", "selection" or "measurement".
+    [[nodiscard]] const QuadLayoutData* quadLayout() const noexcept {
+        return std::get_if<QuadLayoutData>(&data);
+    }
+    /// "mesh", "selection", "measurement" or "quad_layout".
     [[nodiscard]] const char* kind() const noexcept;
 };
 

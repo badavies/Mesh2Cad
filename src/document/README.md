@@ -12,7 +12,7 @@ command, so every command is one step whatever it changes.
     - Changes: `addMesh`, `add`, `replaceMesh`, `replaceSelection`, `replaceMeasurement`, `remove`, `rename`, `setVisible`, `clear`, `load`.
     - Queries: `find`, `findMesh`, `objects`, `revision`, `nextId`.
     - History: `undo`, `redo`, `canUndo`, `canRedo`, `undoHistory`, `redoHistory`.
-  - `DocumentObject` with `ObjectData`, a variant of `MeshData`, `SelectionData` and `MeasurementData`.
+  - `DocumentObject` with `ObjectData`, a variant of `MeshData`, `SelectionData`, `MeasurementData` and `QuadLayoutData`.
   - `Provenance` (command name, parameters as JSON text, input ids), `HistoryStep`, `MeshObject` and `ObjectId`.
 
 ## Dependencies

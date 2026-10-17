@@ -1,9 +1,9 @@
 # pipeline (`Mesh2Cad::pipeline`)
 
 Processing stages and tools that turn core types into new core types: mesh tools, selection,
-alignment, shells, smoothing and measurement. Each function is pure: it takes immutable inputs
+alignment, shells, smoothing, measurement and the quad layout. Each function is pure: it takes immutable inputs
 and returns a new result or an `Error`, and never touches the document. Algorithms that need
-CGAL come from the CGAL adapter.
+CGAL come from the CGAL adapter, the quad remesher from the quad adapter.
 
 ## Public API
 
@@ -13,6 +13,7 @@ CGAL come from the CGAL adapter.
 - `m2c/pipeline/Shells.h`: `detectShells` returning `ShellReport` and `ShellInfo`, plus `shellFaces` and `smallShellFaces`.
 - `m2c/pipeline/Align.h`: `fitPlane` returning `PlaneFit`, `principalAxesAlignment` with `AlignOrigin`, `symmetryAlignment` returning `SymmetryAlignment`, and `datumAlignment` with `DatumAlignParams` and `DatumAlignResult`.
 - `m2c/pipeline/Measure.h`: `snapToMesh` and `pickMesh`.
+- `m2c/pipeline/QuadRemesh.h`: `quadRemesh` with `QuadRemeshParams` returning `QuadRemeshResult` (closed cage, `CageStats`, distances), and `closeCage` with its `CageCleanup` report.
 
 ## Dependencies
 

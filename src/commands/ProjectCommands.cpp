@@ -2,6 +2,7 @@
 // project.save, project.open, project.new.
 
 #include <filesystem>
+#include <string>
 
 #include "m2c/io/Project.h"
 
@@ -34,8 +35,12 @@ void addProjectCommands(std::vector<Command>& out) {
                     p.data = ProjectMesh{m->mesh, m->alignment};
                 } else if (const SelectionData* s = o.selection()) {
                     p.data = ProjectSelection{s->meshId, s->faces};
+                } else if (const MeasurementData* d = o.measurement()) {
+                    p.data = d->measurement;
                 } else {
-                    p.data = o.measurement()->measurement;
+                    return fail(ErrorCode::Unsupported,
+                                std::string("project files cannot hold a ") + o.kind() +
+                                    " yet (object " + std::to_string(o.id) + ")");
                 }
                 project.objects.push_back(std::move(p));
             }

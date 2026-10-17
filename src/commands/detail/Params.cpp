@@ -184,6 +184,9 @@ Json describe(const DocumentObject& object) {
         j["face_count"] = s->faces->count();
     } else if (const MeasurementData* d = object.measurement()) {
         j["measurement"] = toJson(d->measurement);
+    } else if (const QuadLayoutData* q = object.quadLayout()) {
+        j["vertex_count"] = q->cage.vertexCount();
+        j["face_count"] = q->cage.faceCount();
     }
     if (!object.provenance.command.empty()) {
         j["made_by"] = object.provenance.command;
