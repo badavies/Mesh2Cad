@@ -120,6 +120,22 @@ void addSurfaceCommands(std::vector<Command>& out) {
         }));
 
     out.push_back(makeCommand(
+        "solid.info",
+        "Describe a solid: face, edge and shell counts, whether it is closed and valid, its "
+        "volume, area and bounds.",
+        R"({
+            "type":"object",
+            "properties":{"id":{"type":"integer","minimum":0,"description":"The solid."}},
+            "required":["id"],"additionalProperties":false})",
+        false,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireObject(context, params, "id", "solid"));
+            return Json{{"id", object->id},
+                        {"name", object->name},
+                        {"summary", toJson(object->solid()->solid.summary())}};
+        }));
+
+    out.push_back(makeCommand(
         "solid.export",
         "Write a solid to a STEP AP242 file in millimetres, then read the file back and check it "
         "holds one valid closed solid with the same volume (within 0.1%). Fails, writing "

@@ -16,6 +16,10 @@ surface.build     {"id": 2, "mesh_id": 1}
 solid.export      {"id": 3, "path": "<scan>.step"}
 ```
 
+For the DJI controller, `ctest -L golden` runs this session (with the M1 repair and alignment
+first) and leaves the file at `tests/golden/dji_controller_3_surface/scan.step`, with the
+deviation report beside it as `scan.deviation.csv`.
+
 Note from the commands' results: `surface.build` `summary` (face count, volume, `valid`,
 `closed`), `seams.max_normal_angle_deg` and `fit.rms_distance_mm`, and `solid.export`
 `check.passed`. Do not continue with a file whose `check.passed` is false.

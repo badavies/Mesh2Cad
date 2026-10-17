@@ -123,6 +123,12 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK(object->provenance.inputs == std::vector<ObjectId>{cage.get<ObjectId>(), mesh});
     CHECK(s.document.undoHistory().back().label == "surface.build");
 
+    // solid.info reads the same summary back, and only for solids.
+    const Json info = s.run("solid.info", {{"id", solid}});
+    CHECK(info["summary"] == result["summary"]);
+    CHECK(info["name"] == "ball (quads) (solid)");
+    CHECK_FALSE(s.tryRun("solid.info", {{"id", mesh}}));
+
     // Without fitting, no mesh is needed.
     const Json unfitted = s.run("surface.build", {{"id", cage}, {"fit", false}});
     CHECK(unfitted["summary"]["valid"] == true);

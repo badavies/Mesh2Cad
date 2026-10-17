@@ -17,16 +17,17 @@ tests/golden/dji_controller_3/
 | `dewalt_multitool` | `D:\Revopoint\Dewalt Multitool.obj` | 145 holes, some in folded pockets the CGAL triangulation refuses |
 | `siemens_coffee_lid` | `D:\Revopoint\Siemens Coffe Machine Lid.obj` | A single-sided sheet: closed with the shrink-wrap fallback, not hole filling |
 | `tyranid_v2` | `D:\Revopoint\tyranid v2.obj` | Quad faces, non-manifold edges, inconsistent orientation |
+| `dji_controller_3_surface` | the `dji_controller_3` copy | The M2 gate: the M1 session, then quad layout, surface build, deviation, STEP export and the deviation report |
 
 ## Getting the scans
 
-Copy each source scan into its folder as `scan.obj` (the name in `metrics.json` under `scan.file`). The original stays where it is. `metrics.json` records the size and SHA-256 of the exact file the limits were measured on, and the test fails if the copy differs; check a copy with `certutil -hashfile scan.obj SHA256` (Windows) or `sha256sum scan.obj`. A folder without its scan is skipped with a warning, so CI, which has no scans, reports the test as skipped.
+Copy each source scan into its folder as `scan.obj` (the name in `metrics.json` under `scan.file`; `dji_controller_3_surface` reads the copy in `dji_controller_3`, so it needs none of its own). The original stays where it is. `metrics.json` records the size and SHA-256 of the exact file the limits were measured on, and the test fails if the copy differs; check a copy with `certutil -hashfile scan.obj SHA256` (Windows) or `sha256sum scan.obj`. A folder without its scan is skipped with a warning, so CI, which has no scans, reports the test as skipped.
 
 To keep the whole golden set somewhere else, point `M2C_GOLDEN_DIR` at a folder laid out the same way.
 
 ## File formats
 
-`session.jsonl` uses the format of `mesh2cad batch` and of the app's session log, so a session recorded in the app can be copied in. Relative paths are resolved against the scan folder.
+`session.jsonl` uses the format of `mesh2cad batch` and of the app's session log, so a session recorded in the app can be copied in. Relative paths, in the session and in the checks, are resolved against the scan folder. Files a session writes should be named `scan.*` (for example `scan.step`), which keeps them out of Git; the STEP file is the one to take through `docs/FUSION_CHECKLIST.md`.
 
 ```
 {"command":"mesh.import","params":{"path":"scan.obj"}}
@@ -58,6 +59,8 @@ To keep the whole golden set somewhere else, point `M2C_GOLDEN_DIR` at a folder 
 ```
 
 The gate limits are fixed: watertight, no non-manifold or boundary edges, positive volume (outward faces), and the part sitting on Z = 0 after alignment. The other limits were set from the first run: face count within 5%, volume within 2% and the aligned bounding box within 1%, so a change in repair or a turned alignment shows up. `max_seconds` is about four times the first optimised (Release) run and is not checked in debug builds.
+
+`dji_controller_3_surface` (M2) requires one valid, closed solid with one shell, no free edges and a STEP file that reads back as the same solid; its face count is within 5% and its volume within 2% of the first run. Its deviation limits are the first run's values with some room (RMS 3.62 mm, 95th percentile 0.78 mm, 70% of points within 0.1 mm, largest 26.2 mm) and are there for M3 to tighten towards the M3 gate of 0.1 mm at the 95th percentile.
 
 The test replays the session through the registry (CLI path), the JSON channel and the MCP server, requires identical documents from all three, then checks the metrics. Run it on a Release build with `ctest -L golden`; it takes a few minutes.
 

@@ -467,6 +467,14 @@ Write a solid to a STEP AP242 file in millimetres, then read the file back and c
 | `path` | string | yes | The .step or .stp file to write. |
 | `product_name` | string |  | Product name in the file; the object name if omitted. |
 
+### `solid.info`
+
+Describe a solid: face, edge and shell counts, whether it is closed and valid, its volume, area and bounds. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The solid. |
+
 ## surface
 
 ### `surface.build`

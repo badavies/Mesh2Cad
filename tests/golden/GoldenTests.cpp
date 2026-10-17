@@ -64,8 +64,15 @@ Json readJson(const fs::path& file) {
     return Json::parse(in);
 }
 
-/// Session lines in the format of the app's session log and `mesh2cad batch`. Relative paths are
-/// resolved against the scan folder; "source" is ignored (each front end records its own).
+/// Relative paths in a session or a check are resolved against the scan folder.
+Json resolvePaths(const fs::path& folder, Json params) {
+    if (params.contains("path") && fs::path(params["path"].get<std::string>()).is_relative())
+        params["path"] = (folder / params["path"].get<std::string>()).string();
+    return params;
+}
+
+/// Session lines in the format of the app's session log and `mesh2cad batch`. "source" is
+/// ignored (each front end records its own).
 std::vector<Step> readSession(const fs::path& folder, const std::string& name) {
     std::ifstream in(folder / name);
     REQUIRE(in.good());
@@ -74,10 +81,8 @@ std::vector<Step> readSession(const fs::path& folder, const std::string& name) {
     while (std::getline(in, line)) {
         if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
         const Json request = Json::parse(line);
-        Json params = request.value("params", Json::object());
-        if (params.contains("path") && fs::path(params["path"].get<std::string>()).is_relative())
-            params["path"] = (folder / params["path"].get<std::string>()).string();
-        steps.push_back({request.at("command").get<std::string>(), std::move(params)});
+        steps.push_back({request.at("command").get<std::string>(),
+                         resolvePaths(folder, request.value("params", Json::object()))});
     }
     return steps;
 }
@@ -264,8 +269,8 @@ void runGolden(const fs::path& folder) {
     for (const Json& check : metrics.value("checks", Json::array())) {
         const std::string command = check.at("command").get<std::string>();
         INFO("check " << check.dump());
-        const auto result =
-            cli.registry.execute(cli.context, command, check.value("params", Json::object()));
+        const auto result = cli.registry.execute(
+            cli.context, command, resolvePaths(folder, check.value("params", Json::object())));
         REQUIRE(result.has_value());
         for (const auto& [pointer, expected] : check.at("expect").items()) {
             checkMetric(*result, pointer, expected);
