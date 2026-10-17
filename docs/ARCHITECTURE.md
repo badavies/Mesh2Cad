@@ -54,7 +54,7 @@ The core is C++23, licensed GPL-3.0-or-later, and every dependency must be GPL v
 | UI | Qt 6 Widgets | LGPL v3 | Windows, docks, panels, dialogs |
 | Viewport | Custom OpenGL renderer in a Qt widget | n/a | Large-mesh rendering with level of detail |
 | Mesh processing | CGAL | GPL v3 / LGPL v3 | Repair, hole filling, smoothing, simplification, shells, alpha wrapping, shape detection, AABB trees |
-| Quad remeshing | QuadWild (bi-MDF variant) as front-runner; Instant Meshes as comparison baseline; confirmed by the M2 spike | GPL v3 (QuadWild), BSD (Instant Meshes): check both in the spike | Automatic quad patch layout |
+| Quad remeshing | Instant Meshes core, single-threaded (ADR-009); QuadWild (bi-MDF) to revisit at M3 | BSD-3-Clause | Automatic quad patch layout |
 | Subdivision | OpenSubdiv | Apache 2.0 | Quad mesh to B-spline patches |
 | Linear algebra | Eigen | MPL 2.0 | Least-squares surface fitting |
 | CAD kernel | Open CASCADE (OCCT) | LGPL 2.1 + exception | B-rep, sewing, booleans, STEP, tessellation, point projection |
@@ -441,7 +441,7 @@ The biggest technical risk is the surfacing stage producing small gaps or kinks,
 
 **Open decisions**
 
-- [ ] Quad remesher: QuadWild (bi-MDF) is the front-runner because it targets clean patch layouts; confirm against Instant Meshes in an M2 spike on three golden scans, including a licence check.
+- [x] Quad remesher: Instant Meshes for M2, after a spike on three golden scans (ADR-009). QuadWild could not be built in the spike; revisit it at M3 if the layout limits accuracy.
 - [ ] Platforms: Windows and Linux in CI; decide whether macOS is supported.
 - [ ] Rust import module: revisit after M1 fuzzing shows whether the C++ parsers cause real problems.
 - [ ] Sketch constraint solver: backlog; decide only if fitted sketches prove insufficient.
@@ -460,7 +460,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-006 | Subdivision-to-B-spline as the first surfacing path | Accepted | Smooth, mostly exact patches with the least custom fitting code |
 | ADR-007 | App-owned core types; kernel types confined to adapters | Accepted | Libraries stay replaceable; UI and pipeline stay simple |
 | ADR-008 | Qt 6 Widgets with a custom OpenGL viewport | Accepted (ADR-023) | Full control of large-mesh rendering; mature desktop widgets |
-| ADR-009 | Quad remesher choice | Proposed | Decided by the M2 spike |
+| ADR-009 | Quad remesher: Instant Meshes, single-threaded, with cage clean-up | Accepted | Builds as a library with no new runtime dependency; QuadWild could not be built in the spike; see `docs/adr/0009-quad-remesher.md` |
 | ADR-010 | Every action is a registered command; UI, CLI, JSON channel and MCP server are thin front ends | Accepted | One code path to test; automation and AI agents get every feature for free |
 | ADR-011 | JSON-RPC 2.0 over stdio or local socket; MCP server written in C++ on top of it | Accepted (ADR-023) | Reuses the same message code; avoids a second language |
 | ADR-012 | Language standard C++23 (supersedes C++20 in ADR-001) | Accepted | `std::expected` is C++23; avoids an extra dependency |
