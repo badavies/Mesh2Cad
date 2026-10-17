@@ -53,6 +53,19 @@ private:
     std::streambuf* err_;
 };
 
+/// Releases the hierarchy's adjacency arrays, which Instant Meshes allocates with new[] and
+/// leaves to the owner (its batch tool never frees them because the process exits).
+class FreeHierarchy {
+public:
+    explicit FreeHierarchy(MultiResolutionHierarchy& hierarchy) : hierarchy_(hierarchy) {}
+    ~FreeHierarchy() { hierarchy_.free(); }
+    FreeHierarchy(const FreeHierarchy&) = delete;
+    FreeHierarchy& operator=(const FreeHierarchy&) = delete;
+
+private:
+    MultiResolutionHierarchy& hierarchy_;
+};
+
 Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     constexpr int rosy = 4;
     constexpr int posy = 4;
@@ -99,7 +112,9 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
                   deterministic);
     }
     build_dedge(F, V, V2E, E2E, boundary, nonManifold);
-    AdjacencyMatrix adj = generate_adjacency_matrix_uniform(F, V2E, E2E, nonManifold);
+    MultiResolutionHierarchy mRes;
+    const FreeHierarchy freeHierarchy(mRes);
+    mRes.setAdj(generate_adjacency_matrix_uniform(F, V2E, E2E, nonManifold));
     std::set<uint32_t> creaseIn, creaseOut;
     if (params.creaseAngleDeg > 0) {
         generate_crease_normals(F,
@@ -116,9 +131,7 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     }
     compute_dual_vertex_areas(F, V, V2E, E2E, nonManifold, A);
 
-    MultiResolutionHierarchy mRes;
     mRes.setE2E(std::move(E2E));
-    mRes.setAdj(std::move(adj));
     mRes.setF(std::move(F));
     mRes.setV(std::move(V));
     mRes.setA(std::move(A));
