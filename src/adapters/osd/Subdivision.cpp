@@ -97,6 +97,11 @@ SurfacePoint locate(const Tessellation& tess, const Vec3d& q) {
 
 using SparseMatrix = Eigen::SparseMatrix<double>;
 
+/// A matrix entry; SparseMatrix stores int indices, so the narrowing is spelled out here.
+Eigen::Triplet<double> entry(Eigen::Index row, Eigen::Index col, double value) {
+    return {static_cast<int>(row), static_cast<int>(col), value};
+}
+
 /// Umbrella Laplacian of the cage's edge graph.
 SparseMatrix laplacian(const QuadLayout& cage) {
     std::vector<std::set<std::uint32_t>> neighbours(cage.vertexCount());
@@ -277,7 +282,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         for (Eigen::Index c = 0; c < 3; ++c) {
             for (Eigen::Index k = 0; k < block.outerSize(); ++k) {
                 for (SparseMatrix::InnerIterator it(block, k); it; ++it) {
-                    entries.emplace_back(c * n + it.row(), c * n + it.col(), it.value());
+                    entries.push_back(entry(c * n + it.row(), c * n + it.col(), it.value()));
                 }
             }
         }
@@ -326,8 +331,8 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
             for (const VertexWeight& vw : w) {
                 for (Eigen::Index c = 0; c < 3; ++c) {
                     const auto cc = static_cast<std::size_t>(c);
-                    planeRows.emplace_back(k, c * n + vw.vertex, vw.weight * nc[cc]);
-                    pointRows.emplace_back(c * m + k, c * n + vw.vertex, vw.weight);
+                    planeRows.push_back(entry(k, c * n + vw.vertex, vw.weight * nc[cc]));
+                    pointRows.push_back(entry(c * m + k, c * n + vw.vertex, vw.weight));
                 }
             }
             planeTargets(k) = dot(sp.normal, q);
