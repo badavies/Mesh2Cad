@@ -68,6 +68,8 @@ public:
     [[nodiscard]] double brushRadius() const noexcept { return brushRadius_; }
     void setCreaseAngle(double degrees) { creaseAngle_ = degrees; }
     [[nodiscard]] double creaseAngle() const noexcept { return creaseAngle_; }
+    /// How far from a point, in mm, the measure tool snaps to a vertex or edge: a few pixels.
+    [[nodiscard]] double snapMm(const Vec3d& at) const;
     void setWireframe(bool on);
     void setShowBackFaces(bool on);
     void setColorBlindPalette(bool on);

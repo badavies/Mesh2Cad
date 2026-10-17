@@ -167,6 +167,7 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
         weights.push_back(area);
         totalWeight += area;
     }
+    if (samples.empty()) return fail(ErrorCode::InvalidArgument, "mesh has no surface area");
 
     const SpatialIndex& index = mesh.spatialIndex();
     // The plane is n . (x - centroid) = offset.
@@ -311,7 +312,7 @@ Result<DatumAlignResult> datumAlignment(const TriMesh& mesh, const DatumAlignPar
         const auto& r = principal->rotation;
         Eigen::Vector3d px{r[0], r[1], r[2]};
         px -= px.dot(z) * z;
-        if (px.norm() < 1e-6) px = Eigen::Vector3d::UnitX() - z.x() * z;
+        if (px.norm() < 1e-6) px = z.unitOrthogonal(); // the long axis is the datum normal
         y = z.cross(px.normalized());
     }
     const Eigen::Vector3d x = y.cross(z);

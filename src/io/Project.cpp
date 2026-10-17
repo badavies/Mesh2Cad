@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/io/Project.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <fstream>
-#include <iterator>
 #include <memory>
 #include <miniz.h>
 #include <sstream>
@@ -294,10 +294,12 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
 }
 
 Result<ProjectData> readProject(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) return fail(ErrorCode::Io, "cannot open '" + path.string() + "' for reading");
-    const std::string bytes((std::istreambuf_iterator<char>(file)),
-                            std::istreambuf_iterator<char>());
+    std::string bytes(static_cast<std::size_t>(std::max<std::streamoff>(file.tellg(), 0)), '\0');
+    file.seekg(0);
+    file.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    if (!file) return fail(ErrorCode::Io, "cannot read '" + path.string() + "'");
 
     ZipArchive archive;
     if (!mz_zip_reader_init_mem(&archive.zip, bytes.data(), bytes.size(), 0)) {
@@ -338,7 +340,7 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 auto text = readEntry(archive, j.at("file").get<std::string>());
                 if (!text) return std::unexpected(text.error());
                 std::istringstream in(*text, std::ios::in | std::ios::binary);
-                auto mesh = readPly(in);
+                auto mesh = readPlyUnwelded(in);
                 if (!mesh) return std::unexpected(mesh.error());
                 ProjectMesh m{std::make_shared<const TriMesh>(std::move(*mesh)), {}};
                 const Json& a = j.at("alignment");
@@ -352,6 +354,9 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 if (!raw) return std::unexpected(raw.error());
                 const auto faceCount = j.at("face_count").get<std::size_t>();
                 std::vector<std::uint64_t> words(raw->size() / sizeof(std::uint64_t));
+                if (words.size() != faceCount / 64 + (faceCount % 64 != 0 ? 1 : 0)) {
+                    return fail(ErrorCode::Parse, "bad selection in project archive");
+                }
                 if (!words.empty()) std::memcpy(words.data(), raw->data(), words.size() * 8);
                 o.data =
                     ProjectSelection{j.at("mesh_id").get<std::uint64_t>(),

@@ -61,7 +61,9 @@ Result<QuadLayout> QuadLayout::create(std::vector<Vec3d> positions,
     }
     std::vector<std::uint32_t> uses(positions.size(), 0);
     for (std::size_t f = 0; f + 1 < faceStarts.size(); ++f) {
-        if (faceStarts[f + 1] < faceStarts[f] + 3) {
+        // Checked without adding to an offset, which could wrap round.
+        if (faceStarts[f + 1] > faceVertices.size() || faceStarts[f + 1] < faceStarts[f] ||
+            faceStarts[f + 1] - faceStarts[f] < 3) {
             return fail(ErrorCode::InvalidArgument,
                         "cage face " + std::to_string(f) + " has fewer than three vertices");
         }

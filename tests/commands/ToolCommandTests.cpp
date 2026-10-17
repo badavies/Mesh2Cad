@@ -2,6 +2,8 @@
 // Every M1 command run end to end through the registry, as the UI, CLI, JSON channel and MCP
 // server all do.
 
+#include <limits>
+
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/commands/Command.h"
@@ -305,4 +307,26 @@ TEST_CASE("Replaying the session log reproduces the document", "[commands][repla
     CHECK(a->mesh->positions() == b->mesh->positions()); // bit-identical on one platform
     CHECK(a->mesh->indices() == b->mesh->indices());
     CHECK(replay.run("doc.list") == s.run("doc.list"));
+}
+
+TEST_CASE("Edits that change nothing add no undo step and keep selections", "[commands][tools]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId id = s.import(dir, makeCube(), "cube");
+    const Json all = s.run("select.all", {{"id", id}});
+    s.run("select.invert", {{"selection_id", all["selection_id"]}}); // now empty
+    const auto steps = s.document.undoHistory().size();
+
+    CHECK(s.run("holes.fill", {{"id", id}})["report"]["filled"] == 0);
+    CHECK(s.run("faces.delete",
+                {{"selection_id", all["selection_id"]}})["report"]["deleted_faces"] == 0);
+    CHECK(s.run("shells.keep", {{"id", id}})["deleted_shells"] == 0);
+    CHECK(s.document.undoHistory().size() == steps);
+    CHECK(s.document.find(all["selection_id"].get<ObjectId>()).has_value());
+
+    // A rotation with a non-finite entry is not a rotation.
+    const double inf = std::numeric_limits<double>::infinity();
+    CHECK(s.tryRun("align.transform", {{"id", id}, {"rotation", {inf, 0, 0, 0, 1, 0, 0, 0, 1}}})
+              .error()
+              .code == ErrorCode::InvalidArgument);
 }

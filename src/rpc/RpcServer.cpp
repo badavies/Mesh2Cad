@@ -67,7 +67,8 @@ std::string RpcServer::handleLine(std::string_view line) {
 }
 
 std::optional<Json> RpcServer::handleOne(const Json& request) {
-    if (!request.is_object() || request.value("jsonrpc", "") != "2.0" ||
+    // value() throws when a key holds the wrong type, so check types before reading.
+    if (!request.is_object() || !request.contains("jsonrpc") || request["jsonrpc"] != "2.0" ||
         !request.contains("method") || !request["method"].is_string()) {
         return std::make_optional(
             errorResponse(request.is_object() ? request.value("id", Json()) : Json(),
@@ -93,7 +94,10 @@ std::optional<Json> RpcServer::handleOne(const Json& request) {
                        {"source", context_.source}});
     }
     if (method == "rpc.auth") {
-        const std::string token = params.is_object() ? params.value("token", "") : "";
+        const std::string token =
+            params.is_object() && params.contains("token") && params["token"].is_string()
+                ? params["token"].get<std::string>()
+                : std::string();
         if (token_ && sameToken(token, *token_)) {
             authenticated_ = true;
             // A client may say who it is ("mcp", "script", ...); undo steps and the session log

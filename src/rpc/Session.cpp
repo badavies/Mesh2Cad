@@ -64,10 +64,13 @@ Result<SessionInfo> readSessionFile(const std::filesystem::path& path) {
                     "no running Mesh2Cad app found (no session file at '" + path.string() + "')");
     }
     const auto j = nlohmann::json::parse(file, nullptr, false);
-    if (j.is_discarded() || !j.contains("endpoint") || !j.contains("token")) {
+    if (!j.is_object() || !j.contains("endpoint") || !j["endpoint"].is_string() ||
+        !j.contains("token") || !j["token"].is_string() ||
+        (j.contains("pid") && !j["pid"].is_number_integer())) {
         return fail(ErrorCode::Parse, "session file '" + path.string() + "' is malformed");
     }
-    return SessionInfo{j.value("endpoint", ""), j.value("token", ""), j.value("pid", 0LL)};
+    return SessionInfo{
+        j["endpoint"].get<std::string>(), j["token"].get<std::string>(), j.value("pid", 0LL)};
 }
 
 std::string makeSessionToken() {

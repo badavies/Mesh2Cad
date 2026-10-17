@@ -30,6 +30,15 @@ double boxDistance2(const Vec3d& p, const Vec3d& lo, const Vec3d& hi) noexcept {
     return dx * dx + dy * dy + dz * dz;
 }
 
+/// Closest point to p on the segment from a to b.
+Vec3d closestOnSegment(const Vec3d& p, const Vec3d& a, const Vec3d& b) noexcept {
+    const Vec3d ab = b - a;
+    const double len2 = dot(ab, ab);
+    if (!(len2 > 0.0)) return a;
+    const double t = std::clamp(dot(p - a, ab) / len2, 0.0, 1.0);
+    return a + ab * t;
+}
+
 /// Slab test; returns the entry distance or +inf on a miss.
 double
 rayBox(const Vec3d& o, const Vec3d& inv, const Vec3d& lo, const Vec3d& hi, double tMax) noexcept {
@@ -55,6 +64,16 @@ Vec3d closestPointOnTriangle(const Vec3d& p,
                              const Vec3d& c) noexcept {
     const Vec3d ab = b - a;
     const Vec3d ac = c - a;
+    // A triangle without area is a segment (or a point): the Voronoi regions below assume
+    // three distinct corners, so take the nearest point on its edges instead.
+    const Vec3d n = cross(ab, ac);
+    if (!(dot(n, n) > 0.0)) {
+        Vec3d best = closestOnSegment(p, a, b);
+        for (const Vec3d& q : {closestOnSegment(p, b, c), closestOnSegment(p, c, a)}) {
+            if (dot(q - p, q - p) < dot(best - p, best - p)) best = q;
+        }
+        return best;
+    }
     const Vec3d ap = p - a;
     const double d1 = dot(ab, ap);
     const double d2 = dot(ac, ap);
@@ -167,7 +186,9 @@ std::optional<RayHit>
 SpatialIndex::raycast(const Vec3d& origin, const Vec3d& direction, double maxDistance) const {
     const double len = length(direction);
     if (faces_.empty() || !(len > 0.0)) return std::nullopt;
-    const Vec3d dir = direction * (1.0 / len);
+    // "+ 0.0" turns -0.0 into +0.0: 1 / -0.0 = -inf would make the slab test miss boxes whose
+    // face the origin lies on.
+    const Vec3d dir = direction * (1.0 / len) + Vec3d{0.0, 0.0, 0.0};
     const Vec3d inv{1.0 / dir.x, 1.0 / dir.y, 1.0 / dir.z};
 
     std::optional<RayHit> best;
@@ -179,8 +200,13 @@ SpatialIndex::raycast(const Vec3d& origin, const Vec3d& direction, double maxDis
         const Node& node = nodes_[stack[--top]];
         if (rayBox(origin, inv, node.min, node.max, bestT) > bestT) continue;
         if (node.count == 0) {
-            stack[top++] = node.first;
-            stack[top++] = node.first + 1;
+            // Visit the child the ray enters first, so its hit can prune the other.
+            const Node& l = nodes_[node.first];
+            const Node& r = nodes_[node.first + 1];
+            const bool leftFirst = rayBox(origin, inv, l.min, l.max, bestT) <=
+                                   rayBox(origin, inv, r.min, r.max, bestT);
+            stack[top++] = leftFirst ? node.first + 1 : node.first;
+            stack[top++] = leftFirst ? node.first : node.first + 1;
             continue;
         }
         for (std::uint32_t i = node.first; i < node.first + node.count; ++i) {

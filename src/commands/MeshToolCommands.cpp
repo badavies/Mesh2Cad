@@ -84,6 +84,8 @@ void addMeshToolCommands(std::vector<Command>& out) {
                         {"skipped", filled->skipped},
                         {"failed", filled->failed},
                         {"added_faces", filled->addedFaces}};
+            // Nothing filled: keep the mesh (and its selections), with no undo step.
+            if (filled->filled == 0) return afterEdit(context, object->id, std::move(report));
             M2C_TRY(done, commitMesh(context, *object, std::move(filled->mesh)));
             return afterEdit(context, object->id, std::move(report));
         }));
@@ -238,7 +240,9 @@ void addMeshToolCommands(std::vector<Command>& out) {
             M2C_TRY(object, requireMesh(context, Json{{"id", selection->meshId}}));
             M2C_TRY(kept, deleteFaces(*object->mesh, *selection->faces));
             const std::size_t removed = object->mesh->faceCount() - kept->faceCount();
-            M2C_TRY(done, commitMesh(context, *object, std::move(*kept), {selection->id}));
+            if (removed > 0) {
+                M2C_TRY(done, commitMesh(context, *object, std::move(*kept), {selection->id}));
+            }
             return afterEdit(context, object->id, Json{{"deleted_faces", removed}});
         }));
 

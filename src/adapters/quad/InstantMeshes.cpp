@@ -95,6 +95,10 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     const Float faceArea = static_cast<Float>(stats.mSurfaceArea) /
                            static_cast<Float>(std::max<std::size_t>(params.targetFaces / 4, 1));
     const Float scale = std::sqrt(faceArea);
+    // Without area the edge-split pass below would split edges towards zero length forever.
+    if (!(scale > 0) || !std::isfinite(scale)) {
+        return fail(ErrorCode::InvalidArgument, "the mesh has no surface area to remesh");
+    }
 
     VectorXu V2E, E2E;
     VectorXb boundary, nonManifold;

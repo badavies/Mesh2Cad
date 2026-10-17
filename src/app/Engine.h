@@ -106,6 +106,7 @@ private:
     // UI thread state.
     std::shared_ptr<const DocSnapshot> snapshot_;
     int pending_{0};
+    bool busyShown_{false}; ///< What busyChanged() last told the UI.
     QLocalServer server_;
     std::string token_;
     std::filesystem::path sessionFile_;

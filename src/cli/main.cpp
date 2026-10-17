@@ -110,6 +110,7 @@ int main(int argc, char** argv) {
     }
     m2c::Document document;
     m2c::CommandContext context{document};
+    context.source = "cli";
 
     if (args[0] == "list" && args.size() == 1) {
         return runOne(registry, context, "commands.list", Json::object()) ? kExitOk

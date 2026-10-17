@@ -14,6 +14,11 @@ namespace m2c {
 /// Duplicate positions are welded and unused vertices dropped. Open files in binary mode.
 [[nodiscard]] Result<TriMesh> readPly(std::istream& in);
 
+/// Reads a PLY like readPly but keeps its vertices exactly as stored: nothing is welded or
+/// dropped. The project file uses it, so a mesh whose coincident vertices were split on purpose
+/// (by repair) comes back unchanged.
+[[nodiscard]] Result<TriMesh> readPlyUnwelded(std::istream& in);
+
 /// Writes a binary little-endian PLY with double-precision coordinates, so nothing is lost. This
 /// is also the mesh format inside the project file.
 [[nodiscard]] Result<void> writePly(const TriMesh& mesh, std::ostream& out);

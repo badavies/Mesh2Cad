@@ -129,9 +129,10 @@ void addShellCommands(std::vector<Command>& out) {
                                   for (const ShellInfo& s : report.shells) {
                                       if (s.isMain) main.push_back(s.index);
                                   }
-                                  M2C_TRY(kept, keepFaces(*object->mesh, shellFaces(report, main)));
                                   const std::size_t deleted = report.shells.size() - 1;
                                   if (deleted > 0) {
+                                      M2C_TRY(kept,
+                                              keepFaces(*object->mesh, shellFaces(report, main)));
                                       M2C_TRY(done, commitMesh(context, *object, std::move(*kept)));
                                   }
                                   return Json{{"id", object->id}, {"deleted_shells", deleted}};
@@ -147,6 +148,8 @@ void addShellCommands(std::vector<Command>& out) {
         [](CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireMesh(context, params));
             const ShellReport report = detectShells(*object->mesh);
+            // Split shells keep the alignment record of the mesh they came from.
+            const Transform3d alignment = context.document.find(object->id)->mesh()->alignment;
             Json created = Json::array();
             std::vector<std::uint32_t> main;
             for (const ShellInfo& s : report.shells) {
@@ -156,9 +159,10 @@ void addShellCommands(std::vector<Command>& out) {
                 }
                 M2C_TRY(part, keepFaces(*object->mesh, shellFaces(report, {s.index})));
                 M2C_TRY(id,
-                        context.document.addMesh(object->name + " shell " + std::to_string(s.index),
-                                                 std::make_shared<const TriMesh>(std::move(*part)),
-                                                 context.provenance({object->id})));
+                        context.document.add(
+                            object->name + " shell " + std::to_string(s.index),
+                            MeshData{std::make_shared<const TriMesh>(std::move(*part)), alignment},
+                            context.provenance({object->id})));
                 created.push_back(*id);
             }
             if (!created.empty()) {

@@ -203,3 +203,26 @@ TEST_CASE("Session files round-trip and tokens are random", "[rpc]") {
     CHECK(t1.size() == 32);
     CHECK(t1 != makeSessionToken());
 }
+
+TEST_CASE("Front ends refuse fields of the wrong type instead of throwing", "[rpc][mcp]") {
+    Engine e;
+    RpcServer server(e.registry, e.context, std::string("s3cret"));
+    const Json numeric = *server.handle(Json{{"jsonrpc", 2}, {"id", 1}, {"method", "doc.list"}});
+    CHECK(numeric["error"]["code"] == RpcServer::kInvalidRequest);
+    CHECK((*server.handle(request(2, "rpc.auth", {{"token", 42}})))["error"]["code"] ==
+          RpcServer::kUnauthorized);
+
+    RpcServer rpc(e.registry, e.context);
+    std::vector<std::string> called;
+    McpServer mcp([&](const std::string& method, const Json& params) -> Result<Json> {
+        called.push_back(method);
+        return *rpc.handle(request(9, method, params));
+    });
+    // Only listed tools are called: internal methods are not tools.
+    const Json unknown = *mcp.handle(request(3, "tools/call", {{"name", "rpc.auth"}}));
+    CHECK(unknown["result"]["isError"] == true);
+    CHECK((*mcp.handle(request(4, "tools/call", {{"name", 7}})))["result"]["isError"] == true);
+    const Json badMethod = *mcp.handle(Json{{"jsonrpc", "2.0"}, {"id", 5}, {"method", 5}});
+    CHECK(badMethod["error"]["code"] == -32600);
+    CHECK(called == std::vector<std::string>{"commands.list"});
+}

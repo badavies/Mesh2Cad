@@ -141,3 +141,18 @@ TEST_CASE("Symmetry alignment puts the mirror plane of a moved part on X = 0", "
         }
     }
 }
+
+TEST_CASE("Datum alignment with only a primary plane along X keeps the part's shape",
+          "[stages][align]") {
+    // The long axis of the bar is X, and so is the datum face's normal.
+    const TriMesh bar = makeBox(40, 4, 2, 2);
+    DatumAlignParams p;
+    p.primary = facesFacing(bar, {-1, 0, 0});
+    const auto aligned = datumAlignment(bar, p);
+    REQUIRE(aligned.has_value());
+    const auto result = transformMesh(bar, aligned->transform);
+    REQUIRE(result.has_value());
+    CHECK_THAT(computeStats(*result).surfaceArea, WithinAbs(computeStats(bar).surfaceArea, 1e-9));
+    CHECK_THAT(computeStats(*result).bounds.min.z, WithinAbs(0.0, 1e-9));
+    CHECK_THAT(computeStats(*result).bounds.max.z, WithinAbs(40.0, 1e-9));
+}

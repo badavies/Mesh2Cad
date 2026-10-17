@@ -157,6 +157,7 @@ void Engine::writeLog(const Json& entry) {
 
 void Engine::run(const QString& command, const Json& params, Done done) {
     ++pending_;
+    busyShown_ = true;
     emit busyChanged(true, command);
     const std::string name = command.toStdString();
     post([this, name, params, done = std::move(done)] {
@@ -176,7 +177,8 @@ void Engine::run(const QString& command, const Json& params, Done done) {
             [this, result = std::move(result), done, line, quiet, name] {
                 --pending_;
                 if (!quiet) emit logLine(line, !result.has_value());
-                emit busyChanged(pending_ > 0, QString::fromStdString(name));
+                busyShown_ = pending_ > 0;
+                emit busyChanged(busyShown_, QString::fromStdString(name));
                 if (done) done(result);
             },
             Qt::QueuedConnection);
@@ -247,14 +249,17 @@ void Engine::onReadyRead(int connectionId) {
                 request["method"].is_string()) {
                 const std::string method = request["method"].get<std::string>();
                 const Command* command = registry_.find(method);
+                // A notification has no reply; the parse then gives a discarded value.
                 const Json response = Json::parse(reply, nullptr, false);
                 failed = response.is_object() && response.contains("error");
                 if (command != nullptr && (command->mutatesDocument || failed)) {
                     const Result<Json> r =
-                        failed ? Result<Json>(std::unexpected(Error{
-                                     ErrorCode::InvalidArgument,
-                                     response["error"].value("message", std::string("error"))}))
-                               : Result<Json>(response.value("result", Json()));
+                        failed
+                            ? Result<Json>(std::unexpected(
+                                  Error{ErrorCode::InvalidArgument,
+                                        response["error"].value("message", std::string("error"))}))
+                            : Result<Json>(response.is_object() ? response.value("result", Json())
+                                                                : Json());
                     logText = summarize(c->context->source, method, r);
                 }
             }
@@ -262,6 +267,11 @@ void Engine::onReadyRead(int connectionId) {
                 this,
                 [this, connectionId, reply, logText, failed] {
                     --pending_;
+                    // A UI command that finished first left the busy state on for this one.
+                    if (pending_ == 0 && busyShown_) {
+                        busyShown_ = false;
+                        emit busyChanged(false, QString());
+                    }
                     if (!logText.isEmpty()) emit logLine(logText, failed);
                     const auto conn = connections_.find(connectionId);
                     if (conn != connections_.end() && !reply.empty()) {
