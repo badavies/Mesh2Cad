@@ -30,6 +30,14 @@ else()
     add_compile_options(-ffp-contract=off)
 endif()
 
+# ---- MinGW: big COFF objects ----------------------------------------------------------------------
+# Template-heavy translation units (Eigen, CGAL) need more than the 32767 sections a default COFF
+# object can hold; an unoptimised Debug build of src/pipeline/Align.cpp has about 44000. MSVC gets
+# /bigobj where it is needed (Mesh2CadDependencies.cmake).
+if(MINGW)
+    add_compile_options(-Wa,-mbig-obj)
+endif()
+
 # ---- Warnings ----------------------------------------------------------------------------------
 # OFF by default so a newer compiler's new warnings cannot block a local build; the presets and
 # CI turn it ON.
