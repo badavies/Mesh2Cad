@@ -13,6 +13,7 @@
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/QuadLayout.h"
+#include "m2c/core/Solid.h"
 #include "m2c/core/Transform.h"
 #include "m2c/core/TriMesh.h"
 
@@ -44,7 +45,14 @@ struct QuadLayoutData {
     QuadLayout cage;
 };
 
-using ObjectData = std::variant<MeshData, SelectionData, MeasurementData, QuadLayoutData>;
+/// A B-rep solid built from a quad layout (ARCHITECTURE.md section 6, Surface build). Like a quad
+/// layout it stays when its inputs change; its provenance names them.
+struct SolidData {
+    Solid solid;
+};
+
+using ObjectData =
+    std::variant<MeshData, SelectionData, MeasurementData, QuadLayoutData, SolidData>;
 
 /// Which command made an object, with what parameters (a JSON text, so this module needs no JSON
 /// library) and from which inputs. A stage can be re-run from this record.
@@ -71,7 +79,8 @@ struct DocumentObject {
     [[nodiscard]] const QuadLayoutData* quadLayout() const noexcept {
         return std::get_if<QuadLayoutData>(&data);
     }
-    /// "mesh", "selection", "measurement" or "quad_layout".
+    [[nodiscard]] const SolidData* solid() const noexcept { return std::get_if<SolidData>(&data); }
+    /// "mesh", "selection", "measurement", "quad_layout" or "solid".
     [[nodiscard]] const char* kind() const noexcept;
 };
 

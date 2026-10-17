@@ -431,3 +431,33 @@ Split every shell except the main part into its own mesh object. *(changes the d
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
+
+## solid
+
+### `solid.export`
+
+Write a solid to a STEP AP242 file in millimetres, then read the file back and check it holds one valid closed solid with the same volume (within 0.1%). Fails, writing nothing, if the solid is not valid. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The solid. |
+| `path` | string | yes | The .step or .stp file to write. |
+| `product_name` | string |  | Product name in the file; the object name if omitted. |
+
+## surface
+
+### `surface.build`
+
+Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `fit` | boolean |  | Fit the cage to the mesh first. Default `true`. |
+| `id` | integer | yes | The quad layout. |
+| `isolation_level` | integer |  | Refinement around irregular vertices: higher gives smaller caps and more faces' pieces. Default `2`. |
+| `iterations` | integer |  | Rounds of fitting. Default `3`. |
+| `max_sample_distance_mm` | number |  | Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length. Default `0`. |
+| `max_samples` | integer |  | Mesh vertices used for fitting (evenly thinned beyond this). Default `60000`. |
+| `mesh_id` | integer |  | The mesh to fit to; required unless fit is false. |
+| `name` | string |  |  |
+| `smoothing` | number |  | How strongly the cage keeps its own shape while fitting. Default `0.05`. |

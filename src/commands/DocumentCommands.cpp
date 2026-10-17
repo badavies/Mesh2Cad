@@ -196,6 +196,7 @@ Result<void> registerBuiltinCommands(CommandRegistry& registry) {
     cmd::addAlignMeasureCommands(commands);
     cmd::addProjectCommands(commands);
     cmd::addQuadCommands(commands);
+    cmd::addSurfaceCommands(commands);
     for (Command& command : commands) {
         if (auto added = registry.add(std::move(command)); !added) return added;
     }

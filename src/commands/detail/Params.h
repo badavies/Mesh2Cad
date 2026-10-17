@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -47,6 +48,12 @@ optionalNumber(const Json& params, const std::string& key, double fallback, doub
 /// The mesh object named by params[key].
 [[nodiscard]] Result<MeshObject>
 requireMesh(const CommandContext& context, const Json& params, const std::string& key = "id");
+
+/// The object named by params[key], which must be of the given kind ("quad_layout", "solid", ...).
+[[nodiscard]] Result<DocumentObject> requireObject(const CommandContext& context,
+                                                   const Json& params,
+                                                   const std::string& key,
+                                                   std::string_view kind);
 
 struct SelectionRef {
     ObjectId id{0};

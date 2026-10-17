@@ -7,6 +7,7 @@ m2c_add_library(commands
         MeshToolCommands.cpp
         ProjectCommands.cpp
         QuadCommands.cpp
+        SurfaceCommands.cpp
         SelectionCommands.cpp
         ShellCommands.cpp
         detail/Params.cpp

@@ -1,0 +1,239 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Surface build stage tests (issue #17): cage fitting and B-spline face extraction, checked by
+// distance to known shapes, gaps between faces and the angle across cap edges.
+
+#include <cmath>
+#include <numbers>
+#include <vector>
+
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Solid.h"
+#include "m2c/core/SpatialIndex.h"
+#include "m2c/pipeline/QuadRemesh.h"
+#include "m2c/pipeline/Surface.h"
+
+#include "TestMeshes.h"
+
+using namespace m2c;
+using namespace m2c::test;
+
+namespace {
+
+/// Torus cage of n x m quads around the z axis: every vertex has valence four.
+QuadLayout torusCage(double R, double r, int n, int m) {
+    std::vector<Vec3d> p;
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < m; ++j) {
+            const double u = 2.0 * std::numbers::pi * i / n;
+            const double v = 2.0 * std::numbers::pi * j / m;
+            p.push_back({(R + r * std::cos(v)) * std::cos(u),
+                         (R + r * std::cos(v)) * std::sin(u),
+                         r * std::sin(v)});
+        }
+    }
+    std::vector<std::uint32_t> starts{0};
+    std::vector<std::uint32_t> verts;
+    const auto at = [&](int i, int j) { return static_cast<std::uint32_t>((i % n) * m + j % m); };
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < m; ++j) {
+            verts.insert(verts.end(), {at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)});
+            starts.push_back(static_cast<std::uint32_t>(verts.size()));
+        }
+    }
+    return *QuadLayout::create(std::move(p), std::move(starts), std::move(verts));
+}
+
+QuadLayout cubeCage(double size) {
+    std::vector<Vec3d> p{
+        {0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}};
+    for (Vec3d& v : p) v = v * size;
+    std::vector<std::uint32_t> v{0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4,
+                                 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7};
+    return *QuadLayout::create(std::move(p), {0, 4, 8, 12, 16, 20, 24}, std::move(v));
+}
+
+SeamReport seams(const std::vector<SurfacePatch>& faces, int k, double tol) {
+    auto report = measureSeams(faces, k, tol);
+    REQUIRE(report);
+    return *report;
+}
+
+} // namespace
+
+TEST_CASE("A regular cage gives exact faces with no caps", "[stages][surface]") {
+    const QuadLayout cage = torusCage(30.0, 10.0, 24, 12);
+    const auto result = extractPatches(cage, PatchParams{});
+    REQUIRE(result);
+    CHECK(result->faces.size() == cage.faceCount());
+    CHECK(result->capPieces == 0);
+    CHECK(result->regularPieces == cage.faceCount());
+    for (const SurfacePatch& f : result->faces) CHECK(f.spans == 1);
+    // The faces are the limit surface itself.
+    const auto limit = tessellateLimit(cage, 2, 4);
+    REQUIRE(limit);
+    double worst = 0.0;
+    for (const SurfacePatch& f : result->faces) {
+        for (double u : {0.0, 0.3, 0.5, 1.0}) {
+            for (double v : {0.0, 0.7, 1.0}) {
+                worst =
+                    std::max(worst, limit->spatialIndex().closestPoint(evaluate(f, u, v)).distance);
+            }
+        }
+    }
+    CHECK(worst < 0.05); // the tessellation is only piecewise flat
+    const SeamReport s = seams(result->faces, 8, 1e-6);
+    CHECK(s.unmatchedSamples == 0);
+    CHECK(s.maxGapMm < 1e-6);
+    CHECK(s.maxNormalAngleDeg < 1e-3); // C2 everywhere
+}
+
+TEST_CASE("Irregular corners become caps that meet their neighbours", "[stages][surface]") {
+    const QuadLayout cube = cubeCage(30.0);
+    for (int level : {1, 2, 3}) {
+        CAPTURE(level);
+        const auto result = extractPatches(cube, PatchParams{level});
+        REQUIRE(result);
+        CHECK(result->faces.size() == 6);
+        CHECK(result->capPieces > 0);
+        for (const SurfacePatch& f : result->faces) {
+            CHECK(f.spans == std::size_t{1} << level);
+            CHECK(f.poles.size() == f.polesPerRow() * f.polesPerRow());
+        }
+        const SeamReport s = seams(result->faces, 16, 1e-5);
+        CHECK(s.unmatchedSamples == 0);
+        CHECK(s.maxGapMm < 1e-6);
+        CHECK(s.maxNormalAngleDeg < 0.5); // caps fit the tangent planes along their edges
+        CHECK(result->maxCapErrorMm < 0.05);
+    }
+}
+
+TEST_CASE("Fitting pulls the limit surface of a sphere cage onto the sphere", "[stages][surface]") {
+    const double r = 20.0;
+    const TriMesh sphere = makeSphere(r, 5);
+    QuadRemeshParams q;
+    q.targetFaces = 400;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+
+    const auto radialError = [r](const TriMesh& mesh) {
+        double worst = 0.0;
+        for (const Vec3d& p : mesh.positions()) worst = std::max(worst, std::abs(length(p) - r));
+        return worst;
+    };
+    const auto before = tessellateLimit(remeshed->cage, 2, 3);
+    REQUIRE(before);
+
+    const auto fitted = fitCage(remeshed->cage, sphere, CageFitParams{});
+    REQUIRE(fitted);
+    CHECK(fitted->samples == sphere.vertexCount());
+    CHECK(fitted->rmsDistanceMm < 0.01);
+    CHECK(fitted->maxDistanceMm < 0.05);
+    const auto after = tessellateLimit(fitted->cage, 2, 3);
+    REQUIRE(after);
+    CHECK(radialError(*after) < 0.05);
+    CHECK(radialError(*after) < radialError(*before) / 4);
+
+    const auto faces = extractPatches(fitted->cage, PatchParams{});
+    REQUIRE(faces);
+    CHECK(faces->maxCapErrorMm < 0.01);
+    const SeamReport s = seams(faces->faces, 8, 1e-5);
+    CHECK(s.unmatchedSamples == 0);
+    CHECK(s.maxGapMm < 1e-6);
+    CHECK(s.maxNormalAngleDeg < 0.1);
+}
+
+TEST_CASE("Fitting rejects open cages and bad parameters", "[stages][surface]") {
+    const QuadLayout cube = cubeCage(1.0);
+    const TriMesh scan = makeSphere();
+    CageFitParams bad;
+    bad.isolationLevel = 0;
+    CHECK_FALSE(fitCage(cube, scan, bad));
+    bad = {};
+    bad.smoothing = -1.0;
+    CHECK_FALSE(fitCage(cube, scan, bad));
+    const QuadLayout open = *QuadLayout::create(cube.positions(), {0, 4}, {0, 3, 2, 1});
+    CHECK_FALSE(extractPatches(open, PatchParams{}));
+}
+
+TEST_CASE("A sphere scan becomes a valid closed solid of the right volume", "[stages][surface]") {
+    const double r = 20.0;
+    const TriMesh sphere = makeSphere(r, 5);
+    QuadRemeshParams q;
+    q.targetFaces = 400;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    const auto built = buildSurface(remeshed->cage, &sphere, SurfaceBuildParams{});
+    REQUIRE(built);
+    const SolidSummary& s = built->solid.summary();
+    CHECK(s.valid);
+    CHECK(s.closed);
+    CHECK(s.shellCount == 1);
+    CHECK(s.solidCount == 1);
+    CHECK(s.freeEdges == 0);
+    CHECK(std::abs(s.bounds.max.x - r) < 0.01);
+    CHECK(std::abs(s.bounds.min.z + r) < 0.01);
+    CHECK(built->seams.unmatchedSamples == 0);
+    CHECK(s.faceCount == built->solid.faces().size());
+    const double volume = 4.0 / 3.0 * std::numbers::pi * r * r * r;
+    const double area = 4.0 * std::numbers::pi * r * r;
+    CHECK(std::abs(s.volumeMm3 - volume) < 0.002 * volume);
+    CHECK(std::abs(s.areaMm2 - area) < 0.002 * area);
+    CHECK(s.maxToleranceMm < 1e-3);
+    CHECK(built->fit.samples > 0);
+    CHECK(built->fit.ignoredSamples == 0);
+    // The display mesh follows the faces.
+    CHECK(built->solid.display().faceCount() == built->solid.faces().size() * 2 * 16);
+    for (const Vec3d& p : built->solid.display().positions()) CHECK(std::abs(length(p) - r) < 0.05);
+}
+
+TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][surface]") {
+    SurfaceBuildParams p;
+    p.fit = false;
+    const auto built = buildSurface(torusCage(30.0, 10.0, 24, 12), nullptr, p);
+    REQUIRE(built);
+    CHECK(built->solid.summary().valid);
+    CHECK(built->solid.summary().freeEdges == 0);
+    CHECK(built->solid.summary().volumeMm3 > 0.0);
+    CHECK(built->capPieces == 0);
+    p.fit = true;
+    CHECK_FALSE(buildSurface(torusCage(30.0, 10.0, 24, 12), nullptr, p));
+}
+
+TEST_CASE("A torus scan becomes a valid closed solid of the right volume", "[stages][surface]") {
+    const double R = 30.0, r = 10.0;
+    const TriMesh torus = makeTorus(R, r, 192, 96);
+    QuadRemeshParams q;
+    q.targetFaces = 600;
+    const auto remeshed = quadRemesh(torus, q);
+    REQUIRE(remeshed);
+    const auto built = buildSurface(remeshed->cage, &torus, SurfaceBuildParams{});
+    REQUIRE(built);
+    const SolidSummary& s = built->solid.summary();
+    CHECK(s.valid);
+    CHECK(s.closed);
+    CHECK(s.solidCount == 1);
+    CHECK(s.freeEdges == 0);
+    // The scan's facets cut the true torus by under 0.1%; the fit lies between them.
+    const double volume = 2.0 * std::numbers::pi * std::numbers::pi * R * r * r;
+    CHECK(std::abs(s.volumeMm3 - volume) < 0.003 * volume);
+    CHECK(built->seams.unmatchedSamples == 0);
+    CHECK(built->seams.maxNormalAngleDeg < 0.5);
+}
+
+TEST_CASE("The surface build gives the same faces every time", "[stages][surface]") {
+    const TriMesh sphere = makeSphere(20.0, 4);
+    QuadRemeshParams q;
+    q.targetFaces = 300;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    const auto a = buildSurface(remeshed->cage, &sphere, SurfaceBuildParams{});
+    const auto b = buildSurface(remeshed->cage, &sphere, SurfaceBuildParams{});
+    REQUIRE(a);
+    REQUIRE(b);
+    REQUIRE(a->solid.faces().size() == b->solid.faces().size());
+    for (std::size_t f = 0; f < a->solid.faces().size(); ++f) {
+        CHECK(a->solid.faces()[f].poles == b->solid.faces()[f].poles);
+    }
+    CHECK(a->fit.rmsDistanceMm == b->fit.rmsDistanceMm);
+    CHECK(a->solid.summary().volumeMm3 == b->solid.summary().volumeMm3);
+}

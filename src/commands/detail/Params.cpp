@@ -129,6 +129,21 @@ requireMesh(const CommandContext& context, const Json& params, const std::string
     return MeshObject{object->id, object->name, object->mesh()->mesh};
 }
 
+Result<DocumentObject> requireObject(const CommandContext& context,
+                                     const Json& params,
+                                     const std::string& key,
+                                     std::string_view kind) {
+    M2C_TRY(id, requireId(params, key));
+    auto object = context.document.find(*id);
+    if (!object) return fail(ErrorCode::NotFound, "no object with id " + std::to_string(*id));
+    if (object->kind() != kind) {
+        return fail(ErrorCode::InvalidArgument,
+                    "object " + std::to_string(*id) + " is a " + object->kind() + ", not a " +
+                        std::string(kind));
+    }
+    return std::move(*object);
+}
+
 Result<SelectionRef> requireSelection(const CommandContext& context,
                                       const Json& params,
                                       const std::string& key,
@@ -187,6 +202,11 @@ Json describe(const DocumentObject& object) {
     } else if (const QuadLayoutData* q = object.quadLayout()) {
         j["vertex_count"] = q->cage.vertexCount();
         j["face_count"] = q->cage.faceCount();
+    } else if (const SolidData* solid = object.solid()) {
+        const SolidSummary& summary = solid->solid.summary();
+        j["face_count"] = summary.faceCount;
+        j["valid"] = summary.valid;
+        j["volume_mm3"] = summary.volumeMm3;
     }
     if (!object.provenance.command.empty()) {
         j["made_by"] = object.provenance.command;

@@ -5,6 +5,7 @@ m2c_add_library(core
         MeshStats.cpp
         MeshTopology.cpp
         QuadLayout.cpp
+        Solid.cpp
         SpatialIndex.cpp
         Transform.cpp
         TriMesh.cpp)

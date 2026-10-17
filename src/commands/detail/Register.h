@@ -15,5 +15,6 @@ void addSelectionCommands(std::vector<Command>& out);
 void addAlignMeasureCommands(std::vector<Command>& out);
 void addProjectCommands(std::vector<Command>& out);
 void addQuadCommands(std::vector<Command>& out);
+void addSurfaceCommands(std::vector<Command>& out);
 
 } // namespace m2c::cmd

@@ -20,7 +20,7 @@ from pathlib import Path
 ALLOWED: dict[str, set[str]] = {
     "core": set(),
     "adapters": {"core"},
-    "io": {"core"},
+    "io": {"core", "adapters"},  # adapters from M2, for B-rep files (ARCHITECTURE.md section 4)
     "document": {"core"},
     "pipeline": {"core", "adapters"},
     "commands": {"core", "document", "io", "pipeline"},

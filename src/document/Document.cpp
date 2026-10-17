@@ -9,6 +9,7 @@ const char* DocumentObject::kind() const noexcept {
     if (mesh() != nullptr) return "mesh";
     if (selection() != nullptr) return "selection";
     if (quadLayout() != nullptr) return "quad_layout";
+    if (solid() != nullptr) return "solid";
     return "measurement";
 }
 

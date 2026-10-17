@@ -7,8 +7,11 @@ m2c_add_library(pipeline
         Select.cpp
         Shells.cpp
         Smooth.cpp
+        Surface.cpp
     DEPS
         Mesh2Cad::core
         Mesh2Cad::cgal
-        Mesh2Cad::quad)
+        Mesh2Cad::quad
+        Mesh2Cad::osd
+        Mesh2Cad::occt)
 target_link_libraries(m2c_pipeline PRIVATE Eigen3::Eigen)

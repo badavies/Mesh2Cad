@@ -12,6 +12,8 @@ millimetres. Errors cross module boundaries as `Result<T>` (`std::expected<T, Er
 - `m2c/core/MeshStats.h`: `MeshStats` and `computeStats` (counts, boundary and non-manifold edges, area, volume, bounds).
 - `m2c/core/MeshTopology.h`: `FaceAdjacency`, `buildFaceAdjacency`, `faceComponents`, `faceNormal`, `faceArea`, `extractFaces`.
 - `m2c/core/QuadLayout.h`: `QuadLayout` (immutable polygon control cage, mostly quads, with `withPositions`), `CageStats` with `cageStats`, and `signedVolume`.
+- `m2c/core/SurfacePatch.h`: `BicubicPatch` and `SurfacePatch` (one B-spline face of the surface build: spans x spans Bezier pieces), `bernstein`, `bernsteinDerivative`, `evaluate` and `normal`.
+- `m2c/core/Solid.h`: `Solid` (the kernel shape as the opaque `SolidShape`, its faces and a display mesh), `SolidSummary`, `tessellate` for faces, and `measureSeams` returning a `SeamReport` (gaps and normal angles where faces meet).
 - `m2c/core/SpatialIndex.h`: `SpatialIndex` (BVH with `raycast`, `closestPoint`, `facesWithin`), `RayHit`, `ClosestPoint`, `closestPointOnTriangle`.
 - `m2c/core/MeshSelection.h`: `MeshSelection`, a bitset of face indices on one mesh.
 - `m2c/core/Transform.h`: `Transform3d` (rigid rotation plus translation) and `transformMesh`.
@@ -34,4 +36,5 @@ Must not depend on: `adapters`, `io`, `document`, `pipeline`, `commands`, `app`,
   immutable.
 - `computeStats` runs serially in index order and `faceComponents` numbers components by lowest
   face index, so results are reproducible.
-- Do not add a type here until a stage needs it (no `QuadLayout`, `SolidRef` or `StageReport` yet).
+- Do not add a type here until a stage needs it (no `StageReport` yet). The roadmap's `SolidRef`
+  is `Solid`.
