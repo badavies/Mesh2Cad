@@ -11,6 +11,12 @@
 #include <queue>
 #include <vector>
 
+#if defined(_WIN32)
+// The real TBB header brings in the Windows headers, which declare the Interlocked intrinsics
+// Instant Meshes calls on Windows; MinGW needs the declaration.
+#include <intrin.h>
+#endif
+
 namespace tbb {
 
 template <class T>

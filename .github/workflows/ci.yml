@@ -120,7 +120,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build qt6-base-dev libgl1-mesa-dev libcgal-dev libeigen3-dev \
-            libocct-data-exchange-dev libosd-dev xvfb
+            libocct-data-exchange-dev libtbb-dev libosd-dev xvfb
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMESH2CAD_WARNINGS_AS_ERRORS=ON -DMESH2CAD_BUILD_APP=ON
       - name: Build

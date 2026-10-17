@@ -18,6 +18,10 @@ target_include_directories(m2c_instant_meshes SYSTEM PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/serial_tbb ${im_src} ${dset_SOURCE_DIR} ${pcg32_SOURCE_DIR})
 target_link_libraries(m2c_instant_meshes PUBLIC Eigen3::Eigen)
 set_target_properties(m2c_instant_meshes PROPERTIES CXX_STANDARD 17 CXX_EXTENSIONS OFF)
+if(WIN32)
+    # M_PI, in its headers too, which the adapter includes.
+    target_compile_definitions(m2c_instant_meshes PUBLIC _USE_MATH_DEFINES)
+endif()
 if(MSVC)
     target_compile_options(m2c_instant_meshes PRIVATE /W0 /bigobj)
 else()

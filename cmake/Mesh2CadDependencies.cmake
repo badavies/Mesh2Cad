@@ -228,7 +228,8 @@ else()
     endif()
     m2c_build_from_source(occt SOURCE_DIR "${occt_SOURCE_DIR}"
                           CONFIG ${m2c_source_build_config} ARGS ${occt_args})
-    find_package(OpenCASCADE CONFIG REQUIRED PATHS "${occt_INSTALL_DIR}" NO_DEFAULT_PATH)
+    find_package(OpenCASCADE CONFIG REQUIRED PATHS "${occt_INSTALL_DIR}" NO_DEFAULT_PATH
+                 NO_CMAKE_FIND_ROOT_PATH)
     message(STATUS "Mesh2Cad: Open CASCADE ${OpenCASCADE_VERSION} built from source")
 endif()
 # The toolkits the OCCT adapter uses. OCCT 7.8 merged the STEP toolkits into TKDESTEP.
@@ -242,6 +243,10 @@ else()
 endif()
 add_library(m2c_occt_deps INTERFACE)
 target_link_libraries(m2c_occt_deps INTERFACE ${m2c_occt_toolkits})
+if(WIN32)
+    # OCCT's headers use M_PI, which MinGW's <cmath> hides in strict ISO mode.
+    target_compile_definitions(m2c_occt_deps INTERFACE _USE_MATH_DEFINES)
+endif()
 if(OpenCASCADE_INCLUDE_DIR)
     target_include_directories(m2c_occt_deps SYSTEM INTERFACE "${OpenCASCADE_INCLUDE_DIR}")
 endif()
@@ -276,7 +281,8 @@ else()
             -DNO_GLFW_X11=ON)
         m2c_build_from_source(opensubdiv SOURCE_DIR "${opensubdiv_SOURCE_DIR}"
                               CONFIG ${m2c_source_build_config} ARGS ${osd_args})
-        find_package(OpenSubdiv CONFIG REQUIRED PATHS "${opensubdiv_INSTALL_DIR}" NO_DEFAULT_PATH)
+        find_package(OpenSubdiv CONFIG REQUIRED PATHS "${opensubdiv_INSTALL_DIR}" NO_DEFAULT_PATH
+                     NO_CMAKE_FIND_ROOT_PATH)
         message(STATUS "Mesh2Cad: OpenSubdiv ${OpenSubdiv_VERSION} built from source")
     endif()
 endif()
@@ -284,6 +290,10 @@ if(TARGET OpenSubdiv::osdCPU_static)
     target_link_libraries(m2c_osd_deps INTERFACE OpenSubdiv::osdCPU_static)
 elseif(TARGET OpenSubdiv::osdCPU)
     target_link_libraries(m2c_osd_deps INTERFACE OpenSubdiv::osdCPU)
+endif()
+# OpenSubdiv's exported targets carry no include directory; its config sets this variable.
+if(OpenSubdiv_INCLUDE_DIR)
+    target_include_directories(m2c_osd_deps SYSTEM INTERFACE "${OpenSubdiv_INCLUDE_DIR}")
 endif()
 
 # ---- Instant Meshes (ADR 0009) ------------------------------------------------------------------
