@@ -57,10 +57,13 @@ jobs:
           key: vcpkg-${{ matrix.preset }}-${{ hashFiles('vcpkg.json') }}
           restore-keys: vcpkg-${{ matrix.preset }}-
 
-      # vcpkg builds gmp and mpfr (CGAL dependencies) with autotools from the system.
-      - name: Install Ninja and autotools (Linux)
+      # vcpkg builds gmp and mpfr (CGAL dependencies) with autotools from the system, and Open
+      # CASCADE's visualisation toolkits against the system OpenGL and X11 headers.
+      - name: Install Ninja, autotools, OpenGL and X11 headers (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive automake libtool
+        run: >-
+          sudo apt-get update && sudo apt-get install -y ninja-build autoconf autoconf-archive
+          automake libtool libgl1-mesa-dev libx11-dev libxext-dev
 
       - name: Set up the MSVC environment (Windows)
         if: runner.os == 'Windows'
@@ -113,10 +116,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install Qt, CGAL, Eigen and a virtual display
+      - name: Install Qt, CGAL, Eigen, Open CASCADE, OpenSubdiv and a virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build qt6-base-dev libgl1-mesa-dev libcgal-dev libeigen3-dev xvfb
+          sudo apt-get install -y ninja-build qt6-base-dev libgl1-mesa-dev libcgal-dev libeigen3-dev \
+            libocct-data-exchange-dev libosd-dev xvfb
       - name: Configure
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMESH2CAD_WARNINGS_AS_ERRORS=ON -DMESH2CAD_BUILD_APP=ON
       - name: Build

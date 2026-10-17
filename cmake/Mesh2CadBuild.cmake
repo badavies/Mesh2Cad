@@ -87,13 +87,27 @@ function(m2c_add_library name)
     target_link_libraries(m2c_${name} PUBLIC ${ARG_DEPS} PRIVATE m2c_warnings)
 endfunction()
 
-# ---- MinGW runtime next to each executable -----------------------------------------------------
+# ---- Runtime DLLs next to each executable ------------------------------------------------------
 # m2c_copy_runtime(<target>)
 #
-# MinGW executables need libstdc++-6.dll, libgcc_s_seh-1.dll and libwinpthread-1.dll. CLion puts
-# the MinGW bin folder on the PATH, but Explorer, a plain terminal and Claude Desktop do not, so
-# copy the DLLs next to the executable. (Static linking fails with CLion's MinGW; see ADR-020.)
+# Windows executables need the DLLs they link next to them, or they exit with 0xc0000135 (DLL not
+# found), which also breaks Catch2's test discovery after the build. Two kinds:
+# - MinGW's libstdc++-6.dll, libgcc_s_seh-1.dll and libwinpthread-1.dll. CLion puts the MinGW bin
+#   folder on the PATH, but Explorer, a plain terminal and Claude Desktop do not. (Static linking
+#   fails with CLion's MinGW; see ADR-020.)
+# - Shared libraries from imported targets, such as Open CASCADE built from source (ADR-026).
+#   vcpkg copies its own; copying again is harmless.
+# Call it before catch_discover_tests(), so the copy runs before discovery.
 function(m2c_copy_runtime target)
+    if(NOT WIN32)
+        return()
+    endif()
+    set(dll_list "$<TARGET_RUNTIME_DLLS:${target}>")
+    add_custom_command(TARGET ${target} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E $<IF:$<BOOL:${dll_list}>,copy_if_different,true>
+                ${dll_list} "$<TARGET_FILE_DIR:${target}>"
+        COMMAND_EXPAND_LISTS
+        VERBATIM)
     if(NOT MINGW)
         return()
     endif()

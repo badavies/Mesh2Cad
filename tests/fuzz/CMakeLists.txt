@@ -2,6 +2,7 @@ add_executable(m2c_fuzz_mesh_parsers
     FuzzDriver.cpp
     MeshParserFuzz.cpp)
 target_link_libraries(m2c_fuzz_mesh_parsers PRIVATE Mesh2Cad::io m2c_warnings)
+m2c_copy_runtime(m2c_fuzz_mesh_parsers)
 
 # A short deterministic run on every build; nightly runs pass a larger --iterations. Under the
 # linux-gcc-sanitize preset this runs with AddressSanitizer and UndefinedBehaviorSanitizer.
