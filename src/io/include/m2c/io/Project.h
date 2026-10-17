@@ -8,9 +8,12 @@
 #include <variant>
 #include <vector>
 
+#include "m2c/core/DeviationField.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Solid.h"
 #include "m2c/core/Transform.h"
 #include "m2c/core/TriMesh.h"
 
@@ -26,13 +29,20 @@ struct ProjectSelection {
     std::shared_ptr<const MeshSelection> faces;
 };
 
+struct ProjectDeviation {
+    std::uint64_t meshId{0};
+    std::uint64_t referenceId{0};
+    DeviationField field;
+};
+
 /// Plain data of one saved object. The I/O module cannot see the document (ARCHITECTURE.md
 /// section 4), so the command engine converts between these and document objects.
 struct ProjectObject {
     std::uint64_t id{0};
     std::string name;
     bool visible{true};
-    std::variant<ProjectMesh, ProjectSelection, Measurement> data;
+    std::variant<ProjectMesh, ProjectSelection, Measurement, QuadLayout, Solid, ProjectDeviation>
+        data;
     std::string madeBy;   ///< Provenance: command name.
     std::string madeWith; ///< Provenance: parameters as JSON text.
     std::vector<std::uint64_t> inputs;
@@ -45,11 +55,13 @@ struct ProjectData {
 
 /// Current project format version. Reading an older version runs its migration; a newer one is
 /// refused with ErrorCode::Unsupported.
-inline constexpr int kProjectFormatVersion = 1;
+/// Version 2 added quad layouts, solids and deviations; version 1 files hold a subset of it.
+inline constexpr int kProjectFormatVersion = 2;
 
-/// Writes a project file: a zip holding manifest.json, meshes as binary PLY (double precision) and
-/// selections as bitsets (ARCHITECTURE.md section 5). The file is replaced atomically: it is
-/// written next to the target and renamed into place.
+/// Writes a project file: a zip holding manifest.json, meshes as binary PLY (double precision),
+/// selections as bitsets, quad layouts and deviations as little-endian arrays, and solids as
+/// Open CASCADE BREP text with their B-spline faces (ARCHITECTURE.md section 5). The file is
+/// replaced atomically: it is written next to the target and renamed into place.
 [[nodiscard]] Result<void> writeProject(const ProjectData& project,
                                         const std::filesystem::path& path);
 

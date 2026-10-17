@@ -296,7 +296,7 @@ Open a project file, replacing the current document. Clears the undo history. *(
 
 ### `project.save`
 
-Save every object (meshes, selections, measurements, alignments) to a project file (.m2c). *(read-only)*
+Save every object (meshes, selections, measurements, alignments, quad layouts, solids and deviations) to a project file (.m2c). *(read-only)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |

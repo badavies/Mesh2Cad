@@ -31,6 +31,15 @@ struct SewParams {
 [[nodiscard]] Result<void>
 writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name);
 
+/// The solid's kernel shape in Open CASCADE's BREP text format, for the project file.
+[[nodiscard]] Result<std::string> writeBrep(const Solid& solid);
+
+/// A solid from BREP text and the faces and display mesh saved with it. Fails unless the text
+/// holds one valid closed solid.
+[[nodiscard]] Result<Solid> readBrep(const std::string& brep,
+                                     std::vector<SurfacePatch> faces,
+                                     std::shared_ptr<const TriMesh> display);
+
 /// Signed distance from each point to the solid's faces, positive outside: the closest display
 /// triangle gives the face and a start point, and Open CASCADE projects onto that face's surface.
 [[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,

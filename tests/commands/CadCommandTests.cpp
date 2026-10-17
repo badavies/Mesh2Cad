@@ -206,3 +206,47 @@ TEST_CASE("deviation.compute measures a mesh against a solid or a mesh", "[comma
     s.run("object.delete", {{"id", solid}});
     CHECK_FALSE(s.document.find(dev));
 }
+
+TEST_CASE("Project files keep quad layouts, solids and deviations", "[commands][project]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeSphere(20.0, 4), "ball");
+    const auto cage = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}})["id"];
+    const Json built = s.run("surface.build", {{"id", cage}, {"mesh_id", mesh}});
+    const auto solid = built["id"].get<ObjectId>();
+    const auto dev = s.run("deviation.compute", {{"id", mesh}, {"reference_id", solid}})["id"];
+    const auto path = (dir.path() / "m2.m2c").string();
+    CHECK(s.run("project.save", {{"path", path}})["object_count"] == 4);
+
+    Session t;
+    t.run("project.open", {{"path", path}});
+    const auto a = s.document.find(cage.get<ObjectId>());
+    const auto b = t.document.find(cage.get<ObjectId>());
+    REQUIRE(b);
+    REQUIRE(b->quadLayout() != nullptr);
+    CHECK(b->quadLayout()->cage.positions() == a->quadLayout()->cage.positions());
+    CHECK(b->quadLayout()->cage.faceVertices() == a->quadLayout()->cage.faceVertices());
+
+    const auto opened = t.document.find(solid);
+    REQUIRE(opened);
+    REQUIRE(opened->solid() != nullptr);
+    const Solid before = s.document.find(solid)->solid()->solid; // find() returns a copy
+    const Solid& after = opened->solid()->solid;
+    CHECK(after.summary().valid);
+    CHECK(after.summary().faceCount == before.summary().faceCount);
+    CHECK(after.summary().volumeMm3 == before.summary().volumeMm3);
+    CHECK(after.display().positions() == before.display().positions());
+    CHECK(after.faces().size() == before.faces().size());
+    CHECK(after.faces().front().poles == before.faces().front().poles);
+    CHECK(opened->provenance.command == "surface.build");
+
+    const auto field = t.document.find(dev.get<ObjectId>());
+    REQUIRE(field);
+    REQUIRE(field->deviation() != nullptr);
+    CHECK(field->deviation()->field.distances() ==
+          s.document.find(dev.get<ObjectId>())->deviation()->field.distances());
+
+    // The opened solid works as before.
+    const auto step = (dir.path() / "again.step").string();
+    CHECK(t.run("solid.export", {{"id", solid}, {"path", step}})["check"]["passed"] == true);
+}

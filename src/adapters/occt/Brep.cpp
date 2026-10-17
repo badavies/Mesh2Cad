@@ -6,6 +6,7 @@
 #include <cmath>
 #include <exception>
 #include <mutex>
+#include <sstream>
 #include <utility>
 
 #include <BRepBndLib.hxx>
@@ -13,6 +14,8 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepCheck_Analyzer.hxx>
 #include <BRepGProp.hxx>
+#include <BRepTools.hxx>
+#include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
@@ -215,6 +218,42 @@ writeStep(const Solid& solid, const std::filesystem::path& path, const std::stri
             return fail(ErrorCode::Io, "could not write " + utf8(path));
         }
         return {};
+    });
+}
+
+Result<std::string> writeBrep(const Solid& solid) {
+    return guarded("BREP export", [&]() -> Result<std::string> {
+        std::ostringstream out;
+        BRepTools::Write(solid.shape().shape, out);
+        if (!out) return fail(ErrorCode::Internal, "Open CASCADE could not write the solid");
+        return out.str();
+    });
+}
+
+Result<Solid> readBrep(const std::string& brep,
+                       std::vector<SurfacePatch> faces,
+                       std::shared_ptr<const TriMesh> display) {
+    if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
+    return guarded("BREP import", [&]() -> Result<Solid> {
+        std::istringstream in(brep);
+        TopoDS_Shape shape;
+        BRepTools::Read(shape, in, BRep_Builder());
+        if (shape.IsNull()) return fail(ErrorCode::Parse, "the BREP data holds no shape");
+        const SolidSummary summary = summarise(shape);
+        if (summary.solidCount != 1 || !summary.closed || !summary.valid) {
+            return fail(ErrorCode::Parse, "the BREP data is not one valid closed solid");
+        }
+        if (summary.faceCount != faces.size()) {
+            return fail(ErrorCode::Parse, "the BREP data does not match the solid's faces");
+        }
+        auto stored = std::make_shared<SolidShape>();
+        for (TopExp_Explorer it(shape, TopAbs_SOLID); it.More(); it.Next()) {
+            stored->shape = it.Current();
+        }
+        return Solid(std::move(stored),
+                     std::make_shared<const std::vector<SurfacePatch>>(std::move(faces)),
+                     std::move(display),
+                     summary);
     });
 }
 
