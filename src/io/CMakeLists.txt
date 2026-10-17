@@ -5,6 +5,7 @@ m2c_add_library(io
         Obj.cpp
         Ply.cpp
         Project.cpp
+        Report.cpp
         Stl.cpp
     DEPS
         Mesh2Cad::core

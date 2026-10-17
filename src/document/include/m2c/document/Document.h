@@ -9,6 +9,7 @@
 #include <variant>
 #include <vector>
 
+#include "m2c/core/DeviationField.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshSelection.h"
@@ -51,8 +52,17 @@ struct SolidData {
     Solid solid;
 };
 
-using ObjectData =
-    std::variant<MeshData, SelectionData, MeasurementData, QuadLayoutData, SolidData>;
+/// Signed distances from each vertex of a mesh object to a reference solid or mesh
+/// (ARCHITECTURE.md section 7, Deviation analysis). Like a selection it belongs to its mesh: it is
+/// removed when that mesh or the reference is removed or replaced.
+struct DeviationData {
+    ObjectId meshId{0};
+    ObjectId referenceId{0};
+    DeviationField field;
+};
+
+using ObjectData = std::
+    variant<MeshData, SelectionData, MeasurementData, QuadLayoutData, SolidData, DeviationData>;
 
 /// Which command made an object, with what parameters (a JSON text, so this module needs no JSON
 /// library) and from which inputs. A stage can be re-run from this record.
@@ -80,7 +90,10 @@ struct DocumentObject {
         return std::get_if<QuadLayoutData>(&data);
     }
     [[nodiscard]] const SolidData* solid() const noexcept { return std::get_if<SolidData>(&data); }
-    /// "mesh", "selection", "measurement", "quad_layout" or "solid".
+    [[nodiscard]] const DeviationData* deviation() const noexcept {
+        return std::get_if<DeviationData>(&data);
+    }
+    /// "mesh", "selection", "measurement", "quad_layout", "solid" or "deviation".
     [[nodiscard]] const char* kind() const noexcept;
 };
 
@@ -118,12 +131,13 @@ public:
     [[nodiscard]] Result<ObjectId>
     addMesh(std::string name, std::shared_ptr<const TriMesh> mesh, Provenance provenance = {});
 
-    /// Adds any object. Selections must name an existing mesh with the same face count.
+    /// Adds any object. Selections must name an existing mesh with the same face count, and
+    /// deviations an existing mesh with the same vertex count and an existing reference.
     [[nodiscard]] Result<ObjectId>
     add(std::string name, ObjectData data, Provenance provenance = {});
 
-    /// Replaces a mesh object's mesh (an edit in place, keeping id and name). Selections on it
-    /// are dropped unless the new mesh shares the old face buffer.
+    /// Replaces a mesh object's mesh (an edit in place, keeping id and name). Deviations from or
+    /// to it are dropped; selections on it too unless the new mesh shares the old face buffer.
     [[nodiscard]] Result<void> replaceMesh(ObjectId id,
                                            std::shared_ptr<const TriMesh> mesh,
                                            Provenance provenance,
@@ -136,7 +150,7 @@ public:
     /// Replaces the value of a measurement object.
     [[nodiscard]] Result<void> replaceMeasurement(ObjectId id, const Measurement& measurement);
 
-    /// Removes an object and every selection and measurement that refers to it.
+    /// Removes an object and every selection, measurement and deviation that refers to it.
     [[nodiscard]] Result<void> remove(ObjectId id);
 
     [[nodiscard]] Result<void> rename(ObjectId id, std::string name);
@@ -179,7 +193,14 @@ private:
     };
 
     void changed() noexcept;
-    void removeDependents(ObjectId meshId, bool onlySelections);
+    /// Which objects that refer to an object go with it: everything (it is removed), or what a
+    /// replaced mesh invalidates (deviations, plus its selections when its faces changed).
+    enum class Dependents {
+        All,
+        OfMesh,
+        Deviations
+    };
+    void removeDependents(ObjectId id, Dependents which);
     [[nodiscard]] Result<void> checkData(const ObjectData& data) const;
 
     ObjectTable objects_;

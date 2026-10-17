@@ -12,7 +12,7 @@ command, so every command is one step whatever it changes.
     - Changes: `addMesh`, `add`, `replaceMesh`, `replaceSelection`, `replaceMeasurement`, `remove`, `rename`, `setVisible`, `clear`, `load`.
     - Queries: `find`, `findMesh`, `objects`, `revision`, `nextId`.
     - History: `undo`, `redo`, `canUndo`, `canRedo`, `undoHistory`, `redoHistory`.
-  - `DocumentObject` with `ObjectData`, a variant of `MeshData`, `SelectionData`, `MeasurementData`, `QuadLayoutData` and `SolidData`.
+  - `DocumentObject` with `ObjectData`, a variant of `MeshData`, `SelectionData`, `MeasurementData`, `QuadLayoutData`, `SolidData` and `DeviationData`.
   - `Provenance` (command name, parameters as JSON text, input ids), `HistoryStep`, `MeshObject` and `ObjectId`.
 
 ## Dependencies
@@ -28,5 +28,6 @@ JSON library, and kernel library headers (CGAL, Open CASCADE, OpenSubdiv). Enfor
 - A snapshot copies the object map, not the meshes: objects hold `std::shared_ptr<const T>`.
 - Steps nest; only the outermost one counts. A change made outside a step is its own step.
 - Ids are never reused, even after undo.
-- Removing a mesh removes the selections and measurements that refer to it. `replaceMesh` drops
-  its selections unless the new mesh shares the old face buffer.
+- Removing a mesh removes the selections, measurements and deviations that refer to it.
+  `replaceMesh` drops the deviations from or to that mesh, and its selections unless the new
+  mesh shares the old face buffer.

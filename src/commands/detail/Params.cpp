@@ -207,6 +207,10 @@ Json describe(const DocumentObject& object) {
         j["face_count"] = summary.faceCount;
         j["valid"] = summary.valid;
         j["volume_mm3"] = summary.volumeMm3;
+    } else if (const DeviationData* dev = object.deviation()) {
+        j["mesh_id"] = dev->meshId;
+        j["reference_id"] = dev->referenceId;
+        j["rms_mm"] = dev->field.stats().rmsMm;
     }
     if (!object.provenance.command.empty()) {
         j["made_by"] = object.provenance.command;

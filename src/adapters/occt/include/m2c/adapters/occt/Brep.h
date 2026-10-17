@@ -31,6 +31,11 @@ struct SewParams {
 [[nodiscard]] Result<void>
 writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name);
 
+/// Signed distance from each point to the solid's faces, positive outside: the closest display
+/// triangle gives the face and a start point, and Open CASCADE projects onto that face's surface.
+[[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,
+                                                          const std::vector<Vec3d>& points);
+
 /// Reads a STEP file and summarises everything in it together (used to check an export).
 [[nodiscard]] Result<SolidSummary> readStep(const std::filesystem::path& path);
 

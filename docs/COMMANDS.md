@@ -63,6 +63,29 @@ Apply a rigid transform (rotation matrix and translation) to a mesh. *(changes t
 
 List every registered command with its summary and parameter schema. *(read-only)*
 
+## deviation
+
+### `deviation.compute`
+
+Signed distance from every vertex of a mesh to a solid (exact, onto its B-spline faces) or to another mesh, positive outside the reference, with statistics. Adds a deviation object that belongs to the mesh: it goes when the mesh or the reference is removed or changed. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The mesh whose vertices are measured. |
+| `name` | string |  |  |
+| `reference_id` | integer | yes | The solid or mesh to measure to. |
+| `tolerance_mm` | number |  | Distances within this count as in tolerance. Default `0.1`. |
+
+### `deviation.report`
+
+Write a deviation's statistics and a histogram of its distances to a CSV file. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `bins` | integer |  | Histogram bins from the smallest to the largest distance. Default `20`. |
+| `id` | integer | yes | The deviation. |
+| `path` | string | yes | The .csv file to write. |
+
 ## doc
 
 ### `doc.history`

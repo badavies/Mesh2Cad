@@ -10,6 +10,7 @@ const char* DocumentObject::kind() const noexcept {
     if (selection() != nullptr) return "selection";
     if (quadLayout() != nullptr) return "quad_layout";
     if (solid() != nullptr) return "solid";
+    if (deviation() != nullptr) return "deviation";
     return "measurement";
 }
 
@@ -84,6 +85,22 @@ Result<void> Document::checkData(const ObjectData& data) const {
                             std::to_string(s->meshId));
         }
     }
+    if (const auto* d = std::get_if<DeviationData>(&data)) {
+        const auto it = objects_.find(d->meshId);
+        if (it == objects_.end() || it->second.mesh() == nullptr) {
+            return fail(ErrorCode::NotFound,
+                        "deviation refers to missing mesh " + std::to_string(d->meshId));
+        }
+        if (it->second.mesh()->mesh->vertexCount() != d->field.distances().size()) {
+            return fail(ErrorCode::InvalidArgument,
+                        "deviation size does not match the vertex count of mesh " +
+                            std::to_string(d->meshId));
+        }
+        if (!objects_.contains(d->referenceId)) {
+            return fail(ErrorCode::NotFound,
+                        "deviation refers to missing object " + std::to_string(d->referenceId));
+        }
+    }
     return {};
 }
 
@@ -118,7 +135,7 @@ Result<void> Document::replaceMesh(ObjectId id,
         data.mesh = std::move(mesh);
         if (alignment) data.alignment = *alignment;
         it->second.provenance = std::move(provenance);
-        if (!sameFaces) removeDependents(id, true);
+        removeDependents(id, sameFaces ? Dependents::Deviations : Dependents::OfMesh);
         changed();
         return {};
     });
@@ -150,14 +167,17 @@ Result<void> Document::replaceMeasurement(ObjectId id, const Measurement& measur
     });
 }
 
-void Document::removeDependents(ObjectId meshId, bool onlySelections) {
+void Document::removeDependents(ObjectId id, Dependents which) {
     for (auto it = objects_.begin(); it != objects_.end();) {
         const DocumentObject& o = it->second;
-        const bool isSelection = o.selection() != nullptr && o.selection()->meshId == meshId;
-        const bool isMeasurement = !onlySelections && o.measurement() != nullptr &&
-                                   (o.measurement()->measurement.a.objectId == meshId ||
-                                    o.measurement()->measurement.b.objectId == meshId);
-        it = (isSelection || isMeasurement) ? objects_.erase(it) : std::next(it);
+        const bool isSelection = which != Dependents::Deviations && o.selection() != nullptr &&
+                                 o.selection()->meshId == id;
+        const bool isMeasurement = which == Dependents::All && o.measurement() != nullptr &&
+                                   (o.measurement()->measurement.a.objectId == id ||
+                                    o.measurement()->measurement.b.objectId == id);
+        const bool isDeviation = o.deviation() != nullptr &&
+                                 (o.deviation()->meshId == id || o.deviation()->referenceId == id);
+        it = (isSelection || isMeasurement || isDeviation) ? objects_.erase(it) : std::next(it);
     }
 }
 
@@ -167,7 +187,7 @@ Result<void> Document::remove(ObjectId id) {
     }
     return inStep(*this, "remove", [&]() -> Result<void> {
         objects_.erase(id);
-        removeDependents(id, false);
+        removeDependents(id, Dependents::All);
         changed();
         return {};
     });

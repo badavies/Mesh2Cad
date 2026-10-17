@@ -1,4 +1,5 @@
 add_executable(m2c_unit_tests
+    DeviationTests.cpp
     DocumentTests.cpp
     GeometryTests.cpp
     MeshStatsTests.cpp

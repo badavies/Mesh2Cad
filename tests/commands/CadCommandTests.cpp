@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The M2 commands (scan to CAD) run end to end through the registry.
 
+#include <fstream>
+#include <string>
+#include <vector>
+
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/commands/Command.h"
@@ -152,4 +156,53 @@ TEST_CASE("solid.export writes a STEP file that reads back as the same solid",
           true);
     CHECK_FALSE(s.tryRun("solid.export",
                          {{"id", solid}, {"path", (dir.path() / "no" / "x.step").string()}}));
+}
+
+TEST_CASE("deviation.compute measures a mesh against a solid or a mesh", "[commands][deviation]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeSphere(20.0, 4), "ball");
+    const ObjectId bigger = s.import(dir, makeSphere(20.4, 4), "bigger");
+    const auto cage = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}})["id"];
+    const auto solid = s.run("surface.build", {{"id", cage}, {"mesh_id", mesh}})["id"];
+
+    const Json toSolid = s.run("deviation.compute",
+                               {{"id", bigger}, {"reference_id", solid}, {"tolerance_mm", 0.5}});
+    CHECK_THAT(toSolid["stats"]["mean_mm"].get<double>(), Catch::Matchers::WithinAbs(0.4, 0.02));
+    CHECK(toSolid["stats"]["within_tolerance"] == 1.0);
+    CHECK(toSolid["stats"]["count"] == makeSphere(20.4, 4).vertexCount());
+    const auto dev = toSolid["id"].get<ObjectId>();
+    const auto object = s.document.find(dev);
+    REQUIRE(object);
+    CHECK(std::string(object->kind()) == "deviation");
+    CHECK(object->name == "bigger (deviation)");
+    CHECK(object->deviation()->meshId == bigger);
+
+    const Json toMesh = s.run("deviation.compute", {{"id", bigger}, {"reference_id", mesh}});
+    CHECK_THAT(toMesh["stats"]["mean_mm"].get<double>(), Catch::Matchers::WithinAbs(0.4, 0.01));
+    CHECK(toMesh["stats"]["tolerance_mm"] == 0.1);
+
+    CHECK_FALSE(s.tryRun("deviation.compute", {{"id", bigger}, {"reference_id", bigger}}));
+    CHECK_FALSE(s.tryRun("deviation.compute", {{"id", bigger}, {"reference_id", cage}}));
+    CHECK_FALSE(s.tryRun("deviation.compute", {{"id", solid}, {"reference_id", mesh}}));
+
+    // The report: statistics, then the histogram.
+    const auto csv = dir.path() / "dev.csv";
+    s.run("deviation.report", {{"id", dev}, {"path", csv.string()}, {"bins", 4}});
+    std::ifstream in(csv);
+    std::vector<std::string> lines;
+    for (std::string line; std::getline(in, line);) lines.push_back(line);
+    REQUIRE(lines.size() == 9 + 1 + 1 + 4);
+    CHECK(lines[0] == "statistic,value");
+    CHECK(lines[1].starts_with("count,"));
+    CHECK(lines[8] == "within_tolerance,1");
+    CHECK(lines[9].empty());
+    CHECK(lines[10] == "bin_low_mm,bin_high_mm,count");
+    CHECK_FALSE(
+        s.tryRun("deviation.report", {{"id", dev}, {"path", (dir.path() / "d.txt").string()}}));
+    CHECK_FALSE(s.tryRun("deviation.report", {{"id", mesh}, {"path", csv.string()}}));
+
+    // Removing the reference removes the deviation.
+    s.run("object.delete", {{"id", solid}});
+    CHECK_FALSE(s.document.find(dev));
 }

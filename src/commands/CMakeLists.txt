@@ -2,6 +2,7 @@ m2c_add_library(commands
     SOURCES
         AlignMeasureCommands.cpp
         CommandRegistry.cpp
+        DeviationCommands.cpp
         DocumentCommands.cpp
         JsonConvert.cpp
         MeshToolCommands.cpp

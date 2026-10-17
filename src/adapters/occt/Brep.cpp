@@ -2,6 +2,8 @@
 #include "m2c/adapters/occt/Brep.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <exception>
 #include <mutex>
 #include <utility>
@@ -27,6 +29,7 @@
 #include <Precision.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_Writer.hxx>
+#include <ShapeAnalysis_Surface.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <Standard_Failure.hxx>
 #include <Standard_Version.hxx>
@@ -39,6 +42,10 @@
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
 #include <TopoDS_Vertex.hxx>
+#include <gp_Pnt2d.hxx>
+#include <gp_Vec.hxx>
+
+#include "m2c/core/SpatialIndex.h"
 
 #include "Shape.h"
 
@@ -208,6 +215,70 @@ writeStep(const Solid& solid, const std::filesystem::path& path, const std::stri
             return fail(ErrorCode::Io, "could not write " + utf8(path));
         }
         return {};
+    });
+}
+
+Result<std::vector<double>> signedDistances(const Solid& solid, const std::vector<Vec3d>& points) {
+    const std::vector<SurfacePatch>& faces = solid.faces();
+    const TriMesh& display = solid.display();
+    // The display mesh is tessellate(faces, n): 2 n^2 triangles per face, face by face.
+    const std::size_t perFace = faces.empty() ? 0 : display.faceCount() / faces.size();
+    const auto n = static_cast<std::size_t>(std::lround(std::sqrt(double(perFace) / 2.0)));
+    if (faces.empty() || n == 0 || 2 * n * n * faces.size() != display.faceCount()) {
+        return fail(ErrorCode::InvalidState, "the solid's display mesh does not match its faces");
+    }
+    const auto corners = [&](std::size_t t) {
+        const auto v = display.face(t);
+        const auto& p = display.positions();
+        return std::array<Vec3d, 3>{p[v[0]], p[v[1]], p[v[2]]};
+    };
+    // Faces point outward when the display mesh, which follows their u x v, has positive volume.
+    double volume6 = 0.0;
+    for (std::size_t t = 0; t < display.faceCount(); ++t) {
+        const auto [a, b, c] = corners(t);
+        volume6 += dot(a, cross(b, c));
+    }
+    const double outward = volume6 >= 0.0 ? 1.0 : -1.0;
+    return guarded("distance to the solid", [&]() -> Result<std::vector<double>> {
+        std::vector<opencascade::handle<ShapeAnalysis_Surface>> surfaces(faces.size());
+        const SpatialIndex& index = display.spatialIndex();
+        std::vector<double> out;
+        out.reserve(points.size());
+        const double step = 1.0 / double(n);
+        for (const Vec3d& p : points) {
+            const ClosestPoint near = index.closestPoint(p);
+            const std::size_t f = near.face / (2 * n * n);
+            const std::size_t cell = (near.face % (2 * n * n)) / 2;
+            const double i = double(cell % n), j = double(cell / n);
+            // Corners of the triangle in face parameters (see tessellate), then barycentric
+            // weights of the closest point.
+            const bool lower = near.face % 2 == 0;
+            const std::array<std::array<double, 2>, 3> uv{
+                {{i, j}, {i + 1, lower ? j : j + 1}, {lower ? i + 1 : i, j + 1}}};
+            const auto [a, b, c] = corners(near.face);
+            const Vec3d e0 = b - a, e1 = c - a, e2 = near.point - a;
+            const double d00 = dot(e0, e0), d01 = dot(e0, e1), d11 = dot(e1, e1);
+            const double d20 = dot(e2, e0), d21 = dot(e2, e1);
+            const double den = d00 * d11 - d01 * d01;
+            const double wb = den > 0.0 ? (d11 * d20 - d01 * d21) / den : 0.0;
+            const double wc = den > 0.0 ? (d00 * d21 - d01 * d20) / den : 0.0;
+            const double u0 =
+                (uv[0][0] + wb * (uv[1][0] - uv[0][0]) + wc * (uv[2][0] - uv[0][0])) * step;
+            const double v0 =
+                (uv[0][1] + wb * (uv[1][1] - uv[0][1]) + wc * (uv[2][1] - uv[0][1])) * step;
+            if (surfaces[f].IsNull()) surfaces[f] = new ShapeAnalysis_Surface(toSurface(faces[f]));
+            const gp_Pnt target(p.x, p.y, p.z);
+            const gp_Pnt2d at = surfaces[f]->NextValueOfUV(gp_Pnt2d(u0, v0), target, 1e-7);
+            gp_Pnt q;
+            gp_Vec du, dv;
+            surfaces[f]->Surface()->D1(
+                std::clamp(at.X(), 0.0, 1.0), std::clamp(at.Y(), 0.0, 1.0), q, du, dv);
+            const gp_Vec normal = du.Crossed(dv);
+            const gp_Vec offset(q, target);
+            const double side = offset.Dot(normal) * outward >= 0.0 ? 1.0 : -1.0;
+            out.push_back(side * offset.Magnitude());
+        }
+        return out;
     });
 }
 

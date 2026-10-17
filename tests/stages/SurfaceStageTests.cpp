@@ -9,6 +9,7 @@
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/pipeline/Deviation.h"
 #include "m2c/pipeline/QuadRemesh.h"
 #include "m2c/pipeline/Surface.h"
 
@@ -236,4 +237,39 @@ TEST_CASE("The surface build gives the same faces every time", "[stages][surface
     }
     CHECK(a->fit.rmsDistanceMm == b->fit.rmsDistanceMm);
     CHECK(a->solid.summary().volumeMm3 == b->solid.summary().volumeMm3);
+}
+
+TEST_CASE("Deviation reports a known offset from a solid and from a mesh", "[stages][deviation]") {
+    const double r = 20.0;
+    const TriMesh sphere = makeSphere(r, 5);
+    QuadRemeshParams q;
+    q.targetFaces = 400;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    const auto built = buildSurface(remeshed->cage, &sphere, SurfaceBuildParams{});
+    REQUIRE(built);
+
+    for (const double offset : {0.5, -0.3}) {
+        CAPTURE(offset);
+        const TriMesh moved = makeSphere(r + offset, 4);
+        const auto toSolid = deviationToSolid(moved, built->solid, 0.1);
+        REQUIRE(toSolid);
+        const DeviationStats& s = toSolid->stats();
+        CHECK(s.count == moved.vertexCount());
+        // The fitted solid is within about 0.01 mm of the sphere (see above).
+        CHECK(std::abs(s.meanMm - offset) < 0.01);
+        CHECK(std::abs(s.minMm - offset) < 0.03);
+        CHECK(std::abs(s.maxMm - offset) < 0.03);
+        CHECK(s.withinTolerance == (std::abs(offset) <= 0.1 ? 1.0 : 0.0));
+
+        // To the scan itself: its facets lie up to a sagitta inside the sphere.
+        const auto toMesh = deviationToMesh(moved, sphere, 0.1);
+        REQUIRE(toMesh);
+        CHECK(std::abs(toMesh->stats().meanMm - offset) < 0.02);
+        CHECK(std::abs(toMesh->stats().minMm - offset) < 0.03);
+    }
+    // A point on the surface is at zero.
+    const auto self = deviationToSolid(built->solid.display(), built->solid, 0.1);
+    REQUIRE(self);
+    CHECK(self->stats().p95AbsMm < 1e-6);
 }

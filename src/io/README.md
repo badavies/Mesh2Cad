@@ -1,6 +1,6 @@
 # io (`Mesh2Cad::io`)
 
-Reads and writes mesh files, STEP files and the project file. Mesh readers weld duplicate positions, drop
+Reads and writes mesh files, STEP files, reports and the project file. Mesh readers weld duplicate positions, drop
 unused vertices and validate the result through `TriMesh::create`. The module works on core
 types only; it cannot see the document, so the command engine converts between project data and
 document objects.
@@ -12,6 +12,7 @@ document objects.
 - `m2c/io/Obj.h`: `readObj` (positions and faces only) and `writeObj` (round-trips exactly).
 - `m2c/io/Ply.h`: `readPly` (ASCII or binary, either byte order) and `writePly` (binary little-endian, double precision).
 - `m2c/io/Step.h`: `writeStep` (AP242, millimetres) and `readStep` returning a `SolidSummary` of the whole file, from the Open CASCADE adapter.
+- `m2c/io/Report.h`: `writeDeviationReport`, a deviation's statistics and histogram as CSV.
 - `m2c/io/Project.h`: `ProjectData`, `ProjectObject`, `ProjectMesh`, `ProjectSelection`, `kProjectFormatVersion`, `writeProject` and `readProject`.
 
 Private: `detail/Parse.h` (`LineReader`, `weldAndCompact`, `appendFan` and number parsing),
