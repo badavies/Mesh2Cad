@@ -38,6 +38,15 @@ Undo every alignment applied to a mesh, returning it to its scanned pose. *(chan
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
 
+### `align.symmetry`
+
+Automatic alignment by the best mirror-symmetry plane: that plane becomes X = 0, Y and Z follow the principal axes within it. Reports how far mirrored points land from the surface, so a poor fit shows. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `origin` | `centroid` \| `bounds_center` \| `bounds_bottom_center` |  | Positions the part in Y and Z; X = 0 stays on the plane. Default `"centroid"`. |
+
 ### `align.transform`
 
 Apply a rigid transform (rotation matrix and translation) to a mesh. *(changes the document)*
@@ -176,14 +185,15 @@ Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces
 
 ### `mesh.simplify`
 
-Reduce the triangle count (quadric edge collapse), keeping open boundaries in place. *(changes the document)*
+Reduce the triangle count (quadric edge collapse), keeping open boundaries in place. Stops at the target count or the maximum error, whichever comes first. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
+| `max_error_mm` | number |  | Stop before the surface moves further than this from the original. With no target given, simplifies as far as this allows. |
 | `preserve_borders` | boolean |  | Default `true`. |
 | `target_faces` | integer |  | Target triangle count. |
-| `target_ratio` | number |  | Target as a fraction of the current count (used when target_faces is not given). |
+| `target_ratio` | number |  | Target as a fraction of the current count (used when target_faces is not given). Default 0.5 unless max_error_mm is given. |
 
 ### `mesh.smooth`
 

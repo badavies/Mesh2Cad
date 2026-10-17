@@ -77,6 +77,10 @@ public:
     [[nodiscard]] Mat4d viewProjection() const;
     [[nodiscard]] Vec3d eye() const { return camera_.eye(); }
 
+    /// True once every drawn mesh that needs a coarse proxy (see above) has one on the GPU, so
+    /// camera moves draw the proxy. Used by the frame-rate test.
+    [[nodiscard]] bool proxiesReady() const;
+
 signals:
     /// A finished brush stroke on one mesh: the brush centres in order.
     void

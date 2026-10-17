@@ -8,12 +8,13 @@ Catch2 v3 tests, registered with CTest one test case at a time.
 | `stages/` | `m2c_stage_tests` | `stages` | Pipeline stages and CGAL tools on synthetic meshes |
 | `commands/` | `m2c_command_tests` | `commands` | Commands through the registry, JSON-RPC and MCP (same results), the files in `examples/` |
 | `app/` | `m2c_app_tests` | `app` | The real desktop window driven by mouse events and by an agent on the local socket (built with Qt; needs a display) |
+| `app/` | `m2c_app_tests "[perf]"` | `perf` | The M0 frame-rate gate: a 10M-triangle scan loaded and orbited in the real window (hidden; see below) |
 | `fuzz/` | `m2c_fuzz_mesh_parsers` | `fuzz` | STL, OBJ and PLY readers on mutated input (libFuzzer entry point plus a fixed-seed driver for GCC and MSVC) |
 | `golden/` | `m2c_golden_tests` | `golden` | Real scans replayed through the CLI path, JSON-RPC and MCP against stored metrics; skipped without scans (see `golden/README.md`) |
 | (script) | — | `layering` | `scripts/check_layers.py` module dependency check |
 | `support/` | — | — | Shared helpers: `makeCube()`, `makeBox()`, `makeSphere()`, `addNoise()`, `TempDir` |
 
-Nightly, run the fuzzer longer (`m2c_fuzz_mesh_parsers --iterations 1000000 --seed <n>`, preferably under the `linux-gcc-sanitize` preset; `--save-last FILE` keeps the input being tried, so a crash can be reproduced) and the golden scans (`ctest -L golden`). On a machine without a display run `ctest -LE app`, or wrap ctest in `xvfb-run` as CI does. Set `M2C_TEST_SCREENSHOT_DIR` to save what the app tests drew.
+CI runs nightly as well (and from *Run workflow* on the Actions page): the full suite on every preset, plus the fuzzer under the `linux-gcc-sanitize` preset for 1,000,000 inputs with a new seed each night (`m2c_fuzz_mesh_parsers --iterations N --seed S`; `--save-last FILE` keeps the input being tried, so a crash can be reproduced, and CI uploads it). CI has no golden scans, so run `ctest -L golden` on a machine with them before each milestone gate. On a machine without a display run `ctest -LE app`, or wrap ctest in `xvfb-run` as CI does. Set `M2C_TEST_SCREENSHOT_DIR` to save what the app tests drew.
 
 ## Running
 
@@ -31,6 +32,18 @@ build/linux-gcc-debug/tests/unit/m2c_unit_tests --list-tests
 ```
 
 Use the `linux-gcc-sanitize` preset to run the suite under AddressSanitizer and UndefinedBehaviorSanitizer.
+
+## Frame-rate test (M0 gate)
+
+`A 10M-triangle scan loads and orbits at 30 fps` builds a 10.2M-triangle organic test surface, opens it in the real window, then draws 30 still frames at full resolution and 120 frames of orbiting (which draws the coarse proxy, once it is built). It prints one line with the load time and the frame rates and fails if orbiting is below 30 fps. It is hidden from normal runs, needs a Release build of the app and a real GPU (not a virtual display), and takes a minute or two.
+
+On the Windows machine, in CLion: copy the Qt profile you build the app with, set *Build type* to `Release`, build `m2c_app_tests` with it, then run from a terminal in the build folder:
+
+```
+tests\app\m2c_app_tests.exe "[perf]"
+```
+
+Or configure with `-DMESH2CAD_PERF_TESTS=ON` and run `ctest -L perf --output-on-failure`. Record the printed line in the M0 gate issue.
 
 ## Writing a test
 

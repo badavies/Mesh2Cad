@@ -86,6 +86,27 @@ TEST_CASE("Mesh tools edit in place and undo as one step", "[commands][tools]") 
     CHECK(s.document.undoHistory().size() == steps);
 }
 
+TEST_CASE("mesh.simplify stops at max_error_mm", "[commands][tools]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId id = s.import(dir, makeSphere(10.0, 4), "ball"); // 5120 faces
+
+    // With only an error limit there is no count target: it goes as far as the limit allows.
+    const Json loose = s.run("mesh.simplify", {{"id", id}, {"max_error_mm", 1.0}});
+    CHECK(loose["report"]["faces_after"].get<int>() < 1000);
+    CHECK(loose["stats"]["is_watertight"] == true);
+    s.run("doc.undo");
+
+    // A target count as well: whichever comes first.
+    const Json counted =
+        s.run("mesh.simplify", {{"id", id}, {"max_error_mm", 1.0}, {"target_faces", 3000}});
+    CHECK(counted["report"]["faces_after"].get<int>() < 3000);
+    CHECK(counted["report"]["faces_after"].get<int>() >= 2998);
+
+    CHECK(s.tryRun("mesh.simplify", {{"id", id}, {"max_error_mm", 0}}).error().code ==
+          ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("Shell commands find, split and clean fragments", "[commands][shells]") {
     Session s;
     const TempDir dir;
@@ -167,6 +188,27 @@ TEST_CASE("Selections, face deletion and datum alignment through commands", "[co
     CHECK(deleted["stats"]["is_watertight"] == false);
     CHECK(s.tryRun("select.invert", {{"selection_id", all["selection_id"]}}).error().code ==
           ErrorCode::NotFound);
+}
+
+TEST_CASE("align.symmetry puts the mirror plane on X = 0 and reports the fit",
+          "[commands][align]") {
+    Session s;
+    const TempDir dir;
+    // Symmetric about y = 10 only; the import sees it turned and moved.
+    const TriMesh part = combine({makeBox(40, 20, 10, 4), makeBox(10, 20, 15, 2)});
+    const Transform3d pose{{0, -1, 0, 1, 0, 0, 0, 0, 1}, {5, 6, 7}}; // 90 degrees about Z
+    const ObjectId id = s.import(dir, *transformMesh(part, pose), "part");
+
+    const Json aligned = s.run("align.symmetry", {{"id", id}, {"origin", "bounds_bottom_center"}});
+    CHECK(aligned["report"]["residual_mm"].get<double>() < 1e-6);
+    const Json& bounds = aligned["stats"]["bounds"];
+    CHECK_THAT(bounds["min"][0].get<double>(), WithinAbs(-10.0, 1e-6)); // 20 wide, centred
+    CHECK_THAT(bounds["max"][0].get<double>(), WithinAbs(10.0, 1e-6));
+    CHECK_THAT(bounds["min"][2].get<double>(), WithinAbs(0.0, 1e-9));
+    CHECK(s.document.undoHistory().back().label == "align.symmetry");
+
+    CHECK(s.tryRun("align.symmetry", {{"id", id}, {"origin", "corner"}}).error().code ==
+          ErrorCode::InvalidArgument);
 }
 
 TEST_CASE("A brush stroke is one command and one undo step", "[commands][select]") {

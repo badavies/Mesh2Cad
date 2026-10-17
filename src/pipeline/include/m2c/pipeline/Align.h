@@ -32,6 +32,21 @@ enum class AlignOrigin {
 [[nodiscard]] Result<Transform3d>
 principalAxesAlignment(const TriMesh& mesh, AlignOrigin origin = AlignOrigin::Centroid);
 
+struct SymmetryAlignment {
+    Transform3d transform;
+    Vec3d planePoint;     ///< A point on the symmetry plane, in the input's coordinates.
+    Vec3d planeNormal;    ///< Unit normal of the plane (the new X axis), input coordinates.
+    double residualMm{0}; ///< RMS distance from mirrored surface points to the surface.
+};
+
+/// Automatic alignment by the best mirror-symmetry plane, which becomes X = 0. The search starts
+/// from the three principal-axis planes through the centroid and refines each by moving the
+/// plane to bring mirrored vertices onto the surface; the plane with the smallest residual wins.
+/// Y and Z follow the principal axes within the plane (Y the larger spread). `origin` positions
+/// the part in Y and Z as for principalAxesAlignment; X = 0 always stays on the plane.
+[[nodiscard]] Result<SymmetryAlignment>
+symmetryAlignment(const TriMesh& mesh, AlignOrigin origin = AlignOrigin::Centroid);
+
 struct DatumAlignParams {
     MeshSelection primary;                  ///< Plane that becomes Z = 0.
     std::optional<MeshSelection> secondary; ///< Plane that becomes Y = 0.

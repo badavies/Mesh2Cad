@@ -38,7 +38,7 @@ AI coding tools drift in predictable ways: they widen scope, add dependencies an
 | Layering | `scripts/check_layers.py` enforces who may include whom and keeps kernel headers inside `src/adapters/`. It runs as a ctest. | `scripts/check_layers.py` |
 | Meshes | `TriMesh` is immutable and shares its buffers. A tool returns a new `TriMesh`; it never mutates one. | `src/core/include/m2c/core/TriMesh.h` |
 | Units and names | Millimetres. Put units in names: `surface_area_mm2`, `tolerance_mm`. JSON keys are snake_case; C++ uses `camelCase` functions and members with a trailing `_`. | `src/commands/JsonConvert.cpp` |
-| Commands | Dotted lower-case names (`mesh.import`). Each has a summary, a JSON Schema, a `mutatesDocument` flag and a test in `tests/commands`. | `src/commands/BuiltinCommands.cpp` |
+| Commands | Dotted lower-case names (`mesh.import`). Each has a summary, a JSON Schema, a `mutatesDocument` flag and a test in `tests/commands`. | `src/commands/*Commands.cpp` (one file per group; `registerBuiltinCommands` is in `DocumentCommands.cpp`) |
 | Floating point | `-ffp-contract=off` / `/fp:precise` are set globally; never add fast-math. Serial loops in index order unless a deterministic parallel reduction is required. | `cmake/Mesh2CadBuild.cmake` |
 | Tests | Catch2. Check measured outcomes (counts, validity, tolerances), not byte-exact output. Shared helpers in `tests/support/`. | `tests/unit/MeshStatsTests.cpp` |
 | Licence header | First line of every source file: `// SPDX-License-Identifier: GPL-3.0-or-later` | any `.cpp` |

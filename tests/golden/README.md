@@ -61,4 +61,6 @@ The gate limits are fixed: watertight, no non-manifold or boundary edges, positi
 
 The test replays the session through the registry (CLI path), the JSON channel and the MCP server, requires identical documents from all three, then checks the metrics. Run it on a Release build with `ctest -L golden`; it takes a few minutes.
 
+CI, including the nightly run, has no scans and reports the golden test as skipped. Running it is a manual step on a machine with the scans, before each milestone gate.
+
 Changing a stored limit is a separate, human-reviewed commit that says why (`docs/AI_GUIDELINES.md` rule 10).

@@ -12,6 +12,7 @@
 
 #include "m2c/core/MeshStats.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/SpatialIndex.h"
 #include "m2c/pipeline/MeshTools.h"
 #include "m2c/pipeline/Shells.h"
 #include "m2c/pipeline/Smooth.h"
@@ -256,6 +257,53 @@ TEST_CASE("Simplification reaches the target and stays closed", "[stages][simpli
     CHECK(s.isWatertight());
     CHECK(radiusSpread(*simplified, 10.0) < 0.2);
     CHECK_FALSE(simplifyMesh(sphere, SimplifyParams{0, true}).has_value());
+}
+
+namespace {
+
+// Largest distance from any vertex of one mesh to the surface of the other.
+double maxVertexDistance(const TriMesh& from, const TriMesh& to) {
+    double worst = 0.0;
+    for (const Vec3d& p : from.positions()) {
+        worst = std::max(worst, to.spatialIndex().closestPoint(p).distance);
+    }
+    return worst;
+}
+
+} // namespace
+
+TEST_CASE("Simplification stops at the maximum error", "[stages][simplify]") {
+    const TriMesh sphere = makeSphere(10.0, 4); // 5120 faces
+    std::size_t previousFaces = sphere.faceCount();
+    for (const double maxError : {0.05, 0.2, 1.0}) {
+        INFO("max error " << maxError);
+        SimplifyParams params;
+        params.maxErrorMm = maxError;
+        const auto simplified = simplifyMesh(sphere, params);
+        REQUIRE(simplified.has_value());
+        CHECK(simplified->faceCount() < previousFaces); // a looser limit gives fewer faces
+        previousFaces = simplified->faceCount();
+        CHECK(computeStats(*simplified).isWatertight());
+        CHECK(maxVertexDistance(*simplified, sphere) <= maxError);
+        CHECK(maxVertexDistance(sphere, *simplified) <= maxError);
+    }
+
+    // With a target count as well, whichever comes first stops it.
+    SimplifyParams both;
+    both.maxErrorMm = 1.0;
+    both.targetFaces = 2000;
+    const auto byCount = simplifyMesh(sphere, both);
+    REQUIRE(byCount.has_value());
+    CHECK(byCount->faceCount() < 2000);
+    CHECK(byCount->faceCount() >= 1998);
+    both.targetFaces = 10;
+    const auto byError = simplifyMesh(sphere, both);
+    REQUIRE(byError.has_value());
+    CHECK(byError->faceCount() == previousFaces);
+
+    SimplifyParams negative;
+    negative.maxErrorMm = -1.0;
+    CHECK_FALSE(simplifyMesh(sphere, negative).has_value());
 }
 
 TEST_CASE("Simplification keeps open borders in place", "[stages][simplify]") {
