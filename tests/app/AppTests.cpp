@@ -266,6 +266,84 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
     }
 }
 
+TEST_CASE("The viewport draws solids, cages and deviation colours", "[app][surface]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto ball = dir.path() / "ball.stl";
+    REQUIRE(writeMesh(makeSphere(20.0, 4), ball).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(ball.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+
+    // Runs a command as the UI does and returns its result.
+    const auto run = [&](const char* command, const Json& params) {
+        Json out;
+        bool done = false;
+        engine.run(command, params, [&](const Result<Json>& r) {
+            if (r) out = *r;
+            done = true;
+        });
+        REQUIRE(waitFor([&] { return done && !engine.busy(); }, 120000));
+        REQUIRE(out.contains("id"));
+        return out["id"].get<ObjectId>();
+    };
+    const ObjectId cage = run("quad.remesh", {{"id", mesh}, {"target_faces", 300}});
+    const ObjectId solid = run("surface.build", {{"id", cage}, {"mesh_id", mesh}});
+    run("deviation.compute", {{"id", mesh}, {"reference_id", solid}, {"tolerance_mm", 0.5}});
+
+    Viewport* view = window.viewport();
+    view->fitAll();
+    const auto centre = [&] {
+        QApplication::processEvents();
+        const QImage frame = view->grabFramebuffer();
+        return frame.pixelColor(frame.width() / 2, frame.height() / 2);
+    };
+
+    // The scan and the solid lie on each other; hide one at a time to see the other.
+    run("object.show", {{"id", solid}, {"visible", false}});
+
+    // The fitted sphere is within tolerance everywhere, so the scan is drawn in the neutral
+    // colour: green in the standard palette, grey in the colour-blind-safe one.
+    QColor c = centre();
+    CHECK(c.green() > c.red() + 40);
+    CHECK(c.green() > c.blue() + 40);
+    screenshot(view, "deviation");
+    view->setColorBlindPalette(true);
+    c = centre();
+    CHECK(std::abs(c.green() - c.red()) < 20);
+    CHECK(std::abs(c.green() - c.blue()) < 20);
+    view->setColorBlindPalette(false);
+
+    // With the scan hidden the solid shows, in its own blue.
+    run("object.show", {{"id", mesh}, {"visible", false}});
+    run("object.show", {{"id", solid}, {"visible", true}});
+    c = centre();
+    CHECK(c.blue() > c.red() + 20);
+    screenshot(view, "solid");
+
+    // With the solid hidden too only the cage's orange edges are left.
+    run("object.show", {{"id", solid}, {"visible", false}});
+    QApplication::processEvents();
+    const QImage frame = view->grabFramebuffer();
+    std::size_t orange = 0;
+    for (int y = 0; y < frame.height(); y += 2) {
+        for (int x = 0; x < frame.width(); x += 2) {
+            const QColor p = frame.pixelColor(x, y);
+            if (p.red() > 200 && p.green() > 120 && p.green() < 180 && p.blue() < 90) ++orange;
+        }
+    }
+    CHECK(orange > 500);
+    screenshot(view, "cage");
+}
+
 TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     application();
     CommandRegistry registry;
