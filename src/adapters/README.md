@@ -30,12 +30,14 @@ target.
     OpenSubdiv's Gregory patches (positions and tangent planes along their edges) elsewhere.
   - `tessellateLimit`: the limit surface as triangles, for tests and checks.
 - `m2c/adapters/occt/Brep.h` (namespace `m2c::occt`):
-  - `makeSolid` with `SewParams`: B-spline faces, sewing, an outward solid (`ShapeFix_Solid`)
-    and the kernel's checker; fails unless the result is one valid closed solid.
+  - `makeSolid` with `SewParams`: B-spline faces (knots where pieces join with C2 continuity
+    removed), sewing, an outward solid (`ShapeFix_Solid`) and the kernel's checker; fails unless
+    the result is one valid closed solid.
   - `writeStep` (AP242, millimetres, checks the solid first) and `readStep`, which summarises
     a STEP file as a `SolidSummary`.
 
-Private to the adapters: `osd/Limit.h` (the OpenSubdiv refiner, patch table and stencils) and
+Private to the adapters: `osd/Limit.h` (the OpenSubdiv refiner, patch table and stencils),
+`osd/Tessellation.h` (limit surface sampling shared by the fit and the display mesh) and
 `occt/Shape.h` (the definition of the opaque `SolidShape`). Private to the adapter: `CgalMesh.h` (`toSurfaceMesh`, `fromSurfaceMesh`, `guarded`). Do not
 include it from outside `src/adapters/cgal`.
 
