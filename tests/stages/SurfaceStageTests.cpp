@@ -68,7 +68,7 @@ TEST_CASE("A regular cage gives exact faces with no caps", "[stages][surface]") 
     CHECK(result->faces.size() == cage.faceCount());
     CHECK(result->capPieces == 0);
     CHECK(result->regularPieces == cage.faceCount());
-    for (const SurfacePatch& f : result->faces) CHECK(f.spans == 1);
+    for (const SurfacePatch& f : result->faces) CHECK((f.piecesU() == 1 && f.piecesV() == 1));
     // The faces are the limit surface itself.
     const auto limit = tessellateLimit(cage, 2, 4);
     REQUIRE(limit);
@@ -97,8 +97,9 @@ TEST_CASE("Irregular corners become caps that meet their neighbours", "[stages][
         CHECK(result->faces.size() == 6);
         CHECK(result->capPieces > 0);
         for (const SurfacePatch& f : result->faces) {
-            CHECK(f.spans == std::size_t{1} << level);
-            CHECK(f.poles.size() == f.polesPerRow() * f.polesPerRow());
+            CHECK(f.piecesU() == std::size_t{1} << level);
+            CHECK(f.piecesV() == f.piecesU());
+            CHECK(f.poles.size() == f.polesPerRow() * f.poleRows());
         }
         const SeamReport s = seams(result->faces, 16, 1e-5);
         CHECK(s.unmatchedSamples == 0);
@@ -183,8 +184,51 @@ TEST_CASE("A sphere scan becomes a valid closed solid of the right volume", "[st
     CHECK(built->fit.samples > 0);
     CHECK(built->fit.ignoredSamples == 0);
     // The display mesh follows the faces.
-    CHECK(built->solid.display().faceCount() == built->solid.faces().size() * 2 * 16);
+    std::size_t quads = 0;
+    for (const SurfacePatch& f : built->solid.faces()) quads += std::size_t{f.cellsU} * f.cellsV;
+    CHECK(quads == built->facesBeforeMerge);
+    CHECK(built->solid.display().faceCount() == quads * 2 * 16);
     for (const Vec3d& p : built->solid.display().positions()) CHECK(std::abs(length(p) - r) < 0.05);
+    // Every display vertex is where its (u, v) puts it on the face of each triangle using it.
+    const FaceTessellation& map = built->solid.displayMap();
+    REQUIRE(map.triangleFaces.size() == map.mesh.faceCount());
+    REQUIRE(map.vertexUvs.size() == map.mesh.vertexCount());
+    double worst = 0.0;
+    for (std::size_t t = 0; t < map.mesh.faceCount(); ++t) {
+        const SurfacePatch& face = built->solid.faces()[map.triangleFaces[t]];
+        for (const std::uint32_t v : map.mesh.face(t)) {
+            const auto [u, w] = map.vertexUvs[v];
+            worst = std::max(worst, length(evaluate(face, u, w) - map.mesh.positions()[v]));
+        }
+    }
+    CHECK(worst < 1e-12);
+}
+
+TEST_CASE("A fit that folds the surface is tried again with more smoothing", "[stages][surface]") {
+    const TriMesh sphere = makeSphere(20.0, 4);
+    QuadRemeshParams q;
+    q.targetFaces = 200;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    SurfaceBuildParams p;
+    p.fitting.iterations = 1;
+    // A clean fit passes the default limit at once.
+    const auto once = buildSurface(remeshed->cage, &sphere, p);
+    REQUIRE(once);
+    CHECK(once->fits == 1);
+    CHECK(once->smoothing == p.fitting.smoothing);
+    CHECK(once->seams.maxNormalAngleDeg <= p.maxSeamAngleDeg);
+    // A limit no fit can meet (caps always leave a small angle): every try is made, each with
+    // twice the smoothing of the one before, and the last is kept.
+    p.maxSeamAngleDeg = 1e-9;
+    p.fitTries = 3;
+    const auto retried = buildSurface(remeshed->cage, &sphere, p);
+    REQUIRE(retried);
+    CHECK(retried->fits == 3);
+    CHECK(retried->smoothing == 4.0 * p.fitting.smoothing);
+    CHECK(retried->solid.summary().valid);
+    p.fitTries = 0;
+    CHECK_FALSE(buildSurface(remeshed->cage, &sphere, p));
 }
 
 TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][surface]") {

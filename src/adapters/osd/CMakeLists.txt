@@ -1,8 +1,10 @@
 # The only target that sees OpenSubdiv types. Its public header uses core types only.
 m2c_add_library(osd
     SOURCES
+        CageFit.cpp
         Limit.cpp
         Subdivision.cpp
+        Tessellation.cpp
     DEPS
         Mesh2Cad::core)
 target_link_libraries(m2c_osd PRIVATE m2c_osd_deps Eigen3::Eigen)

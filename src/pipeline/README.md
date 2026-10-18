@@ -17,7 +17,8 @@ OpenSubdiv adapter and solids from the Open CASCADE adapter.
 - `m2c/pipeline/Measure.h`: `snapToMesh` and `pickMesh`.
 - `m2c/pipeline/QuadRemesh.h`: `quadRemesh` with `QuadRemeshParams` returning `QuadRemeshResult` (closed cage, `CageStats`, distances), and `closeCage` with its `CageCleanup` report.
 - `m2c/pipeline/Deviation.h`: `deviationToSolid` (exact, projected onto the faces by the Open CASCADE adapter) and `deviationToMesh` (through the reference's spatial index).
-- `m2c/pipeline/Surface.h`: `buildSurface` with `SurfaceBuildParams` returning `SurfaceBuildResult` (the solid, the fitted cage, fit, cap and seam figures), plus re-exports of the OpenSubdiv adapter's `fitCage`, `extractPatches` and `tessellateLimit` with their parameter types.
+- `m2c/pipeline/PatchMerge.h`: `partitionQuads` returning `QuadPartition` (rectangles of cage quads between lines traced from extraordinary vertices) and `mergeFaces` returning `MergeResult` (one multi-span face per rectangle, same surface).
+- `m2c/pipeline/Surface.h`: `buildSurface` with `SurfaceBuildParams` returning `SurfaceBuildResult` (the solid, the fitted cage, fit, cap, seam and merge figures; a fit that folds the surface is retried with more smoothing), plus re-exports of the OpenSubdiv adapter's `fitCage`, `extractPatches` and `tessellateLimit` with their parameter types.
 
 ## Dependencies
 

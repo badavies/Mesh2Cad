@@ -30,6 +30,7 @@ Json toJson(const SolidSummary& s) {
                 {"volume_mm3", s.volumeMm3},
                 {"area_mm2", s.areaMm2},
                 {"max_tolerance_mm", s.maxToleranceMm},
+                {"pole_count", s.poleCount},
                 {"bounds", toJson(s.bounds)}};
 }
 
@@ -50,8 +51,12 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "surface.build",
         "Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit "
         "surface follows the mesh, convert the limit surface to B-spline faces (exact where the "
-        "cage is regular, close-fitting caps at irregular vertices) and sew them. Adds a solid "
-        "object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the "
+        "cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds "
+        "the surface (faces meeting at more than 10 degrees) is made again with twice the "
+        "smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced "
+        "from the irregular vertices, are merged into one face each. Adds a solid object; the quad "
+        "layout and mesh are "
+        "unchanged. Fails, adding nothing, unless the "
         "result is one valid closed solid.",
         R"({
             "type":"object",
@@ -64,6 +69,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "max_samples":{"type":"integer","minimum":100,"maximum":10000000,"default":60000,"description":"Mesh vertices used for fitting (evenly thinned beyond this)."},
                 "max_sample_distance_mm":{"type":"number","minimum":0,"default":0,"description":"Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length."},
                 "isolation_level":{"type":"integer","minimum":1,"maximum":4,"default":2,"description":"Refinement around irregular vertices: higher gives smaller caps and more faces' pieces."},
+                "merge":{"type":"boolean","default":true,"description":"Merge rectangles of cage quads into one face each (fewer faces, same surface)."},
                 "name":{"type":"string"}
             },
             "required":["id"],"additionalProperties":false})",
@@ -79,6 +85,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(gate, optionalNumber(params, "max_sample_distance_mm", 0.0, 0.0, 1e6));
             p.fitting.maxSampleDistanceMm = *gate;
             M2C_TRY(name, optionalString(params, "name"));
+            M2C_TRY(merge, optionalBool(params, "merge", true));
+            p.merge = *merge;
             p.fit = *fit;
             p.fitting.iterations = static_cast<unsigned>(*iterations);
             p.fitting.smoothing = *smoothing;
@@ -104,6 +112,11 @@ void addSurfaceCommands(std::vector<Command>& out) {
                         {"summary", toJson(summary)},
                         {"regular_pieces", built->regularPieces},
                         {"cap_pieces", built->capPieces},
+                        {"merge",
+                         {{"faces_before", built->facesBeforeMerge},
+                          {"faces_after", summary.faceCount},
+                          {"merged_faces", built->mergedFaces},
+                          {"unmerged_quads", built->unmergedQuads}}},
                         {"max_cap_error_mm", built->maxCapErrorMm},
                         {"seams",
                          {{"max_gap_mm", built->seams.maxGapMm},
@@ -114,7 +127,9 @@ void addSurfaceCommands(std::vector<Command>& out) {
                                      {"ignored_samples", built->fit.ignoredSamples},
                                      {"rms_distance_mm", built->fit.rmsDistanceMm},
                                      {"max_distance_mm", built->fit.maxDistanceMm},
-                                     {"rms_before_round_mm", built->fit.rmsBeforeRoundMm}};
+                                     {"rms_before_round_mm", built->fit.rmsBeforeRoundMm},
+                                     {"smoothing", built->smoothing},
+                                     {"fits", built->fits}};
             }
             return result;
         }));

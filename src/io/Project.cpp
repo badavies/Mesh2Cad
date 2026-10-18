@@ -110,39 +110,66 @@ Result<QuadLayout> decodeQuadLayout(const std::string& data) {
     return QuadLayout::create(std::move(*positions), std::move(*starts), std::move(*vertices));
 }
 
-/// Per face: {cage face, spans, cap pieces} then its poles.
+/// Per face: {cage face, quads along u and v, cap pieces}, its breaks along u and v, then its
+/// poles (format 3). Format 2 stored {cage face, spans, cap pieces} and the poles of a face of
+/// spans x spans equal pieces.
 std::string encode(const std::vector<SurfacePatch>& faces) {
     std::string out;
     append(out, std::vector<std::uint64_t>{faces.size()});
     for (const SurfacePatch& f : faces) {
-        append(out, std::vector<std::uint64_t>{f.cageFace, f.spans, f.capPieces});
+        append(out, std::vector<std::uint64_t>{f.cageFace, f.cellsU, f.cellsV, f.capPieces});
+        append(out, f.uBreaks);
+        append(out, f.vBreaks);
         append(out, f.poles);
     }
     return out;
 }
 
-Result<std::vector<SurfacePatch>> decodeFaces(const std::string& data) {
+bool validBreaks(const std::vector<double>& b) {
+    if (b.size() < 2 || b.size() > 4097 || b.front() != 0.0 || b.back() != 1.0) return false;
+    for (std::size_t i = 1; i < b.size(); ++i) {
+        if (!(b[i] > b[i - 1])) return false;
+    }
+    return true;
+}
+
+Result<std::vector<SurfacePatch>> decodeFaces(const std::string& data, int version) {
     ByteReader in(data);
     auto count = in.take<std::uint64_t>();
     if (!count) return std::unexpected(count.error());
     if (count->size() != 1) return fail(ErrorCode::Parse, "bad face list in project archive");
+    const auto bad = [] { return fail(ErrorCode::Parse, "bad face in project archive"); };
     std::vector<SurfacePatch> faces;
     for (std::uint64_t i = 0; i < count->front(); ++i) {
         auto header = in.take<std::uint64_t>();
         if (!header) return std::unexpected(header.error());
+        SurfacePatch f;
+        if (version < 3) {
+            if (header->size() != 3 || (*header)[1] < 1 || (*header)[1] > 1024) return bad();
+            f.uBreaks = uniformBreaks(static_cast<std::size_t>((*header)[1]));
+            f.vBreaks = f.uBreaks;
+            f.capPieces = static_cast<std::size_t>((*header)[2]);
+        } else {
+            if (header->size() != 4 || (*header)[1] < 1 || (*header)[1] > 4096 ||
+                (*header)[2] < 1 || (*header)[2] > 4096) {
+                return bad();
+            }
+            auto uBreaks = in.take<double>();
+            if (!uBreaks) return std::unexpected(uBreaks.error());
+            auto vBreaks = in.take<double>();
+            if (!vBreaks) return std::unexpected(vBreaks.error());
+            if (!validBreaks(*uBreaks) || !validBreaks(*vBreaks)) return bad();
+            f.cellsU = static_cast<std::uint32_t>((*header)[1]);
+            f.cellsV = static_cast<std::uint32_t>((*header)[2]);
+            f.capPieces = static_cast<std::size_t>((*header)[3]);
+            f.uBreaks = std::move(*uBreaks);
+            f.vBreaks = std::move(*vBreaks);
+        }
+        f.cageFace = static_cast<std::uint32_t>((*header)[0]);
         auto poles = in.take<Vec3d>();
         if (!poles) return std::unexpected(poles.error());
-        if (header->size() != 3 || (*header)[1] < 1 || (*header)[1] > 1024) {
-            return fail(ErrorCode::Parse, "bad face in project archive");
-        }
-        SurfacePatch f;
-        f.cageFace = static_cast<std::uint32_t>((*header)[0]);
-        f.spans = static_cast<std::size_t>((*header)[1]);
-        f.capPieces = static_cast<std::size_t>((*header)[2]);
         f.poles = std::move(*poles);
-        if (f.poles.size() != f.polesPerRow() * f.polesPerRow()) {
-            return fail(ErrorCode::Parse, "bad face in project archive");
-        }
+        if (f.poles.size() != f.polesPerRow() * f.poleRows()) return bad();
         faces.push_back(std::move(f));
     }
     return faces;
@@ -238,13 +265,17 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             if (auto ok = addEntry(archive, base + ".brep", *brep, MZ_BEST_SPEED); !ok) return ok;
             const std::string faces = encode(solid->faces());
             if (auto ok = addEntry(archive, base + ".faces", faces, MZ_BEST_SPEED); !ok) return ok;
-            // The display mesh is tessellate(faces, n), so n is all it takes to rebuild it.
-            const double perFace = double(solid->display().faceCount()) /
-                                   double(std::max<std::size_t>(solid->faces().size(), 1));
+            // The display mesh is tessellate(faces, n), with 2 n^2 triangles per cage quad, so n
+            // is all it takes to rebuild it.
+            std::size_t quads = 0;
+            for (const SurfacePatch& f : solid->faces()) quads += std::size_t{f.cellsU} * f.cellsV;
+            const double perQuad =
+                double(solid->display().faceCount()) / double(std::max<std::size_t>(quads, 1));
             j["kind"] = "solid";
             j["brep_file"] = base + ".brep";
+            j["brep_format"] = "binary";
             j["faces_file"] = base + ".faces";
-            j["display_grid"] = std::lround(std::sqrt(perFace / 2.0));
+            j["display_grid"] = std::lround(std::sqrt(perQuad / 2.0));
         } else {
             const auto& d = std::get<ProjectDeviation>(o.data);
             const std::string file = "deviations/" + std::to_string(o.id) + ".bin";
@@ -322,7 +353,8 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
     }
     if (version < 1) return fail(ErrorCode::Parse, "project has an invalid format version");
     // Version 1 holds meshes, selections and measurements, stored as in version 2, so it needs no
-    // migration; the object kinds version 2 added are refused in a version 1 file.
+    // migration; the object kinds version 2 added are refused in a version 1 file. Version 2
+    // faces are read as faces of one cage quad (decodeFaces).
 
     try {
         ProjectData project;
@@ -375,12 +407,16 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 if (!brep) return std::unexpected(brep.error());
                 auto raw = readEntry(archive, j.at("faces_file").get<std::string>());
                 if (!raw) return std::unexpected(raw.error());
-                auto faces = decodeFaces(*raw);
+                auto faces = decodeFaces(*raw, version);
                 if (!faces) return std::unexpected(faces.error());
                 auto display = tessellate(*faces, j.at("display_grid").get<int>());
                 if (!display) return std::unexpected(display.error());
                 auto solid = occt::readBrep(
-                    *brep, std::move(*faces), std::make_shared<const TriMesh>(std::move(*display)));
+                    *brep,
+                    j.value("brep_format", "text") == "binary" ? occt::BrepFormat::Binary
+                                                               : occt::BrepFormat::Text,
+                    std::move(*faces),
+                    std::make_shared<const FaceTessellation>(std::move(*display)));
                 if (!solid) return std::unexpected(solid.error());
                 o.data = std::move(*solid);
             } else if (version >= 2 && kind == "deviation") {

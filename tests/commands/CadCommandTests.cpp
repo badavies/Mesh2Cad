@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The M2 commands (scan to CAD) run end to end through the registry.
 
+#include <algorithm>
 #include <fstream>
+#include <miniz.h>
 #include <string>
 #include <vector>
 
@@ -113,6 +115,8 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK(result["summary"]["volume_mm3"].get<double>() > 33000.0);
     CHECK(result["summary"]["volume_mm3"].get<double>() < 33600.0);
     CHECK(result["fit"]["rms_distance_mm"].get<double>() < 0.05);
+    CHECK(result["fit"]["fits"] == 1);
+    CHECK(result["fit"]["smoothing"] == 0.05);
     CHECK(result["cap_pieces"].get<int>() > 0);
 
     const auto object = s.document.find(solid);
@@ -213,6 +217,55 @@ TEST_CASE("deviation.compute measures a mesh against a solid or a mesh", "[comma
     CHECK_FALSE(s.document.find(dev));
 }
 
+namespace {
+
+/// Rewrites a saved project as format 2 wrote it: the manifest's version, and each solid's faces
+/// as {cage face, spans, cap pieces} and poles (format 2 faces covered one cage quad each).
+void rewriteAsVersion2(const std::string& path, const std::vector<SurfacePatch>& faces) {
+    mz_zip_archive in{};
+    REQUIRE(mz_zip_reader_init_file(&in, path.c_str(), 0));
+    std::vector<std::pair<std::string, std::string>> entries;
+    for (mz_uint i = 0; i < mz_zip_reader_get_num_files(&in); ++i) {
+        char name[256];
+        mz_zip_reader_get_filename(&in, i, name, sizeof name);
+        std::size_t size = 0;
+        void* data = mz_zip_reader_extract_to_heap(&in, i, &size, 0);
+        REQUIRE(data != nullptr);
+        entries.emplace_back(name, std::string(static_cast<const char*>(data), size));
+        mz_free(data);
+    }
+    mz_zip_reader_end(&in);
+    const auto append = [](std::string& out, const auto& values) {
+        const std::uint64_t count = values.size();
+        out.append(reinterpret_cast<const char*>(&count), sizeof count);
+        out.append(reinterpret_cast<const char*>(values.data()), values.size() * sizeof values[0]);
+    };
+    for (auto& [name, data] : entries) {
+        if (name == "manifest.json") {
+            Json manifest = Json::parse(data);
+            manifest["version"] = 2;
+            data = manifest.dump();
+        } else if (name.ends_with(".faces")) {
+            data.clear();
+            append(data, std::vector<std::uint64_t>{faces.size()});
+            for (const SurfacePatch& f : faces) {
+                REQUIRE(f.cellsU == 1);
+                append(data, std::vector<std::uint64_t>{f.cageFace, f.piecesU(), f.capPieces});
+                append(data, f.poles);
+            }
+        }
+    }
+    mz_zip_archive out{};
+    REQUIRE(mz_zip_writer_init_file(&out, path.c_str(), 0));
+    for (const auto& [name, data] : entries) {
+        REQUIRE(mz_zip_writer_add_mem(&out, name.c_str(), data.data(), data.size(), 0));
+    }
+    REQUIRE(mz_zip_writer_finalize_archive(&out));
+    mz_zip_writer_end(&out);
+}
+
+} // namespace
+
 TEST_CASE("Project files keep quad layouts, solids and deviations", "[commands][project]") {
     Session s;
     const TempDir dir;
@@ -255,4 +308,34 @@ TEST_CASE("Project files keep quad layouts, solids and deviations", "[commands][
     // The opened solid works as before.
     const auto step = (dir.path() / "again.step").string();
     CHECK(t.run("solid.export", {{"id", solid}, {"path", step}})["check"]["passed"] == true);
+
+    // Merged faces cover more than one cage quad each.
+    CHECK(built["merge"]["merged_faces"].get<int>() > 0);
+    CHECK(std::any_of(before.faces().begin(), before.faces().end(), [](const SurfacePatch& f) {
+        return f.cellsU * f.cellsV > 1;
+    }));
+}
+
+TEST_CASE("Project files of format 2 open", "[commands][project]") {
+    // Format 2 faces covered one cage quad each, as an unmerged solid's do.
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeSphere(20.0, 4), "ball");
+    const auto cage = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}})["id"];
+    const auto solid =
+        s.run("surface.build", {{"id", cage}, {"mesh_id", mesh}, {"merge", false}})["id"]
+            .get<ObjectId>();
+    const auto path = (dir.path() / "m2.m2c").string();
+    s.run("project.save", {{"path", path}});
+    const Solid before = s.document.find(solid)->solid()->solid;
+    rewriteAsVersion2(path, before.faces());
+    Session u;
+    u.run("project.open", {{"path", path}});
+    const auto old = u.document.find(solid);
+    REQUIRE(old);
+    REQUIRE(old->solid() != nullptr);
+    CHECK(old->solid()->solid.summary().faceCount == before.summary().faceCount);
+    CHECK(old->solid()->solid.display().positions() == before.display().positions());
+    CHECK(old->solid()->solid.faces().back().uBreaks == before.faces().back().uBreaks);
+    CHECK(old->solid()->solid.faces().back().poles == before.faces().back().poles);
 }

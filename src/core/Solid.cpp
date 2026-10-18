@@ -20,16 +20,9 @@ Vec3d unit(const Vec3d& v) {
     return l > 0.0 ? v * (1.0 / l) : Vec3d{};
 }
 
-/// The piece of a face holding parameter x along one direction, and x in that piece.
-std::pair<std::size_t, double> pieceAt(const SurfacePatch& face, double x) {
-    const double n = static_cast<double>(face.spans);
-    const std::size_t i = std::min(static_cast<std::size_t>(std::max(x * n, 0.0)), face.spans - 1);
-    return {i, x * n - static_cast<double>(i)};
-}
-
 Vec3d unitNormal(const SurfacePatch& face, double u, double v) {
-    const auto [i, s] = pieceAt(face, u);
-    const auto [j, t] = pieceAt(face, v);
+    const auto [i, s] = pieceAt(face.uBreaks, u);
+    const auto [j, t] = pieceAt(face.vBreaks, v);
     return unit(normal(face.piece(i, j), s, t));
 }
 
@@ -64,16 +57,22 @@ measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double 
         }
         // Knot lines inside the face: the pieces on either side share their poles.
         const int kk = samplesPerEdge;
-        for (std::size_t a = 0; a < face.spans; ++a) {
-            for (std::size_t b = 1; b < face.spans; ++b) {
-                for (int i = 0; i <= kk; ++i) {
-                    const double s = static_cast<double>(i) / kk;
+        for (int i = 0; i <= kk; ++i) {
+            const double s = static_cast<double>(i) / kk;
+            for (std::size_t a = 0; a < face.piecesU(); ++a) {
+                for (std::size_t b = 1; b < face.piecesV(); ++b) {
                     out.maxNormalAngleDeg =
-                        std::max({out.maxNormalAngleDeg,
-                                  angleDeg(unit(normal(face.piece(a, b - 1), s, 1.0)),
-                                           unit(normal(face.piece(a, b), s, 0.0))),
-                                  angleDeg(unit(normal(face.piece(b - 1, a), 1.0, s)),
-                                           unit(normal(face.piece(b, a), 0.0, s)))});
+                        std::max(out.maxNormalAngleDeg,
+                                 angleDeg(unit(normal(face.piece(a, b - 1), s, 1.0)),
+                                          unit(normal(face.piece(a, b), s, 0.0))));
+                }
+            }
+            for (std::size_t b = 0; b < face.piecesV(); ++b) {
+                for (std::size_t a = 1; a < face.piecesU(); ++a) {
+                    out.maxNormalAngleDeg =
+                        std::max(out.maxNormalAngleDeg,
+                                 angleDeg(unit(normal(face.piece(a - 1, b), 1.0, s)),
+                                          unit(normal(face.piece(a, b), 0.0, s))));
                 }
             }
         }
@@ -117,29 +116,36 @@ measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double 
     return out;
 }
 
-Result<TriMesh> tessellate(const std::vector<SurfacePatch>& faces, int n) {
+Result<FaceTessellation> tessellate(const std::vector<SurfacePatch>& faces, int n) {
     if (n < 1 || n > 64) return fail(ErrorCode::InvalidArgument, "grid must be 1 to 64");
-    const auto row = static_cast<std::uint32_t>(n + 1);
     std::vector<Vec3d> positions;
     std::vector<std::uint32_t> indices;
-    positions.reserve(faces.size() * row * row);
-    indices.reserve(faces.size() * static_cast<std::size_t>(6 * n * n));
-    for (const SurfacePatch& face : faces) {
+    std::vector<std::array<double, 2>> uvs;
+    std::vector<std::uint32_t> triangleFaces;
+    for (std::uint32_t f = 0; f < faces.size(); ++f) {
+        const SurfacePatch& face = faces[f];
+        const std::uint32_t nu = static_cast<std::uint32_t>(n) * face.cellsU;
+        const std::uint32_t nv = static_cast<std::uint32_t>(n) * face.cellsV;
         const auto base = static_cast<std::uint32_t>(positions.size());
-        for (int j = 0; j <= n; ++j) {
-            for (int i = 0; i <= n; ++i) {
-                positions.push_back(
-                    evaluate(face, static_cast<double>(i) / n, static_cast<double>(j) / n));
+        for (std::uint32_t j = 0; j <= nv; ++j) {
+            for (std::uint32_t i = 0; i <= nu; ++i) {
+                const double u = static_cast<double>(i) / nu, v = static_cast<double>(j) / nv;
+                positions.push_back(evaluate(face, u, v));
+                uvs.push_back({u, v});
             }
         }
-        for (std::uint32_t j = 0; j + 1 < row; ++j) {
-            for (std::uint32_t i = 0; i + 1 < row; ++i) {
+        const std::uint32_t row = nu + 1;
+        for (std::uint32_t j = 0; j < nv; ++j) {
+            for (std::uint32_t i = 0; i < nu; ++i) {
                 const std::uint32_t v = base + j * row + i;
                 indices.insert(indices.end(), {v, v + 1, v + row + 1, v, v + row + 1, v + row});
+                triangleFaces.insert(triangleFaces.end(), {f, f});
             }
         }
     }
-    return TriMesh::create(std::move(positions), std::move(indices));
+    auto mesh = TriMesh::create(std::move(positions), std::move(indices));
+    if (!mesh) return std::unexpected(mesh.error());
+    return FaceTessellation{std::move(*mesh), std::move(triangleFaces), std::move(uvs)};
 }
 
 } // namespace m2c

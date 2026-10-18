@@ -23,7 +23,7 @@ struct SewParams {
 /// of it. Fails with InvalidState unless the result is one closed solid the kernel's checker
 /// accepts. The display mesh is stored with the solid as given.
 [[nodiscard]] Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
-                                      std::shared_ptr<const TriMesh> display,
+                                      std::shared_ptr<const FaceTessellation> display,
                                       const SewParams& params);
 
 /// Writes the solid as a STEP AP242 file in millimetres; `name` becomes the product name. Checks
@@ -31,17 +31,27 @@ struct SewParams {
 [[nodiscard]] Result<void>
 writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name);
 
-/// The solid's kernel shape in Open CASCADE's BREP text format, for the project file.
-[[nodiscard]] Result<std::string> writeBrep(const Solid& solid);
+/// Open CASCADE's two BREP formats. Text keeps 15 significant digits, so a solid read back can
+/// differ in the last bits; binary keeps every bit.
+enum class BrepFormat {
+    Text,
+    Binary
+};
 
-/// A solid from BREP text and the faces and display mesh saved with it. Fails unless the text
+/// The solid's kernel shape as BREP data, for the project file (which uses binary).
+[[nodiscard]] Result<std::string> writeBrep(const Solid& solid,
+                                            BrepFormat format = BrepFormat::Binary);
+
+/// A solid from BREP data and the faces and display mesh saved with it. Fails unless the data
 /// holds one valid closed solid.
 [[nodiscard]] Result<Solid> readBrep(const std::string& brep,
+                                     BrepFormat format,
                                      std::vector<SurfacePatch> faces,
-                                     std::shared_ptr<const TriMesh> display);
+                                     std::shared_ptr<const FaceTessellation> display);
 
 /// Signed distance from each point to the solid's faces, positive outside: the closest display
-/// triangle gives the face and a start point, and Open CASCADE projects onto that face's surface.
+/// triangle gives the face and, through the display map, a start point on it; Open CASCADE then
+/// projects onto that face's surface.
 [[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,
                                                           const std::vector<Vec3d>& points);
 

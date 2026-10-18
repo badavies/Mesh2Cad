@@ -56,11 +56,12 @@ struct ProjectData {
 /// Current project format version. Reading an older version runs its migration; a newer one is
 /// refused with ErrorCode::Unsupported.
 /// Version 2 added quad layouts, solids and deviations; version 1 files hold a subset of it.
-inline constexpr int kProjectFormatVersion = 2;
+/// Version 3 lets a solid's face cover several cage quads (merged faces with their own breaks).
+inline constexpr int kProjectFormatVersion = 3;
 
 /// Writes a project file: a zip holding manifest.json, meshes as binary PLY (double precision),
 /// selections as bitsets, quad layouts and deviations as little-endian arrays, and solids as
-/// Open CASCADE BREP text with their B-spline faces (ARCHITECTURE.md section 5). The file is
+/// Open CASCADE binary BREP with their B-spline faces (ARCHITECTURE.md section 5). The file is
 /// replaced atomically: it is written next to the target and renamed into place.
 [[nodiscard]] Result<void> writeProject(const ProjectData& project,
                                         const std::filesystem::path& path);
