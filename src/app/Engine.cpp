@@ -1,13 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "Engine.h"
 
+#include <QByteArray>
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QIODevice>
+#include <QLocalServer>
 #include <QLocalSocket>
+#include <QMetaObject>
+#include <QObject>
 #include <QStandardPaths>
+#include <QString>
+#include <Qt>
+#include <QtGlobal>
 #include <chrono>
+#include <cstdint>
+#include <expected>
+#include <filesystem>
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <ranges>
+#include <string>
+#include <system_error>
+#include <utility>
+
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/document/Document.h"
+#include "m2c/rpc/RpcServer.h"
+#include "m2c/rpc/Session.h"
 
 namespace m2c::app {
 
@@ -20,8 +44,7 @@ QString summarize(const std::string& source, const std::string& command, const R
     if (!r) {
         return line + QStringLiteral("  failed: ") + QString::fromStdString(r.error().message);
     }
-    const Json& j = *r;
-    if (j.is_object()) {
+    if (const Json& j = *r; j.is_object()) {
         if (j.contains("id") && j["id"].is_number()) {
             line += QStringLiteral("  #%1").arg(j["id"].get<ObjectId>());
         }
@@ -43,7 +66,7 @@ QString summarize(const std::string& source, const std::string& command, const R
 
 } // namespace
 
-const DocumentObject* DocSnapshot::find(ObjectId id) const {
+const DocumentObject* DocSnapshot::find(const ObjectId id) const {
     for (const DocumentObject& o : objects) {
         if (o.id == id) return &o;
     }
@@ -73,20 +96,19 @@ Engine::Engine(QObject* parent) : QObject(parent) {
 
 Engine::~Engine() {
     {
-        const std::lock_guard lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         stopping_ = true;
     }
     wake_.notify_all();
     worker_.join();
     // Sockets are children of the server and emit `disconnected` while it is destroyed, after
     // this object's members are gone; detach them first.
-    for (auto& [id, c] : connections_) c->socket->disconnect(this);
+    for (const auto& c : std::views::values(connections_)) c->socket->disconnect(this);
     connections_.clear();
     server_.close();
     if (!sessionFile_.empty()) {
         // Remove the file only if it is still ours (another app instance may have replaced it).
-        const auto info = readSessionFile(sessionFile_);
-        if (info && info->token == token_) {
+        if (const auto info = readSessionFile(sessionFile_); info && info->token == token_) {
             std::error_code ignored;
             std::filesystem::remove(sessionFile_, ignored);
         }
@@ -99,7 +121,7 @@ QString Engine::sessionLogPath() const {
 
 void Engine::post(std::function<void()> job) {
     {
-        const std::lock_guard lock(mutex_);
+        const std::scoped_lock lock(mutex_);
         queue_.push_back(std::move(job));
     }
     wake_.notify_one();
@@ -140,14 +162,14 @@ void Engine::publish() {
                              {"method", "doc.changed"},
                              {"params", {{"revision", revision}}}};
             const QByteArray line = QByteArray::fromStdString(event.dump() + "\n");
-            for (auto& [id, c] : connections_) {
+            for (const auto& c : std::views::values(connections_)) {
                 if (c->authenticated) c->socket->write(line);
             }
         },
         Qt::QueuedConnection);
 }
 
-void Engine::writeLog(const Json& entry) {
+void Engine::writeLog(const Json& entry) const {
     if (!log_) return;
     Json line = entry;
     line["time"] = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs).toStdString();
@@ -196,9 +218,9 @@ QString Engine::startLocalServer() {
         return QStringLiteral("Agents cannot connect: %1").arg(server_.errorString());
     }
     sessionFile_ = defaultSessionFile();
-    const SessionInfo info{server_.fullServerName().toStdString(),
-                           token_,
-                           static_cast<long long>(QCoreApplication::applicationPid())};
+    const SessionInfo info{.endpoint = server_.fullServerName().toStdString(),
+                           .token = token_,
+                           .processId = QCoreApplication::applicationPid()};
     if (const auto written = writeSessionFile(info, sessionFile_); !written) {
         sessionFile_.clear();
         return QStringLiteral("Agents cannot connect: %1")
@@ -211,7 +233,7 @@ QString Engine::startLocalServer() {
 void Engine::onNewConnection() {
     while (QLocalSocket* socket = server_.nextPendingConnection()) {
         const int id = nextConnection_++;
-        auto c = std::make_shared<Connection>();
+        const auto c = std::make_shared<Connection>();
         c->socket = socket;
         c->context = std::make_unique<CommandContext>(document_);
         c->context->source = "json";
@@ -229,7 +251,7 @@ void Engine::onReadyRead(int connectionId) {
     if (it == connections_.end()) return;
     const std::shared_ptr<Connection> c = it->second;
     c->buffer += c->socket->readAll();
-    if (c->buffer.size() > (64 << 20)) { // a runaway client; drop it
+    if (c->buffer.size() > static_cast<qsizetype>(64U << 20U)) { // a runaway client; drop it
         c->socket->disconnectFromServer();
         return;
     }
@@ -255,9 +277,10 @@ void Engine::onReadyRead(int connectionId) {
                 if (command != nullptr && (command->mutatesDocument || failed)) {
                     const Result<Json> r =
                         failed
-                            ? Result<Json>(std::unexpected(
-                                  Error{ErrorCode::InvalidArgument,
-                                        response["error"].value("message", std::string("error"))}))
+                            ? Result<Json>(
+                                  std::unexpected(Error{.code = ErrorCode::InvalidArgument,
+                                                        .message = response["error"].value(
+                                                            "message", std::string("error"))}))
                             : Result<Json>(response.is_object() ? response.value("result", Json())
                                                                 : Json());
                     logText = summarize(c->context->source, method, r);
@@ -273,8 +296,8 @@ void Engine::onReadyRead(int connectionId) {
                         emit busyChanged(false, QString());
                     }
                     if (!logText.isEmpty()) emit logLine(logText, failed);
-                    const auto conn = connections_.find(connectionId);
-                    if (conn != connections_.end() && !reply.empty()) {
+                    if (const auto conn = connections_.find(connectionId);
+                        conn != connections_.end() && !reply.empty()) {
                         conn->second->socket->write(QByteArray::fromStdString(reply + "\n"));
                     }
                 },
@@ -283,7 +306,7 @@ void Engine::onReadyRead(int connectionId) {
     }
 }
 
-void Engine::onDisconnected(int connectionId) {
+void Engine::onDisconnected(const int connectionId) {
     const auto it = connections_.find(connectionId);
     if (it == connections_.end()) return;
     it->second->socket->deleteLater();

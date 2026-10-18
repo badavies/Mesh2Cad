@@ -19,7 +19,7 @@ namespace {
 
 constexpr double kBig = 1e12;
 
-Result<Json> afterEdit(CommandContext& context, ObjectId id, Json report) {
+Result<Json> afterEdit(const CommandContext& context, const ObjectId id, Json report) {
     Json result = describeMesh(context.document, id);
     result["report"] = std::move(report);
     return result;
@@ -212,12 +212,13 @@ void addMeshToolCommands(std::vector<Command>& out) {
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireMesh(context, params));
-            const Aabb& box = object->mesh->bounds();
-            const double diagonal = length(box.max - box.min);
+            const auto& [boxMin, boxMax] = object->mesh->bounds();
+            const double diagonal = length(boxMax - boxMin);
             M2C_TRY(alpha, optionalNumber(params, "alpha_mm", diagonal / 100.0, 1e-9, kBig));
             M2C_TRY(offset, optionalNumber(params, "offset_mm", *alpha / 30.0, 1e-9, kBig));
             M2C_TRY(name, optionalString(params, "name"));
-            M2C_TRY(wrapped, shrinkWrap(*object->mesh, WrapParams{*alpha, *offset}));
+            M2C_TRY(wrapped,
+                    shrinkWrap(*object->mesh, WrapParams{.alphaMm = *alpha, .offsetMm = *offset}));
             M2C_TRY(id,
                     context.document.addMesh(name->value_or(object->name + " (wrap)"),
                                              std::make_shared<const TriMesh>(std::move(*wrapped)),
@@ -272,7 +273,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             },
             "required":["origin","direction"],"additionalProperties":false})",
         false,
-        [](CommandContext& context, const Json& params) -> Result<Json> {
+        [](const CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(origin, requireVec3(params, "origin"));
             M2C_TRY(direction, requireVec3(params, "direction"));
             M2C_TRY(only, optionalId(params, "id"));

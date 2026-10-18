@@ -42,10 +42,8 @@
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
-#include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
-#include <TopoDS_Vertex.hxx>
 #include <gp_Pnt2d.hxx>
 #include <gp_Vec.hxx>
 
@@ -131,15 +129,17 @@ opencascade::handle<Geom_BSplineSurface> toSurface(const SurfacePatch& patch) {
     NCollection_Array2<gp_Pnt> poles(1, row, 1, rows);
     for (int j = 0; j < rows; ++j) {
         for (int i = 0; i < row; ++i) {
-            const Vec3d& p = patch.poles[static_cast<std::size_t>(j * row + i)];
-            poles.SetValue(i + 1, j + 1, gp_Pnt(p.x, p.y, p.z));
+            const auto& [x, y, z] =
+                patch.poles[static_cast<std::size_t>(j) * static_cast<std::size_t>(row) +
+                            static_cast<std::size_t>(i)];
+            poles.SetValue(i + 1, j + 1, gp_Pnt(x, y, z));
         }
     }
     NCollection_Array1<double> uKnots(1, 2), vKnots(1, 2);
     NCollection_Array1<int> uMults(1, 2), vMults(1, 2);
     bezierKnots(patch.uBreaks, uKnots, uMults);
     bezierKnots(patch.vBreaks, vKnots, vMults);
-    opencascade::handle<Geom_BSplineSurface> surface =
+    opencascade::handle surface =
         new Geom_BSplineSurface(poles, uKnots, vKnots, uMults, vMults, 3, 3);
     removeKnots(*surface);
     return surface;
@@ -184,7 +184,7 @@ SolidSummary summarise(const TopoDS_Shape& shape) {
     if (!box.IsVoid()) {
         double x0 = 0, y0 = 0, z0 = 0, x1 = 0, y1 = 0, z1 = 0;
         box.Get(x0, y0, z0, x1, y1, z1);
-        s.bounds = {{x0, y0, z0}, {x1, y1, z1}};
+        s.bounds = {.min = {.x = x0, .y = y0, .z = z0}, .max = {.x = x1, .y = y1, .z = z1}};
     }
     GProp_GProps volume, area;
     BRepGProp::VolumeProperties(shape, volume);
@@ -270,7 +270,7 @@ writeStep(const Solid& solid, const std::filesystem::path& path, const std::stri
     });
 }
 
-Result<std::string> writeBrep(const Solid& solid, BrepFormat format) {
+Result<std::string> writeBrep(const Solid& solid, const BrepFormat format) {
     return guarded("BREP export", [&]() -> Result<std::string> {
         std::ostringstream out(std::ios::binary);
         if (format == BrepFormat::Binary) {
@@ -284,7 +284,7 @@ Result<std::string> writeBrep(const Solid& solid, BrepFormat format) {
 }
 
 Result<Solid> readBrep(const std::string& brep,
-                       BrepFormat format,
+                       const BrepFormat format,
                        std::vector<SurfacePatch> faces,
                        std::shared_ptr<const FaceTessellation> display) {
     if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
@@ -317,18 +317,17 @@ Result<Solid> readBrep(const std::string& brep,
 
 Result<std::vector<double>> signedDistances(const Solid& solid, const std::vector<Vec3d>& points) {
     const std::vector<SurfacePatch>& faces = solid.faces();
-    const FaceTessellation& map = solid.displayMap();
-    const TriMesh& display = map.mesh;
-    if (faces.empty() || map.triangleFaces.size() != display.faceCount() ||
-        map.vertexUvs.size() != display.vertexCount() ||
-        std::ranges::any_of(map.triangleFaces,
-                            [&](std::uint32_t f) { return f >= faces.size(); })) {
+    const auto& [display, triangleFaces, vertexUvs] = solid.displayMap();
+    if (faces.empty() || triangleFaces.size() != display.faceCount() ||
+        vertexUvs.size() != display.vertexCount() ||
+        std::ranges::any_of(triangleFaces,
+                            [&](const std::uint32_t f) { return f >= faces.size(); })) {
         return fail(ErrorCode::InvalidState, "the solid's display mesh does not match its faces");
     }
-    const auto corners = [&](std::size_t t) {
+    const auto corners = [&](const std::size_t t) {
         const auto v = display.face(t);
         const auto& p = display.positions();
-        return std::array<Vec3d, 3>{p[v[0]], p[v[1]], p[v[2]]};
+        return std::array{p[v[0]], p[v[1]], p[v[2]]};
     };
     // Faces point outward when the display mesh, which follows their u x v, has positive volume.
     double volume6 = 0.0;
@@ -344,7 +343,7 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
         out.reserve(points.size());
         for (const Vec3d& p : points) {
             const ClosestPoint near = index.closestPoint(p);
-            const std::size_t f = map.triangleFaces[near.face];
+            const std::size_t f = triangleFaces[near.face];
             // Barycentric weights of the closest point give its (u, v) from the corners'.
             const auto v = display.face(near.face);
             const auto [a, b, c] = corners(near.face);
@@ -354,9 +353,9 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
             const double den = d00 * d11 - d01 * d01;
             const double wb = den > 0.0 ? (d11 * d20 - d01 * d21) / den : 0.0;
             const double wc = den > 0.0 ? (d00 * d21 - d01 * d20) / den : 0.0;
-            const auto& ua = map.vertexUvs[v[0]];
-            const auto& ub = map.vertexUvs[v[1]];
-            const auto& uc = map.vertexUvs[v[2]];
+            const auto& ua = vertexUvs[v[0]];
+            const auto& ub = vertexUvs[v[1]];
+            const auto& uc = vertexUvs[v[2]];
             const double u0 = ua[0] + wb * (ub[0] - ua[0]) + wc * (uc[0] - ua[0]);
             const double v0 = ua[1] + wb * (ub[1] - ua[1]) + wc * (uc[1] - ua[1]);
             if (surfaces[f].IsNull()) surfaces[f] = new ShapeAnalysis_Surface(toSurface(faces[f]));

@@ -42,8 +42,8 @@ struct VertexKeyHash {
             h ^= b;
             h *= 1099511628211ULL;
         }
-        h ^= h >> 32;
-        return static_cast<std::size_t>(h);
+        h ^= h >> 32U;
+        return h;
     }
 };
 
@@ -52,7 +52,7 @@ struct VertexKeyHash {
 class Welder {
 public:
     /// Returns false (and adds nothing) if a coordinate is not finite.
-    bool add(float x, float y, float z) {
+    bool add(const float x, const float y, const float z) {
         if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) return false;
         // "+ 0.0f" turns -0.0 into +0.0 so both weld to the same vertex.
         const VertexKey key{{std::bit_cast<std::uint32_t>(x + 0.0f),
@@ -61,20 +61,20 @@ public:
         const auto [it, inserted] =
             lookup_.try_emplace(key, static_cast<std::uint32_t>(positions_.size()));
         if (inserted) {
-            positions_.push_back(
-                {static_cast<double>(x), static_cast<double>(y), static_cast<double>(z)});
+            positions_.push_back({.x = static_cast<double>(x),
+                                  .y = static_cast<double>(y),
+                                  .z = static_cast<double>(z)});
         }
         indices_.push_back(it->second);
         return true;
     }
 
     /// A closed mesh has about half as many vertices as triangles.
-    void reserveTriangles(std::size_t n) {
+    void reserveTriangles(const std::size_t n) {
         indices_.reserve(n * 3);
         lookup_.reserve(n / 2);
         positions_.reserve(n / 2);
     }
-    [[nodiscard]] std::size_t triangleCount() const noexcept { return indices_.size() / 3; }
     [[nodiscard]] std::size_t indexCount() const noexcept { return indices_.size(); }
 
     [[nodiscard]] Result<TriMesh> finish() {
@@ -92,21 +92,22 @@ std::optional<float> parseFloat(std::string_view s) {
     if (!s.empty() && s.front() == '+') s.remove_prefix(1);
     float value = 0.0f;
     const char* const end = s.data() + s.size();
-    const auto [ptr, ec] = std::from_chars(s.data(), end, value);
-    if (ec != std::errc{} || ptr != end) return std::nullopt;
+    if (const auto [ptr, ec] = std::from_chars(s.data(), end, value);
+        ec != std::errc{} || ptr != end) {
+        return std::nullopt;
+    }
     return value;
 }
 
 std::string lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::ranges::transform(
+        s, s.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
 }
 
-Result<TriMesh> readBinary(std::istream& in, std::uint32_t triangleCount) {
+Result<TriMesh> readBinary(std::istream& in, const std::uint32_t triangleCount) {
     in.clear();
-    in.seekg(static_cast<std::streamoff>(kPreambleSize), std::ios::beg);
+    in.seekg(kPreambleSize, std::ios::beg);
 
     Welder welder;
     welder.reserveTriangles(triangleCount);
@@ -182,7 +183,7 @@ Result<TriMesh> readStl(std::istream& in) {
 
     if (size >= kPreambleSize) {
         std::array<char, kPreambleSize> preamble{};
-        in.read(preamble.data(), static_cast<std::streamsize>(preamble.size()));
+        in.read(preamble.data(), preamble.size());
         if (!in) return fail(ErrorCode::Io, "cannot read STL header");
         std::uint32_t count = 0;
         std::memcpy(&count, preamble.data() + kHeaderSize, sizeof(count));
@@ -200,8 +201,8 @@ Result<void> writeStl(const TriMesh& mesh, std::ostream& out) {
 
     std::array<char, kHeaderSize> header{};
     constexpr std::string_view tag = "Mesh2Cad binary STL";
-    std::copy(tag.begin(), tag.end(), header.begin());
-    out.write(header.data(), static_cast<std::streamsize>(header.size()));
+    std::ranges::copy(tag, header.begin());
+    out.write(header.data(), header.size());
 
     const auto count = static_cast<std::uint32_t>(mesh.faceCount());
     out.write(reinterpret_cast<const char*>(&count), sizeof(count));
@@ -215,20 +216,20 @@ Result<void> writeStl(const TriMesh& mesh, std::ostream& out) {
             const auto [a, b, c] = mesh.face(first + t);
             const Vec3d n = cross(pos[b] - pos[a], pos[c] - pos[a]);
             const double len = length(n);
-            const Vec3d unit = len > 0.0 ? n * (1.0 / len) : Vec3d{};
+            const auto [ux, uy, uz] = len > 0.0 ? n * (1.0 / len) : Vec3d{};
 
-            const std::array<float, 12> values{static_cast<float>(unit.x),
-                                               static_cast<float>(unit.y),
-                                               static_cast<float>(unit.z),
-                                               static_cast<float>(pos[a].x),
-                                               static_cast<float>(pos[a].y),
-                                               static_cast<float>(pos[a].z),
-                                               static_cast<float>(pos[b].x),
-                                               static_cast<float>(pos[b].y),
-                                               static_cast<float>(pos[b].z),
-                                               static_cast<float>(pos[c].x),
-                                               static_cast<float>(pos[c].y),
-                                               static_cast<float>(pos[c].z)};
+            const std::array values{static_cast<float>(ux),
+                                    static_cast<float>(uy),
+                                    static_cast<float>(uz),
+                                    static_cast<float>(pos[a].x),
+                                    static_cast<float>(pos[a].y),
+                                    static_cast<float>(pos[a].z),
+                                    static_cast<float>(pos[b].x),
+                                    static_cast<float>(pos[b].y),
+                                    static_cast<float>(pos[b].z),
+                                    static_cast<float>(pos[c].x),
+                                    static_cast<float>(pos[c].y),
+                                    static_cast<float>(pos[c].z)};
             std::memcpy(buffer.data() + t * kTriangleSize, values.data(), sizeof(values));
             // The 2-byte attribute field stays zero.
         }

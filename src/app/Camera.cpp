@@ -5,6 +5,9 @@
 #include <cmath>
 #include <numbers>
 
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+
 namespace m2c::app {
 
 namespace {
@@ -27,7 +30,8 @@ Vec3d Camera::eye() const {
     const double y = yawDeg * kDeg;
     const double p = pitchDeg * kDeg;
     return target +
-           Vec3d{std::cos(p) * std::cos(y), std::cos(p) * std::sin(y), std::sin(p)} * distance;
+           Vec3d{.x = std::cos(p) * std::cos(y), .y = std::cos(p) * std::sin(y), .z = std::sin(p)} *
+               distance;
 }
 
 Vec3d Camera::forward() const {
@@ -37,7 +41,7 @@ Vec3d Camera::forward() const {
 Vec3d Camera::right() const {
     const double y = yawDeg * kDeg;
     // Perpendicular to the view direction in the XY plane; stays defined looking straight down.
-    return {-std::sin(y), std::cos(y), 0.0};
+    return {.x = -std::sin(y), .y = std::cos(y), .z = 0.0};
 }
 
 Vec3d Camera::up() const {
@@ -68,7 +72,7 @@ double Camera::nearPlane() const {
     return std::max(distance - 2.0 * sceneRadius, distance * 0.01);
 }
 
-Mat4d Camera::projection(double aspect) const {
+Mat4d Camera::projection(const double aspect) const {
     const double n = nearPlane();
     const double f = distance + 3.0 * sceneRadius + n;
     const double t = 1.0 / std::tan(fovYDeg * kDeg / 2.0);
@@ -82,17 +86,17 @@ Mat4d Camera::projection(double aspect) const {
     return p;
 }
 
-void Camera::orbit(double dxDeg, double dyDeg) {
+void Camera::orbit(const double dxDeg, const double dyDeg) {
     yawDeg = std::fmod(yawDeg - dxDeg, 360.0);
     pitchDeg = std::clamp(pitchDeg + dyDeg, -89.9, 89.9);
 }
 
-void Camera::pan(double dxFraction, double dyFraction) {
+void Camera::pan(const double dxFraction, const double dyFraction) {
     const double h = 2.0 * distance * std::tan(fovYDeg * kDeg / 2.0);
     target = target - right() * (dxFraction * h) + up() * (dyFraction * h);
 }
 
-void Camera::zoom(double factor) {
+void Camera::zoom(const double factor) {
     distance = std::clamp(distance * factor, sceneRadius * 1e-4, sceneRadius * 100.0);
 }
 
@@ -102,12 +106,16 @@ void Camera::fit(const Aabb& box) {
     distance = sceneRadius / std::sin(fovYDeg * kDeg / 2.0) * 1.05;
 }
 
-void Camera::setView(double yaw, double pitch) {
+void Camera::setView(const double yaw, const double pitch) {
     yawDeg = yaw;
     pitchDeg = pitch;
 }
 
-void Camera::ray(double ndcX, double ndcY, double aspect, Vec3d& origin, Vec3d& direction) const {
+void Camera::ray(const double ndcX,
+                 const double ndcY,
+                 const double aspect,
+                 Vec3d& origin,
+                 Vec3d& direction) const {
     const double t = std::tan(fovYDeg * kDeg / 2.0);
     origin = eye();
     direction = normalized(forward() + right() * (ndcX * t * aspect) + up() * (ndcY * t));

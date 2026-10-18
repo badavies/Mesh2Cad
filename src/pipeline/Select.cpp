@@ -17,7 +17,7 @@ MeshSelection allFaces(const TriMesh& mesh) {
 }
 
 MeshSelection
-brushSelect(const TriMesh& mesh, const Vec3d& center, double radiusMm, bool connected) {
+brushSelect(const TriMesh& mesh, const Vec3d& center, const double radiusMm, const bool connected) {
     MeshSelection selection(mesh.faceCount());
     const SpatialIndex& index = mesh.spatialIndex();
     const auto inside = index.facesWithin(center, radiusMm);
@@ -28,15 +28,14 @@ brushSelect(const TriMesh& mesh, const Vec3d& center, double radiusMm, bool conn
     }
     MeshSelection candidate(mesh.faceCount());
     for (const std::uint32_t f : inside) candidate.set(f);
-    const FaceAdjacency& adj = mesh.faceAdjacency();
-    std::vector<std::uint32_t> stack{index.closestPoint(center).face};
+    const auto& [offsets, neighbours] = mesh.faceAdjacency();
+    std::vector stack{index.closestPoint(center).face};
     selection.set(stack.back());
     while (!stack.empty()) {
         const std::uint32_t f = stack.back();
         stack.pop_back();
-        for (std::uint32_t i = adj.offsets[f]; i < adj.offsets[f + 1]; ++i) {
-            const std::uint32_t g = adj.neighbours[i];
-            if (candidate.test(g) && !selection.test(g)) {
+        for (std::uint32_t i = offsets[f]; i < offsets[f + 1]; ++i) {
+            if (const std::uint32_t g = neighbours[i]; candidate.test(g) && !selection.test(g)) {
                 selection.set(g);
                 stack.push_back(g);
             }
@@ -46,22 +45,22 @@ brushSelect(const TriMesh& mesh, const Vec3d& center, double radiusMm, bool conn
 }
 
 Result<MeshSelection>
-creaseFloodSelect(const TriMesh& mesh, std::uint32_t seed, double maxAngleDeg) {
+creaseFloodSelect(const TriMesh& mesh, const std::uint32_t seed, const double maxAngleDeg) {
     if (seed >= mesh.faceCount()) {
         return fail(ErrorCode::InvalidArgument,
                     "seed face " + std::to_string(seed) + " does not exist");
     }
     const double cosLimit = std::cos(maxAngleDeg * std::numbers::pi / 180.0);
-    const FaceAdjacency& adj = mesh.faceAdjacency();
+    const auto& [offsets, neighbours] = mesh.faceAdjacency();
     MeshSelection selection(mesh.faceCount());
     selection.set(seed);
-    std::vector<std::uint32_t> stack{seed};
+    std::vector stack{seed};
     while (!stack.empty()) {
         const std::uint32_t f = stack.back();
         stack.pop_back();
         const Vec3d nf = faceNormal(mesh, f);
-        for (std::uint32_t i = adj.offsets[f]; i < adj.offsets[f + 1]; ++i) {
-            const std::uint32_t g = adj.neighbours[i];
+        for (std::uint32_t i = offsets[f]; i < offsets[f + 1]; ++i) {
+            const std::uint32_t g = neighbours[i];
             if (selection.test(g)) continue;
             if (dot(nf, faceNormal(mesh, g)) >= cosLimit) {
                 selection.set(g);
@@ -81,11 +80,12 @@ Result<MeshSelection> lassoSelect(const TriMesh& mesh, const LassoParams& params
     }
     const auto& m = params.viewProjection;
     const auto& poly = params.polygon;
-    const auto insidePolygon = [&](double x, double y) {
+    const auto insidePolygon = [&](const double x, const double y) {
         bool in = false;
         for (std::size_t i = 0, j = poly.size() - 1; i < poly.size(); j = i++) {
-            const double xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
-            if (((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) in = !in;
+            if (const double xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+                (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi)
+                in = !in;
         }
         return in;
     };
@@ -116,18 +116,18 @@ Result<MeshSelection> lassoSelect(const TriMesh& mesh, const LassoParams& params
     return selection;
 }
 
-MeshSelection growSelection(const TriMesh& mesh, const MeshSelection& selection, int rings) {
+MeshSelection growSelection(const TriMesh& mesh, const MeshSelection& selection, const int rings) {
     MeshSelection current = selection;
     if (rings == 0 || selection.size() != mesh.faceCount()) return current;
-    const FaceAdjacency& adj = mesh.faceAdjacency();
+    const auto& [offsets, neighbours] = mesh.faceAdjacency();
     const int steps = rings > 0 ? rings : -rings;
     for (int r = 0; r < steps; ++r) {
         MeshSelection next = current;
         for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
             if (rings > 0) {
                 if (current.test(f)) continue;
-                for (std::uint32_t i = adj.offsets[f]; i < adj.offsets[f + 1]; ++i) {
-                    if (current.test(adj.neighbours[i])) {
+                for (std::uint32_t i = offsets[f]; i < offsets[f + 1]; ++i) {
+                    if (current.test(neighbours[i])) {
                         next.set(f);
                         break;
                     }
@@ -136,10 +136,10 @@ MeshSelection growSelection(const TriMesh& mesh, const MeshSelection& selection,
                 if (!current.test(f)) continue;
                 // A face on an open boundary (fewer than three neighbours) or next to an
                 // unselected face is on the selection border.
-                const std::uint32_t degree = adj.offsets[f + 1] - adj.offsets[f];
+                const std::uint32_t degree = offsets[f + 1] - offsets[f];
                 bool border = degree < 3;
-                for (std::uint32_t i = adj.offsets[f]; i < adj.offsets[f + 1] && !border; ++i) {
-                    border = !current.test(adj.neighbours[i]);
+                for (std::uint32_t i = offsets[f]; i < offsets[f + 1] && !border; ++i) {
+                    border = !current.test(neighbours[i]);
                 }
                 if (border) next.set(f, false);
             }

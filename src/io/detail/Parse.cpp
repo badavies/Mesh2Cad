@@ -9,8 +9,7 @@ namespace m2c::io_detail {
 
 std::optional<std::string_view> LineReader::next() {
     while (true) {
-        const std::size_t nl = buffer_.find('\n', pos_);
-        if (nl != std::string::npos) {
+        if (const std::size_t nl = buffer_.find('\n', pos_); nl != std::string::npos) {
             std::string_view line(buffer_.data() + pos_, nl - pos_);
             pos_ = nl + 1;
             if (!line.empty() && line.back() == '\r') line.remove_suffix(1);
@@ -51,7 +50,7 @@ struct PositionKeyHash {
             h ^= v;
             h *= 1099511628211ULL;
         }
-        return static_cast<std::size_t>(h ^ (h >> 32));
+        return h ^ (h >> 32U);
     }
 };
 
@@ -59,11 +58,11 @@ struct PositionKeyHash {
 
 Result<TriMesh> weldAndCompact(const std::vector<Vec3d>& positions,
                                const std::vector<std::uint32_t>& indices,
-                               std::string_view format) {
+                               const std::string_view format) {
     if (indices.empty()) {
         return fail(ErrorCode::Parse, std::string(format) + " file contains no faces");
     }
-    std::vector<bool> used(positions.size(), false);
+    std::vector used(positions.size(), false);
     for (const std::uint32_t i : indices) {
         if (i >= positions.size()) {
             return fail(ErrorCode::Parse,
@@ -75,7 +74,7 @@ Result<TriMesh> weldAndCompact(const std::vector<Vec3d>& positions,
 
     // Walk vertices in file order, so a clean file keeps its vertex numbering.
     constexpr std::uint32_t kUnset = std::numeric_limits<std::uint32_t>::max();
-    std::vector<std::uint32_t> remap(positions.size(), kUnset);
+    std::vector remap(positions.size(), kUnset);
     std::unordered_map<PositionKey, std::uint32_t, PositionKeyHash> lookup;
     lookup.reserve(safeReserve(positions.size()));
     std::vector<Vec3d> outPositions;
@@ -84,9 +83,9 @@ Result<TriMesh> weldAndCompact(const std::vector<Vec3d>& positions,
         if (!used[i]) continue;
         const Vec3d& p = positions[i];
         // "+ 0.0" folds -0.0 into +0.0 so both weld together.
-        const PositionKey key{std::bit_cast<std::uint64_t>(p.x + 0.0),
-                              std::bit_cast<std::uint64_t>(p.y + 0.0),
-                              std::bit_cast<std::uint64_t>(p.z + 0.0)};
+        const PositionKey key{.x = std::bit_cast<std::uint64_t>(p.x + 0.0),
+                              .y = std::bit_cast<std::uint64_t>(p.y + 0.0),
+                              .z = std::bit_cast<std::uint64_t>(p.z + 0.0)};
         const auto [it, inserted] =
             lookup.try_emplace(key, static_cast<std::uint32_t>(outPositions.size()));
         if (inserted) outPositions.push_back(p);

@@ -21,12 +21,12 @@ namespace {
 struct Point {
     Vec3d p;
     void Clear() { p = {}; }
-    void AddWithWeight(const Point& src, double w) { p = p + src.p * w; }
+    void AddWithWeight(const Point& src, const double w) { p = p + src.p * w; }
 };
 
 } // namespace
 
-Result<std::unique_ptr<Limit>> Limit::create(const QuadLayout& cage, int isolationLevel) {
+Result<std::unique_ptr<Limit>> Limit::create(const QuadLayout& cage, const int isolationLevel) {
     if (isolationLevel < 1 || isolationLevel > 4) {
         return fail(ErrorCode::InvalidArgument, "isolation level must be 1 to 4");
     }
@@ -37,7 +37,7 @@ Result<std::unique_ptr<Limit>> Limit::create(const QuadLayout& cage, int isolati
     for (std::size_t f = 0; f < cage.faceCount(); ++f) {
         sizes[f] = static_cast<int>(cage.face(f).size());
     }
-    std::vector<int> indices(cage.faceVertices().begin(), cage.faceVertices().end());
+    const std::vector<int> indices(cage.faceVertices().begin(), cage.faceVertices().end());
     Far::TopologyDescriptor desc;
     desc.numVertices = static_cast<int>(cage.vertexCount());
     desc.numFaces = static_cast<int>(cage.faceCount());
@@ -82,8 +82,9 @@ Result<std::unique_ptr<Limit>> Limit::create(const QuadLayout& cage, int isolati
     const Far::PtexIndices ptex(*limit->refiner_);
     for (std::uint32_t f = 0; f < cage.faceCount(); ++f) {
         const int first = ptex.GetFaceId(static_cast<int>(f));
-        limit->cageFaceOfPtex_.resize(
-            static_cast<std::size_t>(first + (sizes[f] == 4 ? 1 : sizes[f])), f);
+        limit->cageFaceOfPtex_.resize(static_cast<std::size_t>(first) +
+                                          static_cast<std::size_t>(sizes[f] == 4 ? 1 : sizes[f]),
+                                      f);
     }
     const Far::PatchTable& table = *limit->patches_;
     for (int a = 0, global = 0; a < table.GetNumPatchArrays(); ++a) {
@@ -98,14 +99,16 @@ Result<std::unique_ptr<Limit>> Limit::create(const QuadLayout& cage, int isolati
             double u0 = 0.0, v0 = 0.0, u1 = 1.0, v1 = 1.0;
             param.Unnormalize(u0, v0);
             param.Unnormalize(u1, v1);
-            limit->domains_.push_back(
-                {static_cast<std::uint32_t>(param.GetFaceId()), u0, v0, u1 - u0});
+            limit->domains_.push_back({.ptexFace = static_cast<std::uint32_t>(param.GetFaceId()),
+                                       .u0 = u0,
+                                       .v0 = v0,
+                                       .size = u1 - u0});
         }
     }
     return limit;
 }
 
-bool Limit::isRegular(std::size_t patch) const {
+bool Limit::isRegular(const std::size_t patch) const {
     return patches_->GetPatchDescriptor(handles_[patch]).GetType() == Far::PatchDescriptor::REGULAR;
 }
 
@@ -117,11 +120,11 @@ std::vector<Vec3d> Limit::patchPoints(const std::vector<Vec3d>& cagePositions) c
         stencils_->UpdateValues(points.data(), points.data() + cageVertices_);
     }
     std::vector<Vec3d> out(points.size());
-    std::transform(points.begin(), points.end(), out.begin(), [](const Point& q) { return q.p; });
+    std::ranges::transform(points, out.begin(), [](const Point& q) { return q.p; });
     return out;
 }
 
-void Limit::basis(std::size_t patch, double s, double t, std::vector<double>& w) const {
+void Limit::basis(const std::size_t patch, double s, double t, std::vector<double>& w) const {
     const auto& handle = handles_[patch];
     const Far::PatchParam param = patches_->GetPatchParam(handle);
     param.Unnormalize(s, t);
@@ -130,9 +133,9 @@ void Limit::basis(std::size_t patch, double s, double t, std::vector<double>& w)
 }
 
 Vec3d Limit::evaluate(const std::vector<Vec3d>& points,
-                      std::size_t patch,
-                      double s,
-                      double t) const {
+                      const std::size_t patch,
+                      const double s,
+                      const double t) const {
     thread_local std::vector<double> w;
     basis(patch, s, t, w);
     const auto cvs = patches_->GetPatchVertices(handles_[patch]);
@@ -143,7 +146,10 @@ Vec3d Limit::evaluate(const std::vector<Vec3d>& points,
     return p;
 }
 
-void Limit::weights(std::size_t patch, double s, double t, std::vector<VertexWeight>& out) const {
+void Limit::weights(const std::size_t patch,
+                    const double s,
+                    const double t,
+                    std::vector<VertexWeight>& out) const {
     thread_local std::vector<double> w;
     basis(patch, s, t, w);
     out.clear();
@@ -152,14 +158,14 @@ void Limit::weights(std::size_t patch, double s, double t, std::vector<VertexWei
         const double wi = w[static_cast<std::size_t>(i)];
         const auto cv = static_cast<std::size_t>(cvs[i]);
         if (cv < cageVertices_) {
-            out.push_back({static_cast<std::uint32_t>(cv), wi});
+            out.push_back({.vertex = static_cast<std::uint32_t>(cv), .weight = wi});
             continue;
         }
         const auto stencil = stencils_->GetStencil(static_cast<int>(cv - cageVertices_));
         const int* idx = stencil.GetVertexIndices();
         const double* sw = stencil.GetWeights();
         for (int k = 0; k < stencil.GetSize(); ++k) {
-            out.push_back({static_cast<std::uint32_t>(idx[k]), wi * sw[k]});
+            out.push_back({.vertex = static_cast<std::uint32_t>(idx[k]), .weight = wi * sw[k]});
         }
     }
     std::sort(out.begin(), out.end(), [](const VertexWeight& a, const VertexWeight& b) {

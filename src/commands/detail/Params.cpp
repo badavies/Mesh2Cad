@@ -11,10 +11,13 @@ namespace m2c::cmd {
 Command makeCommand(std::string name,
                     std::string summary,
                     const char* schema,
-                    bool mutates,
+                    const bool mutates,
                     std::function<Result<Json>(CommandContext&, const Json&)> handler) {
-    return Command{
-        std::move(name), std::move(summary), Json::parse(schema), mutates, std::move(handler)};
+    return Command{.name = std::move(name),
+                   .summary = std::move(summary),
+                   .paramsSchema = Json::parse(schema),
+                   .mutatesDocument = mutates,
+                   .handler = std::move(handler)};
 }
 
 Result<std::string> requireString(const Json& params, const std::string& key) {
@@ -32,7 +35,7 @@ Result<std::optional<std::string>> optionalString(const Json& params, const std:
     if (!it->is_string()) {
         return fail(ErrorCode::InvalidArgument, "parameter '" + key + "' must be a string");
     }
-    return std::optional<std::string>{it->get<std::string>()};
+    return std::optional{it->get<std::string>()};
 }
 
 Result<double> optionalNumber(
@@ -54,8 +57,8 @@ Result<double> optionalNumber(
 Result<std::int64_t> optionalInteger(const Json& params,
                                      const std::string& key,
                                      std::int64_t fallback,
-                                     std::int64_t min,
-                                     std::int64_t max) {
+                                     const std::int64_t min,
+                                     const std::int64_t max) {
     const auto it = params.find(key);
     if (it == params.end()) return fallback;
     if (!it->is_number_integer()) {
@@ -100,7 +103,7 @@ Result<ObjectId> requireId(const Json& params, const std::string& key) {
 Result<std::optional<ObjectId>> optionalId(const Json& params, const std::string& key) {
     if (!params.contains(key) || params.at(key).is_null()) return std::optional<ObjectId>{};
     M2C_TRY(id, requireId(params, key));
-    return std::optional<ObjectId>{*id};
+    return std::optional{*id};
 }
 
 Result<Vec3d> requireVec3(const Json& params, const std::string& key) {
@@ -110,7 +113,8 @@ Result<Vec3d> requireVec3(const Json& params, const std::string& key) {
         return fail(ErrorCode::InvalidArgument,
                     "parameter '" + key + "' is required and must be an array of three numbers");
     }
-    const Vec3d v{(*it)[0].get<double>(), (*it)[1].get<double>(), (*it)[2].get<double>()};
+    const Vec3d v{
+        .x = (*it)[0].get<double>(), .y = (*it)[1].get<double>(), .z = (*it)[2].get<double>()};
     if (!std::isfinite(v.x) || !std::isfinite(v.y) || !std::isfinite(v.z)) {
         return fail(ErrorCode::InvalidArgument, "parameter '" + key + "' must be finite");
     }
@@ -126,13 +130,13 @@ requireMesh(const CommandContext& context, const Json& params, const std::string
         return fail(ErrorCode::InvalidArgument,
                     "object " + std::to_string(*id) + " is a " + object->kind() + ", not a mesh");
     }
-    return MeshObject{object->id, object->name, object->mesh()->mesh};
+    return MeshObject{.id = object->id, .name = object->name, .mesh = object->mesh()->mesh};
 }
 
 Result<DocumentObject> requireObject(const CommandContext& context,
                                      const Json& params,
                                      const std::string& key,
-                                     std::string_view kind) {
+                                     const std::string_view kind) {
     M2C_TRY(id, requireId(params, key));
     auto object = context.document.find(*id);
     if (!object) return fail(ErrorCode::NotFound, "no object with id " + std::to_string(*id));
@@ -147,7 +151,7 @@ Result<DocumentObject> requireObject(const CommandContext& context,
 Result<SelectionRef> requireSelection(const CommandContext& context,
                                       const Json& params,
                                       const std::string& key,
-                                      std::optional<ObjectId> meshId) {
+                                      const std::optional<ObjectId> meshId) {
     M2C_TRY(id, requireId(params, key));
     const auto object = context.document.find(*id);
     if (!object) return fail(ErrorCode::NotFound, "no object with id " + std::to_string(*id));
@@ -162,18 +166,18 @@ Result<SelectionRef> requireSelection(const CommandContext& context,
                     "selection " + std::to_string(*id) + " belongs to mesh " +
                         std::to_string(s->meshId) + ", not mesh " + std::to_string(*meshId));
     }
-    return SelectionRef{*id, s->meshId, s->faces};
+    return SelectionRef{.id = *id, .meshId = s->meshId, .faces = s->faces};
 }
 
 Result<std::optional<SelectionRef>> optionalSelection(const CommandContext& context,
                                                       const Json& params,
                                                       const std::string& key,
-                                                      std::optional<ObjectId> meshId) {
+                                                      const std::optional<ObjectId> meshId) {
     if (!params.contains(key) || params.at(key).is_null()) {
         return std::optional<SelectionRef>{};
     }
     M2C_TRY(sel, requireSelection(context, params, key, meshId));
-    return std::optional<SelectionRef>{std::move(*sel)};
+    return std::optional{std::move(*sel)};
 }
 
 Result<void> commitMesh(CommandContext& context,

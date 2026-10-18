@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "MainWindow.h"
 
+#include <QAbstractItemView>
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
@@ -10,24 +11,53 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QHeaderView>
-#include <QInputDialog>
+#include <QKeySequence>
 #include <QLabel>
+#include <QList>
 #include <QListWidget>
+#include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QObject>
 #include <QPlainTextEdit>
+#include <QPoint>
+#include <QPointF>
+#include <QPolygonF>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QStatusBar>
+#include <QString>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
 #include <QVBoxLayout>
+#include <QWidget>
+#include <Qt>
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <functional>
 #include <map>
+#include <memory>
+#include <ranges>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include <QLatin1String>
+
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+#include "m2c/document/Document.h"
+#include "m2c/rpc/Session.h"
+
+#include "Engine.h"
 #include "ParamForm.h"
+#include "Viewport.h"
 
 namespace m2c::app {
 
@@ -85,7 +115,7 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
     statusBar()->addPermanentWidget(hover_);
 
     connect(&engine_, &Engine::documentChanged, this, &MainWindow::onDocumentChanged);
-    connect(&engine_, &Engine::logLine, this, [this](const QString& line, bool error) {
+    connect(&engine_, &Engine::logLine, this, [this](const QString& line, const bool error) {
         if (error) {
             log_->appendHtml(
                 QStringLiteral("<span style='color:#e06c6c'>%1</span>").arg(line.toHtmlEscaped()));
@@ -93,7 +123,7 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
             log_->appendPlainText(line);
         }
     });
-    connect(&engine_, &Engine::busyChanged, this, [this](bool busy, const QString& command) {
+    connect(&engine_, &Engine::busyChanged, this, [this](const bool busy, const QString& command) {
         form_->setBusy(busy);
         status_->setText(busy ? tr("Running %1…").arg(command) : QString());
         if (busy) {
@@ -102,7 +132,7 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
             while (QApplication::overrideCursor() != nullptr) QApplication::restoreOverrideCursor();
         }
     });
-    connect(&engine_, &Engine::clientsChanged, this, [this](int count) {
+    connect(&engine_, &Engine::clientsChanged, this, [this](const int count) {
         log_->appendPlainText(count > 0 ? tr("%n agent connection(s) open", nullptr, count)
                                         : tr("No agent connections"));
     });
@@ -129,21 +159,25 @@ void MainWindow::buildDocks() {
     tree_->setContextMenuPolicy(Qt::CustomContextMenu);
     tree_->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::SelectedClicked);
     connect(tree_, &QTreeWidget::itemSelectionChanged, this, &MainWindow::onTreeSelection);
-    connect(tree_, &QTreeWidget::itemChanged, this, [this](QTreeWidgetItem* item, int column) {
-        if (updatingTree_ || column != 0 || !snapshot_) return;
-        const auto id = item->data(0, kIdRole).value<ObjectId>();
-        const DocumentObject* o = snapshot_->find(id);
-        if (o == nullptr) return;
-        const bool visible = item->checkState(0) == Qt::Checked;
-        if (visible != o->visible) run("object.show", {{"id", id}, {"visible", visible}});
-        const std::string name = item->text(0).trimmed().toStdString();
-        if (!name.empty() && name != o->name) run("object.rename", {{"id", id}, {"name", name}});
-    });
-    connect(tree_, &QTreeWidget::itemDoubleClicked, this, [this](QTreeWidgetItem* item, int) {
+    connect(tree_,
+            &QTreeWidget::itemChanged,
+            this,
+            [this](const QTreeWidgetItem* item, const int column) {
+                if (updatingTree_ || column != 0 || !snapshot_) return;
+                const auto id = item->data(0, kIdRole).value<ObjectId>();
+                const DocumentObject* o = snapshot_->find(id);
+                if (o == nullptr) return;
+                if (const bool visible = item->checkState(0) == Qt::Checked; visible != o->visible)
+                    run("object.show", {{"id", id}, {"visible", visible}});
+                if (const std::string name = item->text(0).trimmed().toStdString();
+                    !name.empty() && name != o->name)
+                    run("object.rename", {{"id", id}, {"name", name}});
+            });
+    connect(tree_, &QTreeWidget::itemDoubleClicked, this, [this](const QTreeWidgetItem* item, int) {
         viewport_->fitObject(item->data(0, kIdRole).value<ObjectId>());
     });
     connect(tree_, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
-        QTreeWidgetItem* item = tree_->itemAt(pos);
+        const QTreeWidgetItem* item = tree_->itemAt(pos);
         if (item == nullptr) return;
         const auto id = item->data(0, kIdRole).value<ObjectId>();
         const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
@@ -235,37 +269,44 @@ void MainWindow::buildToolbar() {
     QToolBar* bar = addToolBar(tr("Tools"));
     bar->setObjectName("tools");
     modes_ = new QActionGroup(this);
-    const struct {
+    struct ModeAction {
         QString text;
         Mode mode;
         QString key;
         QString tip;
-    } modes[] = {
-        {tr("Navigate"),
-         Mode::Navigate,
-         "1",
-         tr("Left drag orbits, Shift or middle drag pans, wheel zooms, double-click sets the "
-            "centre")},
-        {tr("Brush"),
-         Mode::Brush,
-         "2",
-         tr("Paint faces. Ctrl removes. [ and ] change the size. Right drag orbits")},
-        {tr("Lasso"), Mode::Lasso, "3", tr("Draw around faces. Shift adds, Ctrl removes")},
-        {tr("Crease"),
-         Mode::Crease,
-         "4",
-         tr("Click a face to select the region up to sharp edges. Ctrl removes")},
-        {tr("Measure"), Mode::Measure, "5", tr("Click two points to measure their distance")},
     };
-    for (const auto& m : modes) {
-        QAction* a = bar->addAction(m.text);
+    const std::array<ModeAction, 5> modes{{
+        {.text = tr("Navigate"),
+         .mode = Mode::Navigate,
+         .key = "1",
+         .tip =
+             tr("Left drag orbits, Shift or middle drag pans, wheel zooms, double-click sets the "
+                "centre")},
+        {.text = tr("Brush"),
+         .mode = Mode::Brush,
+         .key = "2",
+         .tip = tr("Paint faces. Ctrl removes. [ and ] change the size. Right drag orbits")},
+        {.text = tr("Lasso"),
+         .mode = Mode::Lasso,
+         .key = "3",
+         .tip = tr("Draw around faces. Shift adds, Ctrl removes")},
+        {.text = tr("Crease"),
+         .mode = Mode::Crease,
+         .key = "4",
+         .tip = tr("Click a face to select the region up to sharp edges. Ctrl removes")},
+        {.text = tr("Measure"),
+         .mode = Mode::Measure,
+         .key = "5",
+         .tip = tr("Click two points to measure their distance")},
+    }};
+    for (const auto& [text, mode, key, tip] : modes) {
+        QAction* a = bar->addAction(text);
         a->setCheckable(true);
-        a->setShortcut(QKeySequence(m.key));
-        a->setToolTip(m.tip + QStringLiteral(" (%1)").arg(m.key));
-        a->setChecked(m.mode == Mode::Navigate);
+        a->setShortcut(QKeySequence(key));
+        a->setToolTip(tip + QStringLiteral(" (%1)").arg(key));
+        a->setChecked(mode == Mode::Navigate);
         modes_->addAction(a);
-        const Mode mode = m.mode;
-        connect(a, &QAction::triggered, this, [this, mode] { viewport_->setMode(mode); });
+        connect(a, &QAction::triggered, this, [this, m = mode] { viewport_->setMode(m); });
     }
     bar->addSeparator();
     bar->addWidget(new QLabel(tr(" Brush ")));
@@ -311,7 +352,7 @@ void MainWindow::buildMenus() {
             run("select.all", p, [this](const Result<Json>& r) { adoptSelection(r); });
         }
     });
-    const auto onSelection = [this](const char* command, Json extra = Json::object()) {
+    const auto onSelection = [this](const char* command, const Json& extra = Json::object()) {
         return [this, command, extra] {
             if (const ObjectId sel = currentSelection()) {
                 Json p = extra;
@@ -363,7 +404,7 @@ void MainWindow::buildMenus() {
     palette->setCheckable(true);
     connect(palette, &QAction::toggled, viewport_, &Viewport::setColorBlindPalette);
     view->addSeparator();
-    for (QDockWidget* dock : findChildren<QDockWidget*>())
+    for (const QDockWidget* dock : findChildren<QDockWidget*>())
         view->addAction(dock->toggleViewAction());
 
     // Tools: every command, grouped by prefix, each opening its generated form.
@@ -412,8 +453,8 @@ void MainWindow::onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot) 
     if (!brushSized_) {
         for (const DocumentObject& o : snapshot_->objects) {
             if (o.mesh() == nullptr) continue;
-            const Aabb& b = o.mesh()->mesh->bounds();
-            brushRadius_->setValue(length(b.max - b.min) * 0.02);
+            const auto& [lo, hi] = o.mesh()->mesh->bounds();
+            brushRadius_->setValue(length(hi - lo) * 0.02);
             brushSized_ = true;
             break;
         }
@@ -422,15 +463,14 @@ void MainWindow::onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot) 
     refreshTree();
 
     history_->clear();
-    for (const HistoryStep& s : snapshot_->undo) {
-        history_->addItem(
-            QStringLiteral("%1   [%2]")
-                .arg(QString::fromStdString(s.label), QString::fromStdString(s.source)));
+    for (const auto& [label, source] : snapshot_->undo) {
+        history_->addItem(QStringLiteral("%1   [%2]")
+                              .arg(QString::fromStdString(label), QString::fromStdString(source)));
     }
-    for (const HistoryStep& s : snapshot_->redo) {
+    for (const auto& [label, source] : snapshot_->redo) {
         auto* item = new QListWidgetItem(
             QStringLiteral("%1   [%2]  (undone)")
-                .arg(QString::fromStdString(s.label), QString::fromStdString(s.source)));
+                .arg(QString::fromStdString(label), QString::fromStdString(source)));
         item->setForeground(palette().color(QPalette::Disabled, QPalette::Text));
         history_->addItem(item);
     }
@@ -495,8 +535,7 @@ void MainWindow::refreshTree() {
         } else {
             continue;
         }
-        const auto it = meshes.find(parent);
-        if (it != meshes.end()) {
+        if (const auto it = meshes.find(parent); it != meshes.end()) {
             it->second->addChild(item);
             it->second->setExpanded(true);
         } else {
@@ -532,8 +571,8 @@ ObjectId MainWindow::currentMesh() const {
         }
     }
     // Otherwise the newest visible mesh.
-    for (auto it = snapshot_->objects.rbegin(); it != snapshot_->objects.rend(); ++it) {
-        if (it->mesh() != nullptr && it->visible) return it->id;
+    for (const DocumentObject& o : std::views::reverse(snapshot_->objects)) {
+        if (o.mesh() != nullptr && o.visible) return o.id;
     }
     return 0;
 }
@@ -541,12 +580,12 @@ ObjectId MainWindow::currentMesh() const {
 ObjectId MainWindow::currentSelection() const {
     if (!snapshot_) return 0;
     const DocumentObject* o = snapshot_->find(selected_);
-    return (o != nullptr && o->selection() != nullptr) ? o->id : 0;
+    return o != nullptr && o->selection() != nullptr ? o->id : 0;
 }
 
 // ---- Commands ---------------------------------------------------------------------------------
 
-void MainWindow::run(const QString& command, const Json& params, Engine::Done done) {
+void MainWindow::run(const QString& command, const Json& params, Engine::Done done) const {
     engine_.run(command, params, std::move(done));
 }
 
@@ -558,15 +597,15 @@ Json MainWindow::formDefaults(const Command& command) const {
         required = command.paramsSchema["required"].get<std::vector<std::string>>();
     }
     const auto isRequired = [&](const std::string& k) {
-        return std::find(required.begin(), required.end(), k) != required.end();
+        return std::ranges::find(required, k) != required.end();
     };
     // The selected object of a kind, else the newest one.
     const auto pick = [this](const std::string& kind) -> ObjectId {
         if (!snapshot_) return 0;
-        const DocumentObject* o = snapshot_->find(selected_);
-        if (o != nullptr && o->kind() == kind) return o->id;
-        for (auto it = snapshot_->objects.rbegin(); it != snapshot_->objects.rend(); ++it) {
-            if (it->kind() == kind) return it->id;
+        if (const DocumentObject* o = snapshot_->find(selected_); o != nullptr && o->kind() == kind)
+            return o->id;
+        for (const DocumentObject& o : std::views::reverse(snapshot_->objects)) {
+            if (o.kind() == kind) return o.id;
         }
         return 0;
     };
@@ -577,9 +616,9 @@ Json MainWindow::formDefaults(const Command& command) const {
                                                             {"deviation.report", "deviation"}};
     if (properties.contains("id")) {
         const auto kind = kIdKind.find(command.name);
-        const ObjectId id = kind != kIdKind.end()                   ? pick(kind->second)
-                            : command.name.rfind("object.", 0) == 0 ? selected_
-                                                                    : currentMesh();
+        const ObjectId id = kind != kIdKind.end()                 ? pick(kind->second)
+                            : command.name.starts_with("object.") ? selected_
+                                                                  : currentMesh();
         if (id != 0) values["id"] = id;
     }
     if (properties.contains("mesh_id") && currentMesh() != 0) values["mesh_id"] = currentMesh();
@@ -595,7 +634,7 @@ Json MainWindow::formDefaults(const Command& command) const {
     return values;
 }
 
-void MainWindow::showTool(const QString& name) {
+void MainWindow::showTool(const QString& name) const {
     const Command* c = engine_.registry().find(name.toStdString());
     if (c == nullptr) return;
     form_->setCommand(c, formDefaults(*c));
@@ -622,22 +661,25 @@ void MainWindow::runForm() {
         }
         adoptSelection(r);
         // Read-only tools report through the log.
-        const Command* command = engine_.registry().find(name.toStdString());
-        if (command != nullptr && !command->mutatesDocument) {
+        if (const Command* command = engine_.registry().find(name.toStdString());
+            command != nullptr && !command->mutatesDocument) {
             log_->appendPlainText(name + QStringLiteral(": ") + QString::fromStdString(r->dump(2)));
         }
         if (name == "mesh.wrap" || name == "shells.split") viewport_->update();
     });
 }
 
-Json MainWindow::selectionTarget(ObjectId mesh, bool subtract, bool add) const {
+Json MainWindow::selectionTarget(const ObjectId mesh, const bool subtract, const bool add) const {
     const ObjectId sel = currentSelection();
-    const DocumentObject* o = snapshot_ ? snapshot_->find(sel) : nullptr;
-    if (o != nullptr && o->selection() != nullptr && o->selection()->meshId == mesh) {
+    if (const DocumentObject* o = snapshot_ ? snapshot_->find(sel) : nullptr;
+        o != nullptr && o->selection() != nullptr && o->selection()->meshId == mesh) {
         return Json{{"selection_id", sel},
-                    {"mode", subtract ? "subtract" : (add ? "add" : "replace")}};
+                    {"mode",
+                     subtract ? "subtract"
+                     : add    ? "add"
+                              : "replace"}};
     }
-    if (subtract) return Json(); // nothing to remove from
+    if (subtract) return {}; // nothing to remove from
     return Json{{"name", "Selection"}};
 }
 
@@ -651,7 +693,7 @@ void MainWindow::adoptSelection(const Result<Json>& result) {
 
 void MainWindow::onBrushStroke(ObjectId mesh,
                                const std::vector<Vec3d>& centers,
-                               bool subtract,
+                               const bool subtract,
                                bool) {
     // A brush adds by default; Ctrl removes.
     Json p = selectionTarget(mesh, subtract, true);
@@ -664,7 +706,7 @@ void MainWindow::onBrushStroke(ObjectId mesh,
     run("select.brush", p, [this](const Result<Json>& r) { adoptSelection(r); });
 }
 
-void MainWindow::onLasso(const QPolygonF& ndc, bool subtract, bool add) {
+void MainWindow::onLasso(const QPolygonF& ndc, const bool subtract, const bool add) {
     const ObjectId mesh = currentMesh();
     if (mesh == 0) return;
     Json p = selectionTarget(mesh, subtract, add);
@@ -681,7 +723,7 @@ void MainWindow::onLasso(const QPolygonF& ndc, bool subtract, bool add) {
     run("select.lasso", p, [this](const Result<Json>& r) { adoptSelection(r); });
 }
 
-void MainWindow::onFaceClicked(Hit hit, bool subtract, bool add) {
+void MainWindow::onFaceClicked(Hit hit, const bool subtract, const bool add) {
     Json p = selectionTarget(hit.meshId, subtract, add || !subtract);
     if (p.is_null()) return;
     p["id"] = hit.meshId;
@@ -756,7 +798,7 @@ void MainWindow::openProject() {
     if (!file.isEmpty()) openFiles({file});
 }
 
-bool MainWindow::saveProject(bool saveAs) {
+bool MainWindow::saveProject(const bool saveAs) {
     QString file = projectPath_;
     if (saveAs || file.isEmpty()) {
         file = QFileDialog::getSaveFileName(this, tr("Save project"), file, projectFilter());

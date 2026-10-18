@@ -18,7 +18,8 @@ bool sameToken(const std::string& a, const std::string& b) {
     if (a.size() != b.size()) return false;
     unsigned char diff = 0;
     for (std::size_t i = 0; i < a.size(); ++i) {
-        diff |= static_cast<unsigned char>(a[i] ^ b[i]);
+        diff |= static_cast<unsigned char>(static_cast<unsigned char>(a[i]) ^
+                                           static_cast<unsigned char>(b[i]));
     }
     return diff == 0;
 }
@@ -103,8 +104,9 @@ std::optional<Json> RpcServer::handleOne(const Json& request) {
             // A client may say who it is ("mcp", "script", ...); undo steps and the session log
             // then show that instead of "json".
             if (params.contains("source") && params["source"].is_string()) {
-                const std::string source = params["source"].get<std::string>();
-                if (!source.empty() && source.size() <= 32) context_.source = source;
+                if (const std::string source = params["source"].get<std::string>();
+                    !source.empty() && source.size() <= 32)
+                    context_.source = source;
             }
             return ok(Json{{"authenticated", true}, {"source", context_.source}});
         }

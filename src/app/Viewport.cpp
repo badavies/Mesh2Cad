@@ -2,22 +2,52 @@
 #include "Viewport.h"
 
 #include <QApplication>
+#include <QColor>
+#include <QEvent>
 #include <QKeyEvent>
+#include <QMetaObject>
 #include <QMouseEvent>
+#include <QObject>
+#include <QOpenGLContext>
+#include <QOpenGLShader>
+#include <QOpenGLWidget>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointF>
 #include <QPointer>
+#include <QRectF>
+#include <QString>
+#include <QStringList>
 #include <QWheelEvent>
+#include <QWidget>
+#include <Qt>
+#include <QtGlobal>
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <memory>
+#include <optional>
+#include <ranges>
 #include <thread>
+#include <utility>
+#include <vector>
 
+#include <QMatrix4x4>
+
+#include "m2c/core/DeviationField.h"
 #include "m2c/core/DisplayProxy.h"
-#include "m2c/core/MeshTopology.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+#include "m2c/document/Document.h"
 
+#include "Camera.h"
 #include "DeviationColors.h"
+#include "Engine.h"
 
 namespace m2c::app {
 
@@ -27,7 +57,7 @@ constexpr std::size_t kProxyThreshold =
     2'000'000; ///< Faces above which a proxy is drawn while moving.
 constexpr std::size_t kProxyFaces = 400'000;
 
-constexpr const char* kVertexShader = R"(#version 330 core
+constexpr auto kVertexShader = R"(#version 330 core
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 color;
 uniform mat4 mvp;
@@ -41,7 +71,7 @@ void main() {
 }
 )";
 
-constexpr const char* kFragmentShader = R"(#version 330 core
+constexpr auto kFragmentShader = R"(#version 330 core
 in vec3 viewPos;
 in vec3 vertexColor;
 uniform vec3 baseColor;
@@ -114,9 +144,9 @@ std::vector<std::uint32_t> cageEdges(const QuadLayout& cage) {
         const std::uint32_t begin = cage.faceStarts()[f], end = cage.faceStarts()[f + 1];
         for (std::uint32_t k = begin; k < end; ++k) {
             const std::uint32_t a = cage.faceVertices()[k];
-            const std::uint32_t b = cage.faceVertices()[k + 1 < end ? k + 1 : begin];
             // A closed cage has each edge in two faces, once in each direction.
-            if (a < b) edges.insert(edges.end(), {a, b});
+            if (const std::uint32_t b = cage.faceVertices()[k + 1 < end ? k + 1 : begin]; a < b)
+                edges.insert(edges.end(), {a, b});
         }
     }
     return edges;
@@ -145,7 +175,7 @@ Viewport::~Viewport() {
 void Viewport::cleanupGl() {
     if (!glReady_) return;
     makeCurrent();
-    for (auto& [id, gpu] : gpu_) release(gpu);
+    for (auto& gpu : std::views::values(gpu_)) release(gpu);
     gpu_.clear();
     program_.removeAllShaders();
     glReady_ = false;
@@ -178,23 +208,21 @@ double Viewport::aspect() const {
 // ---- Document ---------------------------------------------------------------------------------
 
 void Viewport::setSnapshot(std::shared_ptr<const DocSnapshot> snapshot) {
-    const bool hadMeshes =
-        snapshot_ && std::any_of(snapshot_->objects.begin(), snapshot_->objects.end(), isDrawn);
+    const bool hadMeshes = snapshot_ && std::ranges::any_of(snapshot_->objects, isDrawn);
     snapshot_ = std::move(snapshot);
-    const bool hasMeshes =
-        std::any_of(snapshot_->objects.begin(), snapshot_->objects.end(), isDrawn);
+    const bool hasMeshes = std::ranges::any_of(snapshot_->objects, isDrawn);
     if (!hadMeshes && hasMeshes) fitPending_ = true;
     if (hover_ && snapshot_->find(hover_->meshId) == nullptr) hover_.reset();
     update();
 }
 
-void Viewport::setCurrent(ObjectId meshId, ObjectId selectionId) {
+void Viewport::setCurrent(const ObjectId meshId, const ObjectId selectionId) {
     currentMesh_ = meshId;
     currentSelection_ = selectionId;
     update();
 }
 
-void Viewport::setMode(Mode mode) {
+void Viewport::setMode(const Mode mode) {
     mode_ = mode;
     measureStart_.reset();
     lasso_.clear();
@@ -204,7 +232,7 @@ void Viewport::setMode(Mode mode) {
     update();
 }
 
-void Viewport::setBrushRadius(double mm) {
+void Viewport::setBrushRadius(const double mm) {
     const double r = std::max(mm, 1e-6);
     if (r == brushRadius_) return;
     brushRadius_ = r;
@@ -212,33 +240,34 @@ void Viewport::setBrushRadius(double mm) {
     update();
 }
 
-void Viewport::setWireframe(bool on) {
+void Viewport::setWireframe(const bool on) {
     wireframe_ = on;
     update();
 }
 
-void Viewport::setShowBackFaces(bool on) {
+void Viewport::setShowBackFaces(const bool on) {
     showBackFaces_ = on;
     update();
 }
 
-void Viewport::setColorBlindPalette(bool on) {
+void Viewport::setColorBlindPalette(const bool on) {
     colorBlind_ = on;
     update();
 }
 
-Aabb Viewport::visibleBounds(std::optional<ObjectId> only) const {
-    Aabb box{{1e300, 1e300, 1e300}, {-1e300, -1e300, -1e300}};
+Aabb Viewport::visibleBounds(const std::optional<ObjectId> only) const {
+    Aabb box{.min = {.x = 1e300, .y = 1e300, .z = 1e300},
+             .max = {.x = -1e300, .y = -1e300, .z = -1e300}};
     if (!snapshot_) return box;
     for (const DocumentObject& o : snapshot_->objects) {
         if (!isDrawn(o) || (only ? o.id != *only : !o.visible)) continue;
-        const Aabb b = drawnBounds(o);
-        box.min = {std::min(box.min.x, b.min.x),
-                   std::min(box.min.y, b.min.y),
-                   std::min(box.min.z, b.min.z)};
-        box.max = {std::max(box.max.x, b.max.x),
-                   std::max(box.max.y, b.max.y),
-                   std::max(box.max.z, b.max.z)};
+        const auto [lo, hi] = drawnBounds(o);
+        box.min = {.x = std::min(box.min.x, lo.x),
+                   .y = std::min(box.min.y, lo.y),
+                   .z = std::min(box.min.z, lo.z)};
+        box.max = {.x = std::max(box.max.x, hi.x),
+                   .y = std::max(box.max.y, hi.y),
+                   .z = std::max(box.max.z, hi.z)};
     }
     return box;
 }
@@ -257,7 +286,7 @@ void Viewport::fitObject(ObjectId id) {
     update();
 }
 
-void Viewport::setStandardView(double yaw, double pitch) {
+void Viewport::setStandardView(const double yaw, const double pitch) {
     camera_.setView(yaw, pitch);
     update();
 }
@@ -269,15 +298,16 @@ Mat4d Viewport::viewProjection() const {
 // ---- GPU buffers ------------------------------------------------------------------------------
 
 void Viewport::release(GpuMesh& gpu) {
-    const GLuint vaos[] = {gpu.vao, gpu.pvao};
-    const GLuint buffers[] = {gpu.vbo, gpu.ebo, gpu.pvbo, gpu.pebo, gpu.selBuffer, gpu.colorBuffer};
-    glDeleteVertexArrays(2, vaos);
-    glDeleteBuffers(6, buffers);
+    const std::array<GLuint, 2> vaos{gpu.vao, gpu.pvao};
+    const std::array<GLuint, 6> buffers{
+        gpu.vbo, gpu.ebo, gpu.pvbo, gpu.pebo, gpu.selBuffer, gpu.colorBuffer};
+    glDeleteVertexArrays(2, vaos.data());
+    glDeleteBuffers(6, buffers.data());
     glDeleteTextures(1, &gpu.selTexture);
     gpu = GpuMesh{};
 }
 
-void Viewport::upload(GpuMesh& gpu,
+void Viewport::upload(const GpuMesh& gpu,
                       const std::vector<Vec3d>& positions,
                       const std::vector<std::uint32_t>& indices,
                       GLuint& vao,
@@ -287,9 +317,9 @@ void Viewport::upload(GpuMesh& gpu,
     std::vector<float> xyz;
     xyz.reserve(positions.size() * 3);
     for (const Vec3d& p : positions) {
-        const Vec3d r = p - gpu.offset;
+        const auto [rx, ry, rz] = p - gpu.offset;
         xyz.insert(xyz.end(),
-                   {static_cast<float>(r.x), static_cast<float>(r.y), static_cast<float>(r.z)});
+                   {static_cast<float>(rx), static_cast<float>(ry), static_cast<float>(rz)});
     }
     if (vao == 0) {
         glGenVertexArrays(1, &vao);
@@ -324,11 +354,10 @@ void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
     gpu.selectionKey = key;
     gpu.hasSelection = false;
     const std::size_t faces = mesh.mesh()->mesh->faceCount();
-    if (key.empty() || faces > static_cast<std::size_t>(maxTextureBuffer_)) return;
+    if (key.empty() || std::cmp_greater(faces, maxTextureBuffer_)) return;
     std::vector<std::uint8_t> bytes(faces, 0);
     // Other selections first, so the current one wins where they overlap.
-    std::stable_sort(
-        key.begin(), key.end(), [](const auto& a, const auto& b) { return a.second < b.second; });
+    std::ranges::stable_sort(key, [](const auto& a, const auto& b) { return a.second < b.second; });
     for (const auto& [sel, current] : key) {
         const std::uint8_t value = current ? 1 : 2;
         for (const std::uint32_t f : sel->indices()) bytes[f] = value;
@@ -356,7 +385,7 @@ void Viewport::syncColors(GpuMesh& gpu, const DocumentObject& mesh) {
         }
     }
     const DeviationField* field = deviation ? &deviation->deviation()->field : nullptr;
-    const std::pair<const DeviationField*, bool> key{field, colorBlind_};
+    const std::pair key{field, colorBlind_};
     if (key == gpu.colorKey) return;
     gpu.colorKey = key;
     gpu.hasColors = false;
@@ -372,10 +401,7 @@ void Viewport::syncColors(GpuMesh& gpu, const DocumentObject& mesh) {
     rgb.reserve(field->distances().size() * 3);
     for (const double d : field->distances()) {
         const QColor c = deviationColor(d, stats.toleranceMm, range, colorBlind_);
-        rgb.insert(rgb.end(),
-                   {static_cast<float>(c.redF()),
-                    static_cast<float>(c.greenF()),
-                    static_cast<float>(c.blueF())});
+        rgb.insert(rgb.end(), {c.redF(), c.greenF(), c.blueF()});
     }
     if (gpu.colorBuffer == 0) glGenBuffers(1, &gpu.colorBuffer);
     glBindBuffer(GL_ARRAY_BUFFER, gpu.colorBuffer);
@@ -394,8 +420,7 @@ void Viewport::syncGpu() {
     if (!snapshot_) return;
     // Drop buffers of meshes that are gone.
     for (auto it = gpu_.begin(); it != gpu_.end();) {
-        const DocumentObject* o = snapshot_->find(it->first);
-        if (o == nullptr || !isDrawn(*o)) {
+        if (const DocumentObject* o = snapshot_->find(it->first); o == nullptr || !isDrawn(*o)) {
             release(it->second);
             it = gpu_.erase(it);
         } else {
@@ -423,8 +448,8 @@ void Viewport::syncGpu() {
                 gpu.keepAlive = std::move(solid);
             } else {
                 auto cage = std::make_shared<const QuadLayout>(o.quadLayout()->cage);
-                const Aabb& box = cage->bounds();
-                gpu.offset = (box.min + box.max) * 0.5;
+                const auto& [lo, hi] = cage->bounds();
+                gpu.offset = (lo + hi) * 0.5;
                 gpu.lines = true;
                 upload(gpu,
                        cage->positions(),
@@ -449,7 +474,7 @@ void Viewport::syncGpu() {
             // huge meshes) off the UI thread.
             const bool wantProxy = mesh->faceCount() > kProxyThreshold;
             gpu.proxyRequested = wantProxy;
-            QPointer<Viewport> self(this);
+            const QPointer self(this);
             const ObjectId id = o.id;
             std::thread([self, id, mesh, wantProxy] {
                 (void)mesh->spatialIndex();
@@ -487,8 +512,7 @@ void Viewport::syncGpu() {
 void Viewport::paintGL() {
     if (fitPending_ && snapshot_) {
         fitPending_ = false;
-        const Aabb box = visibleBounds();
-        if (box.min.x <= box.max.x) camera_.fit(box);
+        if (const Aabb box = visibleBounds(); box.min.x <= box.max.x) camera_.fit(box);
     }
     glClearColor(0.17f, 0.18f, 0.20f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -528,8 +552,8 @@ void Viewport::paintGL() {
             program_.setUniformValue("backColor", QVector3D(0.72f, 0.30f, 0.30f));
             program_.setUniformValue("lineColor", QVector3D(0.08f, 0.09f, 0.10f));
             const bool proxy = interacting_ && gpu.proxyIndexCount > 0;
-            program_.setUniformValue("hasColors", (!proxy && gpu.hasColors) ? 1 : 0);
-            program_.setUniformValue("hasSelection", (!proxy && gpu.hasSelection) ? 1 : 0);
+            program_.setUniformValue("hasColors", !proxy && gpu.hasColors ? 1 : 0);
+            program_.setUniformValue("hasSelection", !proxy && gpu.hasSelection ? 1 : 0);
             if (!proxy && gpu.hasSelection) {
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_BUFFER, gpu.selTexture);
@@ -582,9 +606,9 @@ double Viewport::pixelsPerMm(const Vec3d& at) const {
 void Viewport::drawOverlay() {
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    const QColor accent(255, 140, 40);
+    constexpr QColor accent(255, 140, 40);
 
-    if (!snapshot_ || std::none_of(snapshot_->objects.begin(), snapshot_->objects.end(), isDrawn)) {
+    if (!snapshot_ || std::ranges::none_of(snapshot_->objects, isDrawn)) {
         painter.setPen(QColor(170, 175, 185));
         painter.drawText(rect(),
                          Qt::AlignCenter,
@@ -672,20 +696,23 @@ void Viewport::drawOverlay() {
     // Axis triad, bottom left.
     const QPointF origin(42, height() - 42);
     const Mat4d v = camera_.viewRelative();
-    const struct {
+    struct Axis {
         Vec3d axis;
         QColor color;
         const char* name;
-    } axes[] = {{{1, 0, 0}, QColor(230, 80, 80), "X"},
-                {{0, 1, 0}, QColor(100, 200, 100), "Y"},
-                {{0, 0, 1}, QColor(90, 140, 240), "Z"}};
-    for (const auto& a : axes) {
-        const double sx = v.at(0, 0) * a.axis.x + v.at(0, 1) * a.axis.y + v.at(0, 2) * a.axis.z;
-        const double sy = v.at(1, 0) * a.axis.x + v.at(1, 1) * a.axis.y + v.at(1, 2) * a.axis.z;
+    };
+    constexpr std::array<Axis, 3> axes{{
+        {.axis = {.x = 1, .y = 0, .z = 0}, .color = QColor(230, 80, 80), .name = "X"},
+        {.axis = {.x = 0, .y = 1, .z = 0}, .color = QColor(100, 200, 100), .name = "Y"},
+        {.axis = {.x = 0, .y = 0, .z = 1}, .color = QColor(90, 140, 240), .name = "Z"},
+    }};
+    for (const auto& [axis, color, name] : axes) {
+        const double sx = v.at(0, 0) * axis.x + v.at(0, 1) * axis.y + v.at(0, 2) * axis.z;
+        const double sy = v.at(1, 0) * axis.x + v.at(1, 1) * axis.y + v.at(1, 2) * axis.z;
         const QPointF tip = origin + QPointF(sx * 28.0, -sy * 28.0);
-        painter.setPen(QPen(a.color, 2));
+        painter.setPen(QPen(color, 2));
         painter.drawLine(origin, tip);
-        painter.drawText(tip + QPointF(3, 4), QString::fromLatin1(a.name));
+        painter.drawText(tip + QPointF(3, 4), QString::fromLatin1(name));
     }
 }
 
@@ -696,8 +723,9 @@ const DocumentObject* Viewport::legendDeviation() const {
     for (const DocumentObject& o : snapshot_->objects) {
         const DeviationData* d = o.deviation();
         if (d == nullptr || !o.visible) continue;
-        const DocumentObject* mesh = snapshot_->find(d->meshId);
-        if (mesh == nullptr || !mesh->visible) continue;
+        if (const DocumentObject* mesh = snapshot_->find(d->meshId);
+            mesh == nullptr || !mesh->visible)
+            continue;
         // The newest one, which is the one syncColors() paints.
         if (d->meshId == currentMesh_) current = &o;
         if (first == nullptr) first = &o;
@@ -705,7 +733,7 @@ const DocumentObject* Viewport::legendDeviation() const {
     return current != nullptr ? current : first;
 }
 
-void Viewport::drawLegend(QPainter& painter, const DocumentObject& deviation) {
+void Viewport::drawLegend(QPainter& painter, const DocumentObject& deviation) const {
     const DeviationStats& s = deviation.deviation()->field.stats();
     const double range = deviationRange(s.p95AbsMm, s.toleranceMm);
     const QFontMetrics fm = painter.fontMetrics();
@@ -735,7 +763,7 @@ void Viewport::drawLegend(QPainter& painter, const DocumentObject& deviation) {
         painter.drawLine(bar.left(), bar.top() + y, bar.right(), bar.top() + y);
     }
     painter.setPen(QColor(230, 232, 236));
-    const auto tick = [&](double d, const QString& text) {
+    const auto tick = [&](const double d, const QString& text) {
         const int y =
             bar.top() + static_cast<int>(std::lround((1.0 - d / range) * 0.5 * bar.height()));
         painter.drawLine(bar.right() + 1, y, bar.right() + 5, y);
@@ -769,10 +797,10 @@ std::optional<Hit> Viewport::pick(const QPointF& pos) const {
     double bestDistance = std::numeric_limits<double>::infinity();
     for (const DocumentObject& o : snapshot_->objects) {
         if (!isMesh(o) || !o.visible) continue;
-        const auto hit = o.mesh()->mesh->spatialIndex().raycast(origin, direction);
-        if (hit && hit->distance < bestDistance) {
+        if (const auto hit = o.mesh()->mesh->spatialIndex().raycast(origin, direction);
+            hit && hit->distance < bestDistance) {
             bestDistance = hit->distance;
-            best = Hit{o.id, hit->face, hit->point};
+            best = Hit{.meshId = o.id, .face = hit->face, .point = hit->point};
         }
     }
     return best;

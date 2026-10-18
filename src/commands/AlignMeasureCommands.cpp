@@ -67,16 +67,17 @@ Result<AlignOrigin> originParam(const Json& params) {
 Result<PickedPoint> pointParam(const CommandContext& context,
                                const Json& params,
                                const std::string& key,
-                               double snapMm) {
+                               const double snapMm) {
     if (!params.contains(key) || !params.at(key).is_object()) {
         return fail(ErrorCode::InvalidArgument,
                     "parameter '" + key +
-                        "' must be an object {\"point\": [x, y, z], \"id\": mesh}");
+                        R"(' must be an object {"point": [x, y, z], "id": mesh})");
     }
     const Json& spec = params.at(key);
     M2C_TRY(point, requireVec3(spec, "point"));
     M2C_TRY(id, optionalId(spec, "id"));
-    if (!*id) return PickedPoint{*point, 0, SnapKind::Free, 0};
+    if (!*id)
+        return PickedPoint{.position = *point, .objectId = 0, .snap = SnapKind::Free, .element = 0};
     M2C_TRY(mesh, requireMesh(context, Json{{"id", **id}}));
     return snapToMesh(*mesh->mesh, mesh->id, *point, snapMm);
 }
@@ -84,18 +85,19 @@ Result<PickedPoint> pointParam(const CommandContext& context,
 } // namespace
 
 void addAlignMeasureCommands(std::vector<Command>& out) {
-    out.push_back(makeCommand("plane.fit",
-                              "Fit a least-squares plane to the faces of a selection.",
-                              R"({
+    out.push_back(
+        makeCommand("plane.fit",
+                    "Fit a least-squares plane to the faces of a selection.",
+                    R"({
             "type":"object","properties":{"selection_id":{"type":"integer","minimum":0}},
             "required":["selection_id"],"additionalProperties":false})",
-                              false,
-                              [](CommandContext& context, const Json& params) -> Result<Json> {
-                                  M2C_TRY(sel, requireSelection(context, params, "selection_id"));
-                                  M2C_TRY(mesh, requireMesh(context, Json{{"id", sel->meshId}}));
-                                  M2C_TRY(plane, fitPlane(*mesh->mesh, *sel->faces));
-                                  return planeJson(*plane);
-                              }));
+                    false,
+                    [](const CommandContext& context, const Json& params) -> Result<Json> {
+                        M2C_TRY(sel, requireSelection(context, params, "selection_id"));
+                        M2C_TRY(mesh, requireMesh(context, Json{{"id", sel->meshId}}));
+                        M2C_TRY(plane, fitPlane(*mesh->mesh, *sel->faces));
+                        return planeJson(*plane);
+                    }));
 
     out.push_back(makeCommand(
         "align.principal",
@@ -163,7 +165,7 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
             M2C_TRY(flip, optionalBool(params, "flip_primary", false));
             DatumAlignParams p;
             p.primary = *primary->faces;
-            std::vector<ObjectId> inputs{primary->id};
+            std::vector inputs{primary->id};
             if (*secondary) {
                 p.secondary = *(*secondary)->faces;
                 inputs.push_back((*secondary)->id);
@@ -255,7 +257,7 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
             M2C_TRY(a, pointParam(context, params, "a", *snap));
             M2C_TRY(b, pointParam(context, params, "b", *snap));
             M2C_TRY(name, optionalString(params, "name"));
-            const Measurement m{*a, *b};
+            const Measurement m{.a = *a, .b = *b};
             std::vector<ObjectId> inputs;
             for (const ObjectId id : {a->objectId, b->objectId}) {
                 if (id != 0) inputs.push_back(id);

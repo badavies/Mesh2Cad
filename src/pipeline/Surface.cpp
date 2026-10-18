@@ -27,7 +27,12 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
     CageFitParams fitting = params.fitting;
     unsigned tries = 0;
     for (;;) {
-        CageFitResult fit{cage, 0, 0, 0.0, 0.0, {}};
+        CageFitResult fit{.cage = cage,
+                          .samples = 0,
+                          .ignoredSamples = 0,
+                          .rmsDistanceMm = 0.0,
+                          .maxDistanceMm = 0.0,
+                          .rmsBeforeRoundMm = {}};
         if (params.fit) {
             auto fitted = fitCage(cage, *scan, fitting);
             if (!fitted) return std::unexpected(fitted.error());
@@ -59,18 +64,18 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
                                      occt::SewParams{params.sewToleranceMm});
         if (!solid) return std::unexpected(solid.error());
         QuadLayout used = fit.cage;
-        return SurfaceBuildResult{std::move(*solid),
-                                  std::move(used),
-                                  std::move(fit),
-                                  fitting.smoothing,
-                                  tries,
-                                  patches->regularPieces,
-                                  patches->capPieces,
-                                  patches->maxCapErrorMm,
-                                  *seams,
-                                  before,
-                                  mergedFaces,
-                                  unmergedQuads};
+        return SurfaceBuildResult{.solid = std::move(*solid),
+                                  .cage = std::move(used),
+                                  .fit = std::move(fit),
+                                  .smoothing = fitting.smoothing,
+                                  .fits = tries,
+                                  .regularPieces = patches->regularPieces,
+                                  .capPieces = patches->capPieces,
+                                  .maxCapErrorMm = patches->maxCapErrorMm,
+                                  .seams = *seams,
+                                  .facesBeforeMerge = before,
+                                  .mergedFaces = mergedFaces,
+                                  .unmergedQuads = unmergedQuads};
     }
 }
 

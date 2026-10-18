@@ -16,9 +16,8 @@ namespace {
 
 std::string lowerExtension(const std::filesystem::path& path) {
     std::string ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::ranges::transform(
+        ext, ext.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext;
 }
 

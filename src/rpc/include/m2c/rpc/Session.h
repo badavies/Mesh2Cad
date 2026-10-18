@@ -38,7 +38,7 @@ public:
 
     [[nodiscard]] static Result<std::unique_ptr<LocalClient>> connect(const std::string& endpoint);
 
-    [[nodiscard]] Result<void> writeLine(const std::string& line);
+    [[nodiscard]] Result<void> writeLine(const std::string& line) const;
     /// Next line from the server, without the newline.
     [[nodiscard]] Result<std::string> readLine();
 

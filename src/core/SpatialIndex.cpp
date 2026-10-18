@@ -13,13 +13,13 @@ namespace {
 constexpr std::uint32_t kLeafSize = 4;
 
 Vec3d vmin(const Vec3d& a, const Vec3d& b) noexcept {
-    return {std::min(a.x, b.x), std::min(a.y, b.y), std::min(a.z, b.z)};
+    return {.x = std::min(a.x, b.x), .y = std::min(a.y, b.y), .z = std::min(a.z, b.z)};
 }
 Vec3d vmax(const Vec3d& a, const Vec3d& b) noexcept {
-    return {std::max(a.x, b.x), std::max(a.y, b.y), std::max(a.z, b.z)};
+    return {.x = std::max(a.x, b.x), .y = std::max(a.y, b.y), .z = std::max(a.z, b.z)};
 }
-double axis(const Vec3d& v, int k) noexcept {
-    return k == 0 ? v.x : (k == 1 ? v.y : v.z);
+double axis(const Vec3d& v, const int k) noexcept {
+    return k == 0 ? v.x : k == 1 ? v.y : v.z;
 }
 
 /// Squared distance from p to the box; 0 inside.
@@ -40,8 +40,11 @@ Vec3d closestOnSegment(const Vec3d& p, const Vec3d& a, const Vec3d& b) noexcept 
 }
 
 /// Slab test; returns the entry distance or +inf on a miss.
-double
-rayBox(const Vec3d& o, const Vec3d& inv, const Vec3d& lo, const Vec3d& hi, double tMax) noexcept {
+double rayBox(const Vec3d& o,
+              const Vec3d& inv,
+              const Vec3d& lo,
+              const Vec3d& hi,
+              const double tMax) noexcept {
     double t0 = 0.0;
     double t1 = tMax;
     for (int k = 0; k < 3; ++k) {
@@ -66,8 +69,7 @@ Vec3d closestPointOnTriangle(const Vec3d& p,
     const Vec3d ac = c - a;
     // A triangle without area is a segment (or a point): the Voronoi regions below assume
     // three distinct corners, so take the nearest point on its edges instead.
-    const Vec3d n = cross(ab, ac);
-    if (!(dot(n, n) > 0.0)) {
+    if (const Vec3d n = cross(ab, ac); !(dot(n, n) > 0.0)) {
         Vec3d best = closestOnSegment(p, a, b);
         for (const Vec3d& q : {closestOnSegment(p, b, c), closestOnSegment(p, c, a)}) {
             if (dot(q - p, q - p) < dot(best - p, best - p)) best = q;
@@ -102,8 +104,8 @@ Vec3d closestPointOnTriangle(const Vec3d& p,
     }
 
     const double va = d3 * d6 - d5 * d4;
-    if (va <= 0.0 && (d4 - d3) >= 0.0 && (d5 - d6) >= 0.0) {
-        const double denom = (d4 - d3) + (d5 - d6);
+    if (va <= 0.0 && d4 - d3 >= 0.0 && d5 - d6 >= 0.0) {
+        const double denom = d4 - d3 + (d5 - d6);
         return denom > 0.0 ? b + (c - b) * ((d4 - d3) / denom) : b;
     }
 
@@ -132,42 +134,41 @@ SpatialIndex::SpatialIndex(PositionBuffer positions, IndexBuffer indices)
     }
 
     nodes_.reserve(faceCount > 0 ? 2 * (faceCount / kLeafSize + 1) : 1);
-    nodes_.push_back(Node{{}, {}, 0, faceCount});
+    nodes_.push_back(Node{.min = {}, .max = {}, .first = 0, .count = faceCount});
     struct Task {
         std::uint32_t node, first, count;
     };
-    std::vector<Task> stack{{0, 0, faceCount}};
+    std::vector<Task> stack{{.node = 0, .first = 0, .count = faceCount}};
     while (!stack.empty()) {
-        const Task task = stack.back();
+        const auto [node, first, count] = stack.back();
         stack.pop_back();
-        Vec3d bmin{std::numeric_limits<double>::infinity(),
-                   std::numeric_limits<double>::infinity(),
-                   std::numeric_limits<double>::infinity()};
+        Vec3d bmin{.x = std::numeric_limits<double>::infinity(),
+                   .y = std::numeric_limits<double>::infinity(),
+                   .z = std::numeric_limits<double>::infinity()};
         Vec3d bmax = bmin * -1.0;
         Vec3d cmin = bmin;
         Vec3d cmax = bmax;
-        for (std::uint32_t i = task.first; i < task.first + task.count; ++i) {
+        for (std::uint32_t i = first; i < first + count; ++i) {
             const std::uint32_t f = faces_[i];
             bmin = vmin(bmin, lo[f]);
             bmax = vmax(bmax, hi[f]);
             cmin = vmin(cmin, centroid[f]);
             cmax = vmax(cmax, centroid[f]);
         }
-        nodes_[task.node].min = bmin;
-        nodes_[task.node].max = bmax;
-        if (task.count <= kLeafSize) {
-            nodes_[task.node].first = task.first;
-            nodes_[task.node].count = task.count;
+        nodes_[node].min = bmin;
+        nodes_[node].max = bmax;
+        if (count <= kLeafSize) {
+            nodes_[node].first = first;
+            nodes_[node].count = count;
             continue;
         }
-        const Vec3d extent = cmax - cmin;
-        const int k =
-            extent.x >= extent.y && extent.x >= extent.z ? 0 : (extent.y >= extent.z ? 1 : 2);
-        const std::uint32_t half = task.count / 2;
-        const auto begin = faces_.begin() + task.first;
+        const auto [x, y, z] = cmax - cmin;
+        const int k = x >= y && x >= z ? 0 : y >= z ? 1 : 2;
+        const std::uint32_t half = count / 2;
+        const auto begin = faces_.begin() + first;
         // Ties broken by face index so the tree is the same on every run.
         std::nth_element(
-            begin, begin + half, begin + task.count, [&](std::uint32_t l, std::uint32_t r) {
+            begin, begin + half, begin + count, [&](const std::uint32_t l, const std::uint32_t r) {
                 const double cl = axis(centroid[l], k);
                 const double cr = axis(centroid[r], k);
                 return cl < cr || (cl == cr && l < r);
@@ -175,21 +176,21 @@ SpatialIndex::SpatialIndex(PositionBuffer positions, IndexBuffer indices)
         const auto left = static_cast<std::uint32_t>(nodes_.size());
         nodes_.push_back(Node{});
         nodes_.push_back(Node{});
-        nodes_[task.node].first = left;
-        nodes_[task.node].count = 0;
-        stack.push_back({left, task.first, half});
-        stack.push_back({left + 1, task.first + half, task.count - half});
+        nodes_[node].first = left;
+        nodes_[node].count = 0;
+        stack.push_back({.node = left, .first = first, .count = half});
+        stack.push_back({.node = left + 1, .first = first + half, .count = count - half});
     }
 }
 
 std::optional<RayHit>
-SpatialIndex::raycast(const Vec3d& origin, const Vec3d& direction, double maxDistance) const {
+SpatialIndex::raycast(const Vec3d& origin, const Vec3d& direction, const double maxDistance) const {
     const double len = length(direction);
     if (faces_.empty() || !(len > 0.0)) return std::nullopt;
     // "+ 0.0" turns -0.0 into +0.0: 1 / -0.0 = -inf would make the slab test miss boxes whose
     // face the origin lies on.
-    const Vec3d dir = direction * (1.0 / len) + Vec3d{0.0, 0.0, 0.0};
-    const Vec3d inv{1.0 / dir.x, 1.0 / dir.y, 1.0 / dir.z};
+    const Vec3d dir = direction * (1.0 / len) + Vec3d{.x = 0.0, .y = 0.0, .z = 0.0};
+    const Vec3d inv{.x = 1.0 / dir.x, .y = 1.0 / dir.y, .z = 1.0 / dir.z};
 
     std::optional<RayHit> best;
     double bestT = maxDistance;
@@ -197,19 +198,19 @@ SpatialIndex::raycast(const Vec3d& origin, const Vec3d& direction, double maxDis
     std::size_t top = 0;
     stack[top++] = 0;
     while (top > 0) {
-        const Node& node = nodes_[stack[--top]];
-        if (rayBox(origin, inv, node.min, node.max, bestT) > bestT) continue;
-        if (node.count == 0) {
+        const auto& [nodeMin, nodeMax, first, count] = nodes_[stack[--top]];
+        if (rayBox(origin, inv, nodeMin, nodeMax, bestT) > bestT) continue;
+        if (count == 0) {
             // Visit the child the ray enters first, so its hit can prune the other.
-            const Node& l = nodes_[node.first];
-            const Node& r = nodes_[node.first + 1];
+            const Node& l = nodes_[first];
+            const Node& r = nodes_[first + 1];
             const bool leftFirst = rayBox(origin, inv, l.min, l.max, bestT) <=
                                    rayBox(origin, inv, r.min, r.max, bestT);
-            stack[top++] = leftFirst ? node.first + 1 : node.first;
-            stack[top++] = leftFirst ? node.first : node.first + 1;
+            stack[top++] = leftFirst ? first + 1 : first;
+            stack[top++] = leftFirst ? first : first + 1;
             continue;
         }
-        for (std::uint32_t i = node.first; i < node.first + node.count; ++i) {
+        for (std::uint32_t i = first; i < first + count; ++i) {
             const std::uint32_t f = faces_[i];
             const Vec3d a = corner(f, 0);
             const Vec3d e1 = corner(f, 1) - a;
@@ -228,40 +229,42 @@ SpatialIndex::raycast(const Vec3d& origin, const Vec3d& direction, double maxDis
             if (t < 0.0 || t > bestT) continue;
             if (best && t == bestT && f > best->face) continue;
             bestT = t;
-            best = RayHit{f, t, origin + dir * t, {1.0 - u - v, u, v}};
+            best = RayHit{.face = f,
+                          .distance = t,
+                          .point = origin + dir * t,
+                          .barycentric = {.x = 1.0 - u - v, .y = u, .z = v}};
         }
     }
     return best;
 }
 
 ClosestPoint SpatialIndex::closestPoint(const Vec3d& query) const {
-    ClosestPoint best{0, std::numeric_limits<double>::infinity(), {}};
+    ClosestPoint best{.face = 0, .distance = std::numeric_limits<double>::infinity(), .point = {}};
     if (faces_.empty()) return best;
     double best2 = std::numeric_limits<double>::infinity();
     std::array<std::uint32_t, 128> stack{};
     std::size_t top = 0;
     stack[top++] = 0;
     while (top > 0) {
-        const Node& node = nodes_[stack[--top]];
-        if (boxDistance2(query, node.min, node.max) > best2) continue;
-        if (node.count == 0) {
+        const auto& [nodeMin, nodeMax, first, count] = nodes_[stack[--top]];
+        if (boxDistance2(query, nodeMin, nodeMax) > best2) continue;
+        if (count == 0) {
             // Visit the nearer child first so pruning starts early.
-            const Node& l = nodes_[node.first];
-            const Node& r = nodes_[node.first + 1];
+            const Node& l = nodes_[first];
+            const Node& r = nodes_[first + 1];
             const bool leftFirst =
                 boxDistance2(query, l.min, l.max) <= boxDistance2(query, r.min, r.max);
-            stack[top++] = leftFirst ? node.first + 1 : node.first;
-            stack[top++] = leftFirst ? node.first : node.first + 1;
+            stack[top++] = leftFirst ? first + 1 : first;
+            stack[top++] = leftFirst ? first : first + 1;
             continue;
         }
-        for (std::uint32_t i = node.first; i < node.first + node.count; ++i) {
+        for (std::uint32_t i = first; i < first + count; ++i) {
             const std::uint32_t f = faces_[i];
             const Vec3d c = closestPointOnTriangle(query, corner(f, 0), corner(f, 1), corner(f, 2));
             const Vec3d d = c - query;
-            const double d2 = dot(d, d);
-            if (d2 < best2 || (d2 == best2 && f < best.face)) {
+            if (const double d2 = dot(d, d); d2 < best2 || (d2 == best2 && f < best.face)) {
                 best2 = d2;
-                best = ClosestPoint{f, 0.0, c};
+                best = ClosestPoint{.face = f, .distance = 0.0, .point = c};
             }
         }
     }
@@ -269,29 +272,29 @@ ClosestPoint SpatialIndex::closestPoint(const Vec3d& query) const {
     return best;
 }
 
-std::vector<std::uint32_t> SpatialIndex::facesWithin(const Vec3d& center, double radius) const {
+std::vector<std::uint32_t> SpatialIndex::facesWithin(const Vec3d& center,
+                                                     const double radius) const {
     std::vector<std::uint32_t> result;
     if (faces_.empty() || !(radius >= 0.0)) return result;
     const double r2 = radius * radius;
     std::vector<std::uint32_t> stack{0};
     while (!stack.empty()) {
-        const Node& node = nodes_[stack.back()];
+        const auto& [nodeMin, nodeMax, first, count] = nodes_[stack.back()];
         stack.pop_back();
-        if (boxDistance2(center, node.min, node.max) > r2) continue;
-        if (node.count == 0) {
-            stack.push_back(node.first);
-            stack.push_back(node.first + 1);
+        if (boxDistance2(center, nodeMin, nodeMax) > r2) continue;
+        if (count == 0) {
+            stack.push_back(first);
+            stack.push_back(first + 1);
             continue;
         }
-        for (std::uint32_t i = node.first; i < node.first + node.count; ++i) {
+        for (std::uint32_t i = first; i < first + count; ++i) {
             const std::uint32_t f = faces_[i];
             const Vec3d c =
                 closestPointOnTriangle(center, corner(f, 0), corner(f, 1), corner(f, 2));
-            const Vec3d d = c - center;
-            if (dot(d, d) <= r2) result.push_back(f);
+            if (const Vec3d d = c - center; dot(d, d) <= r2) result.push_back(f);
         }
     }
-    std::sort(result.begin(), result.end());
+    std::ranges::sort(result);
     return result;
 }
 

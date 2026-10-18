@@ -37,7 +37,7 @@ Vector unit(const Vector& v) {
 // How the surface around a hole lies relative to the hole's plane, averaged along the rim and
 // weighted by edge length: 1 where the surface carries on across the hole (a hole in a wall), 0
 // where it turns away at a right angle (the open end of a tube).
-double rimAlignment(const SurfaceMesh& mesh, SurfaceMesh::Halfedge_index start) {
+double rimAlignment(const SurfaceMesh& mesh, const SurfaceMesh::Halfedge_index start) {
     Vector holeNormal(0, 0, 0); // Newell's method: the area normal of the boundary loop.
     auto h = start;
     do {
@@ -69,9 +69,9 @@ double rimAlignment(const SurfaceMesh& mesh, SurfaceMesh::Halfedge_index start) 
 // thin) can have no valid triangulation at all. A fan from a new vertex at the rim's centroid adds
 // no edge between rim vertices. The fan is then refined and, if asked, faired like CGAL's patches.
 std::vector<SurfaceMesh::Face_index> fanFill(SurfaceMesh& mesh,
-                                             SurfaceMesh::Halfedge_index border,
-                                             bool refineAndFair,
-                                             unsigned continuity) {
+                                             const SurfaceMesh::Halfedge_index border,
+                                             const bool refineAndFair,
+                                             const unsigned continuity) {
     Vector sum(0, 0, 0);
     std::size_t count = 0;
     for (const auto h : CGAL::halfedges_around_face(border, mesh)) {
@@ -87,7 +87,7 @@ std::vector<SurfaceMesh::Face_index> fanFill(SurfaceMesh& mesh,
     for (const auto f : CGAL::faces_around_target(spoke, mesh)) faces.push_back(f);
     if (!refineAndFair) return faces;
     std::vector<SurfaceMesh::Face_index> newFaces;
-    std::vector<SurfaceMesh::Vertex_index> interior{center};
+    std::vector interior{center};
     PMP::refine(mesh, faces, std::back_inserter(newFaces), std::back_inserter(interior));
     (void)PMP::fair(mesh, interior, CGAL::parameters::fairing_continuity(continuity));
     faces.insert(faces.end(), newFaces.begin(), newFaces.end());
@@ -162,7 +162,11 @@ Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& par
         mesh.collect_garbage();
         auto out = fromSurfaceMesh(mesh);
         if (!out) return std::unexpected(out.error());
-        return HoleFillResult{std::move(*out), filled, skipped, failed, added};
+        return HoleFillResult{.mesh = std::move(*out),
+                              .filled = filled,
+                              .skipped = skipped,
+                              .failed = failed,
+                              .addedFaces = added};
     });
 }
 

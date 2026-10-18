@@ -76,7 +76,9 @@ void addDeviationCommands(std::vector<Command>& out) {
             const DeviationStats stats = field->stats();
             M2C_TRY(id,
                     context.document.add(name->value_or(mesh->name + " (deviation)"),
-                                         DeviationData{mesh->id, *referenceId, std::move(*field)},
+                                         DeviationData{.meshId = mesh->id,
+                                                       .referenceId = *referenceId,
+                                                       .field = std::move(*field)},
                                          context.provenance({mesh->id, *referenceId})));
             return Json{{"id", *id}, {"stats", toJson(stats)}};
         }));
@@ -93,7 +95,7 @@ void addDeviationCommands(std::vector<Command>& out) {
             },
             "required":["id","path"],"additionalProperties":false})",
         false,
-        [](CommandContext& context, const Json& params) -> Result<Json> {
+        [](const CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireObject(context, params, "id", "deviation"));
             M2C_TRY(path, requireString(params, "path"));
             M2C_TRY(bins, optionalInteger(params, "bins", 20, 2, 200));

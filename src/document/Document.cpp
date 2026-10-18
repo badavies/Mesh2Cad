@@ -2,6 +2,7 @@
 #include "m2c/document/Document.h"
 
 #include <algorithm>
+#include <ranges>
 #include <utility>
 
 namespace m2c {
@@ -37,12 +38,15 @@ auto inStep(Document& doc, const char* label, F&& change) {
 
 void Document::beginStep(std::string label, std::string source) {
     if (depth_++ > 0) return;
-    open_ = Snapshot{objects_, HistoryStep{std::move(label), std::move(source)}};
+    open_ = Snapshot{.objects = objects_,
+                     .step = HistoryStep{.label = std::move(label), .source = std::move(source)}};
     dirty_ = false;
 }
 
 void Document::commitStep() {
-    if (depth_ == 0 || --depth_ > 0) return;
+    if (depth_ == 0) return;
+    --depth_;
+    if (depth_ > 0) return;
     if (dirty_) {
         undo_.push_back(std::move(open_));
         redo_.clear();
@@ -52,7 +56,9 @@ void Document::commitStep() {
 }
 
 void Document::abortStep() {
-    if (depth_ == 0 || --depth_ > 0) return;
+    if (depth_ == 0) return;
+    --depth_;
+    if (depth_ > 0) return;
     if (dirty_) {
         objects_ = std::move(open_.objects);
         ++revision_;
@@ -107,34 +113,39 @@ Result<void> Document::checkData(const ObjectData& data) const {
 
 Result<ObjectId>
 Document::addMesh(std::string name, std::shared_ptr<const TriMesh> mesh, Provenance provenance) {
-    return add(std::move(name), MeshData{std::move(mesh), {}}, std::move(provenance));
+    return add(
+        std::move(name), MeshData{.mesh = std::move(mesh), .alignment = {}}, std::move(provenance));
 }
 
 Result<ObjectId> Document::add(std::string name, ObjectData data, Provenance provenance) {
     if (auto ok = checkData(data); !ok) return std::unexpected(ok.error());
     return inStep(*this, "add", [&]() -> Result<ObjectId> {
         const ObjectId id = nextId_++;
-        objects_.emplace(
-            id, DocumentObject{id, std::move(name), true, std::move(data), std::move(provenance)});
+        objects_.emplace(id,
+                         DocumentObject{.id = id,
+                                        .name = std::move(name),
+                                        .visible = true,
+                                        .data = std::move(data),
+                                        .provenance = std::move(provenance)});
         changed();
         return id;
     });
 }
 
-Result<void> Document::replaceMesh(ObjectId id,
+Result<void> Document::replaceMesh(const ObjectId id,
                                    std::shared_ptr<const TriMesh> mesh,
                                    Provenance provenance,
-                                   std::optional<Transform3d> alignment) {
+                                   const std::optional<Transform3d>& alignment) {
     if (!mesh) return fail(ErrorCode::InvalidArgument, "cannot set a null mesh");
     const auto it = objects_.find(id);
     if (it == objects_.end() || it->second.mesh() == nullptr) {
         return fail(ErrorCode::NotFound, "no mesh object with id " + std::to_string(id));
     }
     return inStep(*this, "replace", [&]() -> Result<void> {
-        auto& data = std::get<MeshData>(it->second.data);
-        const bool sameFaces = data.mesh->sharedIndices() == mesh->sharedIndices();
-        data.mesh = std::move(mesh);
-        if (alignment) data.alignment = *alignment;
+        auto& [current, currentAlignment] = std::get<MeshData>(it->second.data);
+        const bool sameFaces = current->sharedIndices() == mesh->sharedIndices();
+        current = std::move(mesh);
+        if (alignment) currentAlignment = *alignment;
         it->second.provenance = std::move(provenance);
         removeDependents(id, sameFaces ? Dependents::Deviations : Dependents::OfMesh);
         changed();
@@ -142,12 +153,14 @@ Result<void> Document::replaceMesh(ObjectId id,
     });
 }
 
-Result<void> Document::replaceSelection(ObjectId id, std::shared_ptr<const MeshSelection> faces) {
+Result<void> Document::replaceSelection(const ObjectId id,
+                                        std::shared_ptr<const MeshSelection> faces) {
     const auto it = objects_.find(id);
     if (it == objects_.end() || it->second.selection() == nullptr) {
         return fail(ErrorCode::NotFound, "no selection object with id " + std::to_string(id));
     }
-    const SelectionData updated{it->second.selection()->meshId, std::move(faces)};
+    const SelectionData updated{.meshId = it->second.selection()->meshId,
+                                .faces = std::move(faces)};
     if (auto ok = checkData(updated); !ok) return ok;
     return inStep(*this, "select", [&]() -> Result<void> {
         it->second.data = updated;
@@ -156,7 +169,7 @@ Result<void> Document::replaceSelection(ObjectId id, std::shared_ptr<const MeshS
     });
 }
 
-Result<void> Document::replaceMeasurement(ObjectId id, const Measurement& measurement) {
+Result<void> Document::replaceMeasurement(const ObjectId id, const Measurement& measurement) {
     const auto it = objects_.find(id);
     if (it == objects_.end() || it->second.measurement() == nullptr) {
         return fail(ErrorCode::NotFound, "no measurement object with id " + std::to_string(id));
@@ -168,7 +181,7 @@ Result<void> Document::replaceMeasurement(ObjectId id, const Measurement& measur
     });
 }
 
-void Document::removeDependents(ObjectId id, Dependents which) {
+void Document::removeDependents(const ObjectId id, const Dependents which) {
     for (auto it = objects_.begin(); it != objects_.end();) {
         const DocumentObject& o = it->second;
         const bool isSelection = which != Dependents::Deviations && o.selection() != nullptr &&
@@ -178,11 +191,11 @@ void Document::removeDependents(ObjectId id, Dependents which) {
                                     o.measurement()->measurement.b.objectId == id);
         const bool isDeviation = o.deviation() != nullptr &&
                                  (o.deviation()->meshId == id || o.deviation()->referenceId == id);
-        it = (isSelection || isMeasurement || isDeviation) ? objects_.erase(it) : std::next(it);
+        it = isSelection || isMeasurement || isDeviation ? objects_.erase(it) : std::next(it);
     }
 }
 
-Result<void> Document::remove(ObjectId id) {
+Result<void> Document::remove(const ObjectId id) {
     if (!objects_.contains(id)) {
         return fail(ErrorCode::NotFound, "no object with id " + std::to_string(id));
     }
@@ -194,7 +207,7 @@ Result<void> Document::remove(ObjectId id) {
     });
 }
 
-Result<void> Document::rename(ObjectId id, std::string name) {
+Result<void> Document::rename(const ObjectId id, std::string name) {
     const auto it = objects_.find(id);
     if (it == objects_.end()) {
         return fail(ErrorCode::NotFound, "no object with id " + std::to_string(id));
@@ -206,7 +219,7 @@ Result<void> Document::rename(ObjectId id, std::string name) {
     });
 }
 
-Result<void> Document::setVisible(ObjectId id, bool visible) {
+Result<void> Document::setVisible(const ObjectId id, const bool visible) {
     const auto it = objects_.find(id);
     if (it == objects_.end()) {
         return fail(ErrorCode::NotFound, "no object with id " + std::to_string(id));
@@ -226,21 +239,20 @@ void Document::clear() {
     ++revision_;
 }
 
-Result<void> Document::load(std::vector<DocumentObject> objects, ObjectId nextId) {
+Result<void> Document::load(std::vector<DocumentObject> objects, const ObjectId nextId) {
     ObjectTable table;
     for (DocumentObject& o : objects) {
         if (o.id == 0 || o.id >= nextId) {
             return fail(ErrorCode::InvalidArgument,
                         "object id " + std::to_string(o.id) + " is outside the id range");
         }
-        const ObjectId id = o.id;
-        if (!table.emplace(id, std::move(o)).second) {
+        if (const ObjectId id = o.id; !table.emplace(id, std::move(o)).second) {
             return fail(ErrorCode::InvalidArgument, "duplicate object id " + std::to_string(id));
         }
     }
     // Check selections against the loaded meshes.
     std::swap(objects_, table);
-    for (const auto& [id, o] : objects_) {
+    for (const auto& o : std::views::values(objects_)) {
         if (auto ok = checkData(o.data); !ok) {
             std::swap(objects_, table);
             return ok;
@@ -256,22 +268,22 @@ Result<void> Document::load(std::vector<DocumentObject> objects, ObjectId nextId
 // ---- Queries
 // -------------------------------------------------------------------------------------
 
-std::optional<DocumentObject> Document::find(ObjectId id) const {
+std::optional<DocumentObject> Document::find(const ObjectId id) const {
     const auto it = objects_.find(id);
     if (it == objects_.end()) return std::nullopt;
     return it->second;
 }
 
-std::optional<MeshObject> Document::findMesh(ObjectId id) const {
+std::optional<MeshObject> Document::findMesh(const ObjectId id) const {
     const auto it = objects_.find(id);
     if (it == objects_.end() || it->second.mesh() == nullptr) return std::nullopt;
-    return MeshObject{id, it->second.name, it->second.mesh()->mesh};
+    return MeshObject{.id = id, .name = it->second.name, .mesh = it->second.mesh()->mesh};
 }
 
 std::vector<DocumentObject> Document::objects() const {
     std::vector<DocumentObject> result;
     result.reserve(objects_.size());
-    for (const auto& [id, object] : objects_) result.push_back(object);
+    for (const auto& object : std::views::values(objects_)) result.push_back(object);
     return result;
 }
 
@@ -281,9 +293,9 @@ std::vector<DocumentObject> Document::objects() const {
 Result<void> Document::undo() {
     if (depth_ > 0) return fail(ErrorCode::InvalidState, "cannot undo while a change is running");
     if (undo_.empty()) return fail(ErrorCode::InvalidState, "nothing to undo");
-    Snapshot& top = undo_.back();
-    redo_.push_back(Snapshot{std::move(objects_), top.step});
-    objects_ = std::move(top.objects);
+    auto& [topObjects, topStep] = undo_.back();
+    redo_.push_back(Snapshot{.objects = std::move(objects_), .step = topStep});
+    objects_ = std::move(topObjects);
     undo_.pop_back();
     ++revision_;
     return {};
@@ -292,9 +304,9 @@ Result<void> Document::undo() {
 Result<void> Document::redo() {
     if (depth_ > 0) return fail(ErrorCode::InvalidState, "cannot redo while a change is running");
     if (redo_.empty()) return fail(ErrorCode::InvalidState, "nothing to redo");
-    Snapshot& top = redo_.back();
-    undo_.push_back(Snapshot{std::move(objects_), top.step});
-    objects_ = std::move(top.objects);
+    auto& [topObjects, topStep] = redo_.back();
+    undo_.push_back(Snapshot{.objects = std::move(objects_), .step = topStep});
+    objects_ = std::move(topObjects);
     redo_.pop_back();
     ++revision_;
     return {};
@@ -302,7 +314,7 @@ Result<void> Document::redo() {
 
 std::vector<HistoryStep> Document::undoHistory() const {
     std::vector<HistoryStep> steps;
-    for (const Snapshot& s : undo_) steps.push_back(s.step);
+    for (const auto& [table, step] : undo_) steps.push_back(step);
     return steps;
 }
 

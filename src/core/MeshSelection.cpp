@@ -30,7 +30,8 @@ void MeshSelection::invert() noexcept {
     clearTail();
 }
 
-MeshSelection MeshSelection::fromWords(std::vector<std::uint64_t> words, std::size_t faceCount) {
+MeshSelection MeshSelection::fromWords(std::vector<std::uint64_t> words,
+                                       const std::size_t faceCount) {
     MeshSelection s;
     words.resize((faceCount + 63) / 64, 0);
     s.words_ = std::move(words);
@@ -40,8 +41,8 @@ MeshSelection MeshSelection::fromWords(std::vector<std::uint64_t> words, std::si
 }
 
 void MeshSelection::clearTail() noexcept {
-    const std::size_t used = size_ & 63;
-    if (used != 0 && !words_.empty()) words_.back() &= (std::uint64_t{1} << used) - 1;
+    if (const std::size_t used = size_ & 63U; used != 0 && !words_.empty())
+        words_.back() &= (std::uint64_t{1} << used) - 1;
 }
 
 } // namespace m2c

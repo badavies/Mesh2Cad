@@ -19,7 +19,7 @@ void addProjectCommands(std::vector<Command>& out) {
         R"({"type":"object","properties":{"path":{"type":"string"}},
             "required":["path"],"additionalProperties":false})",
         false,
-        [](CommandContext& context, const Json& params) -> Result<Json> {
+        [](const CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(path, requireString(params, "path"));
             ProjectData project;
             project.nextId = context.document.nextId();
@@ -32,9 +32,9 @@ void addProjectCommands(std::vector<Command>& out) {
                 p.madeWith = o.provenance.params;
                 p.inputs = o.provenance.inputs;
                 if (const MeshData* m = o.mesh()) {
-                    p.data = ProjectMesh{m->mesh, m->alignment};
+                    p.data = ProjectMesh{.mesh = m->mesh, .alignment = m->alignment};
                 } else if (const SelectionData* s = o.selection()) {
-                    p.data = ProjectSelection{s->meshId, s->faces};
+                    p.data = ProjectSelection{.meshId = s->meshId, .faces = s->faces};
                 } else if (const MeasurementData* d = o.measurement()) {
                     p.data = d->measurement;
                 } else if (const QuadLayoutData* q = o.quadLayout()) {
@@ -42,8 +42,9 @@ void addProjectCommands(std::vector<Command>& out) {
                 } else if (const SolidData* solid = o.solid()) {
                     p.data = solid->solid;
                 } else {
-                    const DeviationData& dev = *o.deviation();
-                    p.data = ProjectDeviation{dev.meshId, dev.referenceId, dev.field};
+                    const auto& [meshId, referenceId, field] = *o.deviation();
+                    p.data = ProjectDeviation{
+                        .meshId = meshId, .referenceId = referenceId, .field = field};
                 }
                 project.objects.push_back(std::move(p));
             }
@@ -61,26 +62,28 @@ void addProjectCommands(std::vector<Command>& out) {
             M2C_TRY(path, requireString(params, "path"));
             M2C_TRY(project, readProject(std::filesystem::path(*path)));
             std::vector<DocumentObject> objects;
-            for (ProjectObject& p : project->objects) {
+            for (auto& [id, name, visible, data, madeBy, madeWith, inputs] : project->objects) {
                 DocumentObject o;
-                o.id = p.id;
-                o.name = std::move(p.name);
-                o.visible = p.visible;
-                o.provenance =
-                    Provenance{std::move(p.madeBy), std::move(p.madeWith), std::move(p.inputs)};
-                if (auto* m = std::get_if<ProjectMesh>(&p.data)) {
-                    o.data = MeshData{m->mesh, m->alignment};
-                } else if (auto* s = std::get_if<ProjectSelection>(&p.data)) {
-                    o.data = SelectionData{s->meshId, s->faces};
-                } else if (auto* d = std::get_if<Measurement>(&p.data)) {
+                o.id = id;
+                o.name = std::move(name);
+                o.visible = visible;
+                o.provenance = Provenance{.command = std::move(madeBy),
+                                          .params = std::move(madeWith),
+                                          .inputs = std::move(inputs)};
+                if (const auto* m = std::get_if<ProjectMesh>(&data)) {
+                    o.data = MeshData{.mesh = m->mesh, .alignment = m->alignment};
+                } else if (const auto* s = std::get_if<ProjectSelection>(&data)) {
+                    o.data = SelectionData{.meshId = s->meshId, .faces = s->faces};
+                } else if (const auto* d = std::get_if<Measurement>(&data)) {
                     o.data = MeasurementData{*d};
-                } else if (auto* q = std::get_if<QuadLayout>(&p.data)) {
+                } else if (auto* q = std::get_if<QuadLayout>(&data)) {
                     o.data = QuadLayoutData{std::move(*q)};
-                } else if (auto* solid = std::get_if<Solid>(&p.data)) {
+                } else if (auto* solid = std::get_if<Solid>(&data)) {
                     o.data = SolidData{std::move(*solid)};
                 } else {
-                    auto& dev = std::get<ProjectDeviation>(p.data);
-                    o.data = DeviationData{dev.meshId, dev.referenceId, std::move(dev.field)};
+                    auto& [meshId, referenceId, field] = std::get<ProjectDeviation>(data);
+                    o.data = DeviationData{
+                        .meshId = meshId, .referenceId = referenceId, .field = std::move(field)};
                 }
                 objects.push_back(std::move(o));
             }

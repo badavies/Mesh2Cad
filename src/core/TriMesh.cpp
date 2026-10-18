@@ -20,7 +20,7 @@ struct MeshCaches {
     FaceAdjacency adjacency;
 };
 
-TriMesh::TriMesh(PositionBuffer positions, IndexBuffer indices, Aabb bounds)
+TriMesh::TriMesh(PositionBuffer positions, IndexBuffer indices, const Aabb& bounds)
     : positions_(std::move(positions)), indices_(std::move(indices)), bounds_(bounds),
       caches_(std::make_shared<MeshCaches>()) {}
 
@@ -55,15 +55,17 @@ Result<TriMesh> TriMesh::create(PositionBuffer positions, IndexBuffer indices) {
         return fail(ErrorCode::InvalidArgument, "mesh has more than 2^32-1 vertices");
     }
 
-    Aabb box{positions->front(), positions->front()};
+    Aabb box{.min = positions->front(), .max = positions->front()};
     for (std::size_t i = 0; i < positions->size(); ++i) {
-        const Vec3d& p = (*positions)[i];
-        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        const auto& [x, y, z] = (*positions)[i];
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
             return fail(ErrorCode::InvalidArgument,
                         "vertex " + std::to_string(i) + " has a non-finite coordinate");
         }
-        box.min = {std::min(box.min.x, p.x), std::min(box.min.y, p.y), std::min(box.min.z, p.z)};
-        box.max = {std::max(box.max.x, p.x), std::max(box.max.y, p.y), std::max(box.max.z, p.z)};
+        box.min = {
+            .x = std::min(box.min.x, x), .y = std::min(box.min.y, y), .z = std::min(box.min.z, z)};
+        box.max = {
+            .x = std::max(box.max.x, x), .y = std::max(box.max.y, y), .z = std::max(box.max.z, z)};
     }
 
     const auto vertexCount = positions->size();

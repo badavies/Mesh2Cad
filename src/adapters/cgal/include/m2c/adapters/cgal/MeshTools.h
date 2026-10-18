@@ -29,7 +29,7 @@ struct RepairResult {
 /// hanging off an edge two other faces already share), makes the mesh manifold, orients faces
 /// consistently (outward when the mesh is closed) and optionally removes self-intersections. Holes
 /// are left open; see fillHoles().
-[[nodiscard]] Result<RepairResult> repair(const TriMesh& mesh, const RepairParams& params);
+[[nodiscard]] Result<RepairResult> repair(const TriMesh& input, const RepairParams& params);
 
 struct HoleFillParams {
     double maxPerimeterMm{0.0}; ///< Holes with a longer boundary are left open; 0 = no limit.
@@ -47,7 +47,7 @@ struct HoleFillResult {
     std::size_t addedFaces{0};
 };
 
-[[nodiscard]] Result<HoleFillResult> fillHoles(const TriMesh& mesh, const HoleFillParams& params);
+[[nodiscard]] Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& params);
 
 struct SimplifyParams {
     std::size_t targetFaces{0}; ///< 0 = no face count target (then maxErrorMm must be set).
@@ -57,7 +57,7 @@ struct SimplifyParams {
 
 /// Garland-Heckbert edge-collapse simplification to a target face count or a maximum error,
 /// whichever is reached first.
-[[nodiscard]] Result<TriMesh> simplify(const TriMesh& mesh, const SimplifyParams& params);
+[[nodiscard]] Result<TriMesh> simplify(const TriMesh& input, const SimplifyParams& params);
 
 struct RemeshParams {
     double targetEdgeMm{1.0};
@@ -66,7 +66,7 @@ struct RemeshParams {
 };
 
 /// Isotropic remeshing to an even triangle size, keeping sharp edges.
-[[nodiscard]] Result<TriMesh> remesh(const TriMesh& mesh, const RemeshParams& params);
+[[nodiscard]] Result<TriMesh> remesh(const TriMesh& input, const RemeshParams& params);
 
 struct WrapParams {
     double alphaMm{1.0};  ///< Size of the probe; detail smaller than this is lost.
@@ -75,6 +75,6 @@ struct WrapParams {
 
 /// 3D alpha wrapping: a watertight, manifold, intersection-free mesh around any input, as a
 /// fallback when surface repair fails.
-[[nodiscard]] Result<TriMesh> shrinkWrap(const TriMesh& mesh, const WrapParams& params);
+[[nodiscard]] Result<TriMesh> shrinkWrap(const TriMesh& input, const WrapParams& params);
 
 } // namespace m2c::cgal

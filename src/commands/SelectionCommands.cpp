@@ -54,7 +54,8 @@ Result<Json> storeSelection(CommandContext& context,
     M2C_TRY(id,
             context.document.add(
                 name->value_or("Selection"),
-                SelectionData{mesh.id, std::make_shared<const MeshSelection>(std::move(faces))},
+                SelectionData{.meshId = mesh.id,
+                              .faces = std::make_shared<const MeshSelection>(std::move(faces))},
                 context.provenance({mesh.id})));
     return Json{{"selection_id", *id}, {"mesh_id", mesh.id}, {"face_count", count}};
 }
@@ -131,8 +132,9 @@ void addSelectionCommands(std::vector<Command>& out) {
             }
             MeshSelection faces(mesh->mesh->faceCount());
             for (const Vec3d& c : centers) {
-                const MeshSelection dab = brushSelect(*mesh->mesh, c, *radius, *connected);
-                for (const std::uint32_t f : dab.indices()) faces.set(f);
+                for (const MeshSelection dab = brushSelect(*mesh->mesh, c, *radius, *connected);
+                     const std::uint32_t f : dab.indices())
+                    faces.set(f);
             }
             return storeSelection(context, *mesh, std::move(faces), params);
         }));

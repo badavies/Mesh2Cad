@@ -12,7 +12,7 @@ ShellReport detectShells(const TriMesh& mesh) {
     std::uint32_t count = 0;
     report.faceShell = faceComponents(mesh, &count);
     report.shells.resize(count);
-    std::vector<bool> started(count, false);
+    std::vector started(count, false);
     const auto& p = mesh.positions();
     for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
         ShellInfo& s = report.shells[report.faceShell[f]];
@@ -21,20 +21,20 @@ ShellReport detectShells(const TriMesh& mesh) {
         s.areaMm2 += faceArea(mesh, f);
         for (const std::uint32_t v : mesh.face(f)) {
             if (!started[s.index]) {
-                s.bounds = {p[v], p[v]};
+                s.bounds = {.min = p[v], .max = p[v]};
                 started[s.index] = true;
             }
-            s.bounds.min = {std::min(s.bounds.min.x, p[v].x),
-                            std::min(s.bounds.min.y, p[v].y),
-                            std::min(s.bounds.min.z, p[v].z)};
-            s.bounds.max = {std::max(s.bounds.max.x, p[v].x),
-                            std::max(s.bounds.max.y, p[v].y),
-                            std::max(s.bounds.max.z, p[v].z)};
+            s.bounds.min = {.x = std::min(s.bounds.min.x, p[v].x),
+                            .y = std::min(s.bounds.min.y, p[v].y),
+                            .z = std::min(s.bounds.min.z, p[v].z)};
+            s.bounds.max = {.x = std::max(s.bounds.max.x, p[v].x),
+                            .y = std::max(s.bounds.max.y, p[v].y),
+                            .z = std::max(s.bounds.max.z, p[v].z)};
         }
     }
     if (!report.shells.empty()) {
-        const auto main = std::max_element(
-            report.shells.begin(), report.shells.end(), [](const ShellInfo& a, const ShellInfo& b) {
+        const auto main =
+            std::ranges::max_element(report.shells, [](const ShellInfo& a, const ShellInfo& b) {
                 return a.faceCount < b.faceCount;
             });
         main->isMain = true;
@@ -43,7 +43,7 @@ ShellReport detectShells(const TriMesh& mesh) {
 }
 
 MeshSelection shellFaces(const ShellReport& report, const std::vector<std::uint32_t>& shells) {
-    std::vector<bool> wanted(report.shells.size(), false);
+    std::vector wanted(report.shells.size(), false);
     for (const std::uint32_t s : shells) {
         if (s < wanted.size()) wanted[s] = true;
     }
@@ -54,7 +54,8 @@ MeshSelection shellFaces(const ShellReport& report, const std::vector<std::uint3
     return selection;
 }
 
-MeshSelection smallShellFaces(const ShellReport& report, std::size_t minFaces, double minAreaMm2) {
+MeshSelection
+smallShellFaces(const ShellReport& report, const std::size_t minFaces, const double minAreaMm2) {
     std::vector<std::uint32_t> small;
     for (const ShellInfo& s : report.shells) {
         if (s.isMain) continue;

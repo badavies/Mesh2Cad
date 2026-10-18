@@ -3,6 +3,7 @@
 #include <array>
 #include <map>
 #include <numeric>
+#include <ranges>
 #include <set>
 #include <utility>
 #include <vector>
@@ -34,7 +35,7 @@ namespace {
 using Polygon = std::vector<std::size_t>;
 using EdgeKey = std::pair<std::size_t, std::size_t>;
 
-EdgeKey edgeKey(std::size_t a, std::size_t b) {
+EdgeKey edgeKey(const std::size_t a, const std::size_t b) {
     return {std::min(a, b), std::max(a, b)};
 }
 
@@ -50,15 +51,15 @@ void removeFins(std::vector<Polygon>& polygons) {
             edgeFaces[edgeKey(poly[i], poly[(i + 1) % poly.size()])].push_back(f);
         }
     }
-    const auto hasFreeEdge = [&](std::size_t f) {
+    const auto hasFreeEdge = [&](const std::size_t f) {
         const Polygon& poly = polygons[f];
         for (std::size_t i = 0; i < poly.size(); ++i) {
             if (edgeFaces[edgeKey(poly[i], poly[(i + 1) % poly.size()])].size() == 1) return true;
         }
         return false;
     };
-    std::vector<bool> remove(polygons.size(), false);
-    for (const auto& [edge, faces] : edgeFaces) {
+    std::vector remove(polygons.size(), false);
+    for (const auto& faces : std::views::values(edgeFaces)) {
         if (faces.size() <= 2) continue;
         std::vector<std::size_t> fins;
         for (const std::size_t f : faces) {
@@ -78,7 +79,7 @@ void removeFins(std::vector<Polygon>& polygons) {
 using Face = SurfaceMesh::Face_index;
 using Triangle = std::array<Point, 3>;
 
-Triangle triangle(const SurfaceMesh& mesh, Face f) {
+Triangle triangle(const SurfaceMesh& mesh, const Face f) {
     const auto h = mesh.halfedge(f);
     return {mesh.point(mesh.source(h)),
             mesh.point(mesh.target(h)),
@@ -142,8 +143,8 @@ IntersectionScan scanIntersections(const SurfaceMesh& mesh) {
             if (!crosses(triangle(mesh, pair.first), triangle(mesh, pair.second))) return;
             scan.crossing = true;
             const std::size_t a = scan.shellOf[pair.first];
-            const std::size_t b = scan.shellOf[pair.second];
-            if (a != b) scan.shellPairs.emplace(std::min(a, b), std::max(a, b));
+            if (const std::size_t b = scan.shellOf[pair.second]; a != b)
+                scan.shellPairs.emplace(std::min(a, b), std::max(a, b));
         }));
     return scan;
 }
@@ -171,7 +172,7 @@ void uniteCrossingShells(SurfaceMesh& mesh) {
     for (std::size_t s = 0; s < shells.size(); ++s) groups[root(s)].push_back(s);
 
     SurfaceMesh result;
-    for (auto& [id, members] : groups) {
+    for (const auto& members : std::views::values(groups)) {
         bool united = members.size() > 1;
         for (const std::size_t s : members) {
             united = united && CGAL::is_closed(shells[s]) && !PMP::does_self_intersect(shells[s]);
@@ -205,7 +206,7 @@ Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
         // orientation are the most robust way back to a valid mesh.
         std::vector<Point> points;
         points.reserve(input.vertexCount());
-        for (const Vec3d& p : input.positions()) points.emplace_back(p.x, p.y, p.z);
+        for (const auto& [x, y, z] : input.positions()) points.emplace_back(x, y, z);
         std::vector<std::vector<std::size_t>> polygons;
         polygons.reserve(input.faceCount());
         for (std::size_t f = 0; f < input.faceCount(); ++f) {
@@ -256,7 +257,7 @@ Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
 
         auto out = fromSurfaceMesh(mesh);
         if (!out) return std::unexpected(out.error());
-        RepairResult result{std::move(*out)};
+        RepairResult result{.mesh = std::move(*out)};
         result.removedFaces = input.faceCount() > afterSoup ? input.faceCount() - afterSoup : 0;
         if (result.mesh.faceCount() < afterSoup) {
             result.removedFaces += afterSoup - result.mesh.faceCount();

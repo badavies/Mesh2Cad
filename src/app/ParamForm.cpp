@@ -3,15 +3,27 @@
 
 #include <QComboBox>
 #include <QFileDialog>
+#include <QFont>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QString>
+#include <QStringList>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QWidget>
+#include <Qt>
 #include <algorithm>
+#include <string>
+#include <vector>
+
+#include <QLatin1String>
+
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
 
 namespace m2c::app {
 
@@ -29,8 +41,7 @@ QString label(const std::string& key) {
 
 QString valueText(const Json& v) {
     if (v.is_string()) return QString::fromStdString(v.get<std::string>());
-    if (v.is_array() &&
-        std::all_of(v.begin(), v.end(), [](const Json& x) { return x.is_number(); })) {
+    if (v.is_array() && std::ranges::all_of(v, [](const Json& x) { return x.is_number(); })) {
         QStringList parts;
         for (const Json& x : v) parts << QString::number(x.get<double>(), 'g', 12);
         return parts.join(", ");
@@ -83,10 +94,10 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
     const Json& schema = command->paramsSchema;
     std::vector<std::string> required;
     if (schema.contains("required")) required = schema["required"].get<std::vector<std::string>>();
-    const Json properties = schema.value("properties", Json::object());
-    for (const auto& [key, prop] : properties.items()) {
+    for (const Json properties = schema.value("properties", Json::object());
+         const auto& [key, prop] : properties.items()) {
         Field field;
-        field.required = std::find(required.begin(), required.end(), key) != required.end();
+        field.required = std::ranges::find(required, key) != required.end();
         const std::string type = prop.value("type", "");
         const QString tip = QString::fromStdString(prop.value("description", ""));
         const bool has = values.contains(key);
@@ -145,7 +156,7 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
                 browse->setText(QStringLiteral("…"));
                 const bool saving = command->name.find("export") != std::string::npos ||
                                     command->name.find("save") != std::string::npos;
-                const bool project = command->name.rfind("project.", 0) == 0;
+                const bool project = command->name.starts_with("project.");
                 connect(browse, &QToolButton::clicked, this, [this, edit, saving, project] {
                     const QString filter =
                         project ? tr("Mesh2Cad project (*.m2c)") : tr("Meshes (*.stl *.obj *.ply)");
@@ -176,13 +187,14 @@ Result<Json> ParamForm::params() const {
             return fail(ErrorCode::InvalidArgument, (label(key) + ": " + why).toStdString());
         };
         if (field.type == "boolean") {
-            const int index = static_cast<QComboBox*>(field.editor)->currentIndex();
-            if (index > 0) out[key] = index == 1;
+            if (const int index = static_cast<QComboBox*>(field.editor)->currentIndex(); index > 0)
+                out[key] = index == 1;
             continue;
         }
         if (field.type == "enum") {
-            const auto* combo = static_cast<QComboBox*>(field.editor);
-            if (combo->currentIndex() > 0) out[key] = combo->currentText().toStdString();
+            if (const auto* combo = static_cast<QComboBox*>(field.editor);
+                combo->currentIndex() > 0)
+                out[key] = combo->currentText().toStdString();
             continue;
         }
         const QString text = static_cast<QLineEdit*>(field.editor)->text().trimmed();
@@ -211,7 +223,7 @@ Result<Json> ParamForm::params() const {
             }
             out[key] = list;
         } else {
-            Json v = Json::parse(text.toStdString(), nullptr, false);
+            const Json v = Json::parse(text.toStdString(), nullptr, false);
             if (v.is_discarded()) return bad(tr("not valid JSON"));
             out[key] = v;
         }
@@ -219,7 +231,7 @@ Result<Json> ParamForm::params() const {
     return out;
 }
 
-void ParamForm::setBusy(bool busy) {
+void ParamForm::setBusy(const bool busy) const {
     run_->setEnabled(!busy && command_ != nullptr);
     run_->setText(busy ? tr("Working…") : tr("Run"));
 }

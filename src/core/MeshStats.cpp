@@ -9,10 +9,10 @@ namespace m2c {
 
 namespace {
 
-[[nodiscard]] std::uint64_t edgeKey(std::uint32_t a, std::uint32_t b) noexcept {
+[[nodiscard]] std::uint64_t edgeKey(const std::uint32_t a, const std::uint32_t b) noexcept {
     const auto lo = std::min(a, b);
     const auto hi = std::max(a, b);
-    return (static_cast<std::uint64_t>(lo) << 32) | hi;
+    return (static_cast<std::uint64_t>(lo) << 32U) | hi;
 }
 
 } // namespace
@@ -52,7 +52,7 @@ MeshStats computeStats(const TriMesh& mesh) {
         edges.push_back(edgeKey(c, a));
     }
 
-    std::sort(edges.begin(), edges.end());
+    std::ranges::sort(edges);
     for (std::size_t i = 0; i < edges.size();) {
         std::size_t j = i;
         while (j < edges.size() && edges[j] == edges[i]) ++j;

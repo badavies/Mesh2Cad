@@ -7,11 +7,14 @@
 namespace m2c {
 
 PickedPoint snapToMesh(const TriMesh& mesh,
-                       std::uint64_t objectId,
+                       const std::uint64_t objectId,
                        const Vec3d& query,
-                       double snapToleranceMm) {
+                       const double snapToleranceMm) {
     const ClosestPoint nearest = mesh.spatialIndex().closestPoint(query);
-    PickedPoint picked{nearest.point, objectId, SnapKind::Surface, nearest.face};
+    PickedPoint picked{.position = nearest.point,
+                       .objectId = objectId,
+                       .snap = SnapKind::Surface,
+                       .element = nearest.face};
     if (!(snapToleranceMm > 0.0)) return picked;
 
     // The vertex or edge may belong to a neighbouring face, so look at every face in reach.
@@ -21,10 +24,11 @@ PickedPoint snapToMesh(const TriMesh& mesh,
     double bestVertex = std::numeric_limits<double>::infinity();
     for (const std::uint32_t f : faces) {
         for (const std::uint32_t v : mesh.face(f)) {
-            const double d = length(p[v] - nearest.point);
-            if (d <= snapToleranceMm && d < bestVertex) {
+            if (const double d = length(p[v] - nearest.point);
+                d <= snapToleranceMm && d < bestVertex) {
                 bestVertex = d;
-                picked = {p[v], objectId, SnapKind::Vertex, v};
+                picked = {
+                    .position = p[v], .objectId = objectId, .snap = SnapKind::Vertex, .element = v};
             }
         }
     }
@@ -40,12 +44,13 @@ PickedPoint snapToMesh(const TriMesh& mesh,
             const double len2 = dot(ab, ab);
             if (!(len2 > 0.0)) continue;
             double t = dot(nearest.point - a, ab) / len2;
-            t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+            t = t < 0.0 ? 0.0 : t > 1.0 ? 1.0 : t;
             const Vec3d onEdge = a + ab * t;
-            const double d = length(onEdge - nearest.point);
-            if (d <= snapToleranceMm && d < bestEdge) {
+            if (const double d = length(onEdge - nearest.point);
+                d <= snapToleranceMm && d < bestEdge) {
                 bestEdge = d;
-                picked = {onEdge, objectId, SnapKind::Edge, f};
+                picked = {
+                    .position = onEdge, .objectId = objectId, .snap = SnapKind::Edge, .element = f};
             }
         }
     }

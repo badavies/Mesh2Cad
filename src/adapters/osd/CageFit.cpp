@@ -20,7 +20,7 @@ namespace {
 using SparseMatrix = Eigen::SparseMatrix<double>;
 
 /// A matrix entry; SparseMatrix stores int indices, so the narrowing is spelled out here.
-Eigen::Triplet<double> entry(Eigen::Index row, Eigen::Index col, double value) {
+Eigen::Triplet<double> entry(const Eigen::Index row, const Eigen::Index col, double value) {
     return {static_cast<int>(row), static_cast<int>(col), value};
 }
 
@@ -40,7 +40,8 @@ SparseMatrix laplacian(const QuadLayout& cage) {
     for (std::uint32_t v = 0; v < cage.vertexCount(); ++v) {
         const auto& ring = neighbours[v];
         entries.emplace_back(v, v, 1.0);
-        for (std::uint32_t w : ring) entries.emplace_back(v, w, -1.0 / double(ring.size()));
+        for (std::uint32_t w : ring)
+            entries.emplace_back(v, w, -1.0 / static_cast<double>(ring.size()));
     }
     const auto n = static_cast<Eigen::Index>(cage.vertexCount());
     SparseMatrix l(n, n);
@@ -80,12 +81,13 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
                               cage.positions()[face[(i + 1) % face.size()]]);
             }
         }
-        gate = sum / double(cage.faceVertices().size());
+        gate = sum / static_cast<double>(cage.faceVertices().size());
     }
     const SparseMatrix l = laplacian(cage);
     const SparseMatrix ltl = SparseMatrix(l.transpose()) * l;
-    const double mu = params.smoothing * double(m) / double(n);
-    const double anchor = 1e-9 * double(m) / double(n); // keeps unsampled vertices in place
+    const double mu = params.smoothing * static_cast<double>(m) / static_cast<double>(n);
+    const double anchor =
+        1e-9 * static_cast<double>(m) / static_cast<double>(n); // keeps unsampled vertices in place
 
     // Unknowns are ordered coordinate-major: x of every vertex, then y, then z.
     const auto blockDiagonal = [n](const SparseMatrix& block) {
@@ -104,10 +106,10 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
     const SparseMatrix smooth = blockDiagonal(ltl);
     Eigen::VectorXd start(3 * n);
     for (Eigen::Index v = 0; v < n; ++v) {
-        const Vec3d& p = cage.positions()[static_cast<std::size_t>(v)];
-        start(v) = p.x;
-        start(n + v) = p.y;
-        start(2 * n + v) = p.z;
+        const auto& [x, y, z] = cage.positions()[static_cast<std::size_t>(v)];
+        start(v) = x;
+        start(n + v) = y;
+        start(2 * n + v) = z;
     }
     Eigen::VectorXd current = start;
     std::vector<Vec3d> positions = cage.positions();
@@ -136,28 +138,28 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         std::size_t used = 0;
         for (Eigen::Index k = 0; k < m; ++k) {
             const Vec3d& q = samples[static_cast<std::size_t>(k)];
-            const SurfacePoint sp = locate(*tess, q);
+            const auto [patch, s, t, distance, surfaceNormal] = locate(*tess, q);
             planeTargets(k) = 0.0;
             for (Eigen::Index c = 0; c < 3; ++c) pointTargets(c * m + k) = 0.0;
-            if (sp.distance > gate) continue; // an empty row: the sample is left out
-            sum2 += sp.distance * sp.distance;
-            maxD = std::max(maxD, sp.distance);
+            if (distance > gate) continue; // an empty row: the sample is left out
+            sum2 += distance * distance;
+            maxD = std::max(maxD, distance);
             ++used;
-            (*limit)->weights(sp.patch, sp.s, sp.t, w);
-            const std::array<double, 3> nc{sp.normal.x, sp.normal.y, sp.normal.z};
-            const std::array<double, 3> qc{q.x, q.y, q.z};
-            for (const VertexWeight& vw : w) {
+            (*limit)->weights(patch, s, t, w);
+            const std::array nc{surfaceNormal.x, surfaceNormal.y, surfaceNormal.z};
+            const std::array qc{q.x, q.y, q.z};
+            for (const auto& [vertex, weight] : w) {
                 for (Eigen::Index c = 0; c < 3; ++c) {
                     const auto cc = static_cast<std::size_t>(c);
-                    planeRows.push_back(entry(k, c * n + vw.vertex, vw.weight * nc[cc]));
-                    pointRows.push_back(entry(c * m + k, c * n + vw.vertex, vw.weight));
+                    planeRows.push_back(entry(k, c * n + vertex, weight * nc[cc]));
+                    pointRows.push_back(entry(c * m + k, c * n + vertex, weight));
                 }
             }
-            planeTargets(k) = dot(sp.normal, q);
+            planeTargets(k) = dot(surfaceNormal, q);
             for (Eigen::Index c = 0; c < 3; ++c)
                 pointTargets(c * m + k) = qc[static_cast<std::size_t>(c)];
         }
-        const double rms = std::sqrt(sum2 / double(std::max<std::size_t>(used, 1)));
+        const double rms = std::sqrt(sum2 / static_cast<double>(std::max<std::size_t>(used, 1)));
         // A round that leaves every sample out measures nothing; it is not a perfect fit.
         if (used > 0 && rms < bestRms) {
             bestRms = rms;
@@ -179,25 +181,25 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
             planeT * plane + kPointWeight * (pointT * point) + mu * smooth + anchor * identity;
         const Eigen::VectorXd rhs = planeT * planeTargets + kPointWeight * (pointT * pointTargets) +
                                     mu * (smooth * start) + anchor * current;
-        Eigen::SimplicialLDLT<SparseMatrix> solver(normal);
+        Eigen::SimplicialLDLT solver(normal);
         if (solver.info() != Eigen::Success) {
             return fail(ErrorCode::Internal, "the cage fit's least-squares system is singular");
         }
         current = solver.solve(rhs);
         for (Eigen::Index v = 0; v < n; ++v) {
             positions[static_cast<std::size_t>(v)] = {
-                current(v), current(n + v), current(2 * n + v)};
+                .x = current(v), .y = current(n + v), .z = current(2 * n + v)};
         }
     }
 
     auto fitted = cage.withPositions(std::move(best));
     if (!fitted) return std::unexpected(fitted.error());
-    return CageFitResult{std::move(*fitted),
-                         bestUsed,
-                         samples.size() - bestUsed,
-                         bestUsed > 0 ? bestRms : 0.0,
-                         bestMax,
-                         std::move(history)};
+    return CageFitResult{.cage = std::move(*fitted),
+                         .samples = bestUsed,
+                         .ignoredSamples = samples.size() - bestUsed,
+                         .rmsDistanceMm = bestUsed > 0 ? bestRms : 0.0,
+                         .maxDistanceMm = bestMax,
+                         .rmsBeforeRoundMm = std::move(history)};
 }
 
 } // namespace m2c::osd

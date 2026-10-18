@@ -5,7 +5,11 @@
 //   mesh2cad-app --screenshot out.png FILE  render FILE, save the viewport and quit (CI smoke test)
 
 #include <QApplication>
+#include <QCommandLineOption>
 #include <QCommandLineParser>
+#include <QImage>
+#include <QObject>
+#include <QString>
 #include <QSurfaceFormat>
 #include <QTimer>
 
