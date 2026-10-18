@@ -2,6 +2,7 @@
 #include "Limit.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -16,6 +17,7 @@
 #include <opensubdiv/far/stencilTableFactory.h>
 #include <opensubdiv/far/topologyDescriptor.h>
 #include <opensubdiv/far/topologyRefinerFactory.h>
+#include <opensubdiv/sdc/crease.h>
 #include <opensubdiv/sdc/options.h>
 #include <opensubdiv/sdc/types.h>
 
@@ -40,7 +42,11 @@ struct Point {
 } // namespace
 
 Result<std::unique_ptr<Limit>>
-Limit::create(const QuadLayout& cage, const int isolationLevel, const bool open) {
+Limit::create(const QuadLayout& cage,
+              const int isolationLevel,
+              const bool open,
+              const std::vector<std::uint32_t>& corners,
+              const std::vector<std::array<std::uint32_t, 2>>& creases) {
     if (isolationLevel < 1 || isolationLevel > 4) {
         return fail(ErrorCode::InvalidArgument, "isolation level must be 1 to 4");
     }
@@ -60,6 +66,25 @@ Limit::create(const QuadLayout& cage, const int isolationLevel, const bool open)
     desc.numFaces = static_cast<int>(cage.faceCount());
     desc.numVertsPerFace = sizes.data();
     desc.vertIndicesPerFace = indices.data();
+    for (const std::uint32_t v : corners) {
+        if (v >= cage.vertexCount()) return fail(ErrorCode::InvalidArgument, "no such corner");
+    }
+    const std::vector<int> cornerIndices(corners.begin(), corners.end());
+    const std::vector<float> cornerWeights(corners.size(), Sdc::Crease::SHARPNESS_INFINITE);
+    desc.numCorners = static_cast<int>(corners.size());
+    desc.cornerVertexIndices = cornerIndices.data();
+    desc.cornerWeights = cornerWeights.data();
+    std::vector<int> creasePairs;
+    for (const auto& [a, b] : creases) {
+        if (a >= cage.vertexCount() || b >= cage.vertexCount()) {
+            return fail(ErrorCode::InvalidArgument, "no such crease");
+        }
+        creasePairs.insert(creasePairs.end(), {static_cast<int>(a), static_cast<int>(b)});
+    }
+    const std::vector<float> creaseWeights(creases.size(), Sdc::Crease::SHARPNESS_INFINITE);
+    desc.numCreases = static_cast<int>(creases.size());
+    desc.creaseVertexIndexPairs = creasePairs.data();
+    desc.creaseWeights = creaseWeights.data();
 
     // Corners too: OpenSubdiv's patches round a one-face boundary vertex differently from its
     // own limit rules (and from a neighbouring surface that has the vertex on a smooth curve).

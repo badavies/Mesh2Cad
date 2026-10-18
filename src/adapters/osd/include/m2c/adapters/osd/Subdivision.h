@@ -3,7 +3,9 @@
 // Catmull-Clark limit surface of a quad cage with OpenSubdiv (ADR-006, ADR-015): fitting the cage
 // to a scan through limit stencils, and turning the limit surface into bicubic patches.
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "m2c/core/Error.h"
@@ -46,6 +48,11 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
 struct PatchParams {
     int isolationLevel{2}; ///< As in CageFitParams; caps get smaller with each level.
     bool open{false};      ///< As in CageFitParams.
+    /// Of an open cage: boundary vertices where its edge turns sharply, as it does at vertices
+    /// used by one face (to match a neighbouring surface that has one there).
+    std::vector<std::uint32_t> corners{};
+    /// Cage edges (vertex pairs) along which the surface has a sharp edge.
+    std::vector<std::array<std::uint32_t, 2>> creases{};
 };
 
 struct PatchResult {
@@ -69,6 +76,11 @@ struct PatchResult {
 /// ended, with four times the control. The cage must be a consistently oriented manifold
 /// (closed, or open with a boundary).
 [[nodiscard]] Result<QuadLayout> subdivideCage(const QuadLayout& cage);
+
+/// Unit normal of the limit surface at the limit point of each cage vertex, on the side the
+/// cage's faces face (zero where the surface is degenerate). The cage must be a consistently
+/// oriented manifold, closed or open.
+[[nodiscard]] Result<std::vector<Vec3d>> limitNormals(const QuadLayout& cage);
 
 /// Points of the limit surface on a grid of n x n per patch (two triangles per grid cell), with
 /// duplicated vertices along patch edges. For display and distance checks.

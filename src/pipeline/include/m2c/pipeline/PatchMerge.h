@@ -3,6 +3,7 @@
 // Patch merging (ARCHITECTURE.md section 6, Keeping the face count low): the quads of a cage are
 // split into rectangles, and the faces of each rectangle become one multi-span face.
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <vector>
@@ -33,9 +34,13 @@ struct QuadPartition {
 /// Splits the quads of a closed cage into rectangles whose corners lie at extraordinary vertices,
 /// at the corners of faces with other than four sides, or where partition lines meet: from each
 /// such vertex a line runs straight along cage edges until it reaches another such vertex or a
-/// line (a motorcycle graph). Faces with other than four sides are in no rectangle.
+/// line (a motorcycle graph). Faces with other than four sides are in no rectangle. Fences,
+/// edges given as vertex pairs (such as sharp edges between surfaces), bound rectangles too but
+/// do not stop the lines, so the rectangles on both sides of a fence break at the same vertices.
 /// Deterministic.
-[[nodiscard]] QuadPartition partitionQuads(const QuadLayout& cage);
+[[nodiscard]] QuadPartition
+partitionQuads(const QuadLayout& cage,
+               const std::vector<std::array<std::uint32_t, 2>>& fences = {});
 
 struct MergeResult {
     std::vector<SurfacePatch> faces;
@@ -47,7 +52,9 @@ struct MergeResult {
 /// them) along partitionQuads(): each rectangle of quads becomes one face whose pieces are its
 /// quads' pieces, split where needed so every column and row of the grid has the same breaks.
 /// The surface is unchanged. Faces of cage faces with other than four sides stay as they are.
-[[nodiscard]] Result<MergeResult> mergeFaces(const QuadLayout& cage,
-                                             const std::vector<SurfacePatch>& faces);
+[[nodiscard]] Result<MergeResult>
+mergeFaces(const QuadLayout& cage,
+           const std::vector<SurfacePatch>& faces,
+           const std::vector<std::array<std::uint32_t, 2>>& fences = {});
 
 } // namespace m2c

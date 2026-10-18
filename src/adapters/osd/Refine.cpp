@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // One uniform Catmull-Clark step of a cage (deviation-driven refinement, ARCHITECTURE.md
-// section 6): four times the quads, the same limit surface and the same irregular vertices.
+// section 6): four times the quads, the same limit surface and the same irregular vertices. And
+// the limit surface's normals at the cage vertices, for thickening a sheet.
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -37,13 +38,8 @@ struct Point {
     void AddWithWeight(const Point& src, const double w) { p = p + src.p * w; }
 };
 
-} // namespace
-
-Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
-    if (!cageStats(cage).orientedManifold()) {
-        return fail(ErrorCode::InvalidArgument,
-                    "the cage must be a consistently oriented manifold");
-    }
+/// The cage's topology for OpenSubdiv, boundaries as in the rest of the adapter.
+std::unique_ptr<Far::TopologyRefiner> refinerOf(const QuadLayout& cage) {
     std::vector<int> sizes(cage.faceCount());
     for (std::size_t f = 0; f < cage.faceCount(); ++f) {
         sizes[f] = static_cast<int>(cage.face(f).size());
@@ -56,12 +52,22 @@ Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
     desc.vertIndicesPerFace = indices.data();
     Sdc::Options sdc;
     sdc.SetVtxBoundaryInterpolation(Sdc::Options::VTX_BOUNDARY_EDGE_AND_CORNER);
+    return std::unique_ptr<Far::TopologyRefiner>(
+        Far::TopologyRefinerFactory<Far::TopologyDescriptor>::Create(
+            desc,
+            Far::TopologyRefinerFactory<Far::TopologyDescriptor>::Options(Sdc::SCHEME_CATMARK,
+                                                                          sdc)));
+}
+
+} // namespace
+
+Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
+    if (!cageStats(cage).orientedManifold()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the cage must be a consistently oriented manifold");
+    }
     try {
-        const std::unique_ptr<Far::TopologyRefiner> refiner(
-            Far::TopologyRefinerFactory<Far::TopologyDescriptor>::Create(
-                desc,
-                Far::TopologyRefinerFactory<Far::TopologyDescriptor>::Options(Sdc::SCHEME_CATMARK,
-                                                                              sdc)));
+        const std::unique_ptr<Far::TopologyRefiner> refiner = refinerOf(cage);
         if (!refiner)
             return fail(ErrorCode::InvalidArgument, "OpenSubdiv rejected the cage topology");
         refiner->RefineUniform(Far::TopologyRefiner::UniformOptions(1));
@@ -88,6 +94,34 @@ Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
             starts.push_back(static_cast<std::uint32_t>(vertices.size()));
         }
         return QuadLayout::create(std::move(positions), std::move(starts), std::move(vertices));
+    } catch (const std::exception& e) {
+        return fail(ErrorCode::Internal, std::string("OpenSubdiv: ") + e.what());
+    }
+}
+
+Result<std::vector<Vec3d>> limitNormals(const QuadLayout& cage) {
+    if (!cageStats(cage).orientedManifold()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the cage must be a consistently oriented manifold");
+    }
+    try {
+        const std::unique_ptr<Far::TopologyRefiner> refiner = refinerOf(cage);
+        if (!refiner)
+            return fail(ErrorCode::InvalidArgument, "OpenSubdiv rejected the cage topology");
+        std::vector<Point> source(cage.vertexCount());
+        for (std::size_t v = 0; v < cage.vertexCount(); ++v) source[v].p = cage.positions()[v];
+        std::vector<Point> limit(cage.vertexCount());
+        std::vector<Point> du(cage.vertexCount());
+        std::vector<Point> dv(cage.vertexCount());
+        // Unrefined, the limit masks apply to the cage vertices themselves.
+        Far::PrimvarRefinerReal<double>(*refiner).Limit(source, limit, du, dv);
+        std::vector<Vec3d> normals(cage.vertexCount());
+        for (std::size_t v = 0; v < cage.vertexCount(); ++v) {
+            const Vec3d n = cross(du[v].p, dv[v].p);
+            const double size = length(n);
+            normals[v] = size > 0.0 ? n * (1.0 / size) : Vec3d{};
+        }
+        return normals;
     } catch (const std::exception& e) {
         return fail(ErrorCode::Internal, std::string("OpenSubdiv: ") + e.what());
     }

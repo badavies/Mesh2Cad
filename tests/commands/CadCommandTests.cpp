@@ -220,6 +220,26 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK_FALSE(unfitted.contains("fit"));
 }
 
+TEST_CASE("A scanned sheet becomes a solid wall", "[commands][surface]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeCap(20.0, std::numbers::pi / 3.0, 24), "lid");
+    const Json sheet =
+        s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}, {"keep_outline", true}});
+    CHECK(sheet["stats"]["closed"] == false);
+    CHECK(sheet["stats"]["euler_characteristic"] == 1); // a disc
+    // An open cage needs a thickness.
+    CHECK_FALSE(s.tryRun("surface.build", {{"id", sheet["id"]}, {"mesh_id", mesh}}));
+    const Json wall =
+        s.run("surface.build", {{"id", sheet["id"]}, {"mesh_id", mesh}, {"thickness_mm", 2.0}});
+    CHECK(wall["summary"]["valid"] == true);
+    CHECK(wall["summary"]["closed"] == true);
+    CHECK(wall["summary"]["solid_count"] == 1);
+    CHECK(wall["fit"]["p95_distance_mm"].get<double>() < 0.05);
+    CHECK_FALSE(s.tryRun("surface.build",
+                         {{"id", sheet["id"]}, {"mesh_id", mesh}, {"thickness_mm", -1.0}}));
+}
+
 TEST_CASE("solid.export writes a STEP file that reads back as the same solid",
           "[commands][surface]") {
     Session s;

@@ -357,6 +357,118 @@ TEST_CASE("A fit farther from the scan than the target is refined and fitted aga
     CHECK(buildSurface(remeshed->cage, &sphere, p).error().code == ErrorCode::InvalidArgument);
 }
 
+TEST_CASE("Limit normals face the way the cage does", "[stages][surface]") {
+    const auto cube = limitNormals(cubeCage(10.0));
+    REQUIRE(cube);
+    for (std::size_t v = 0; v < 8; ++v) {
+        const Vec3d corner = cubeCage(1.0).positions()[v] - Vec3d{0.5, 0.5, 0.5};
+        CHECK(length((*cube)[v] - corner * (1.0 / length(corner))) < 1e-9);
+    }
+    // An open sheet, corners and boundary included.
+    const QuadLayout square =
+        *QuadLayout::create({{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}, {0, 4}, {0, 1, 2, 3});
+    const auto flat = limitNormals(square);
+    REQUIRE(flat);
+    for (const Vec3d& n : *flat) CHECK(length(n - Vec3d{0, 0, 1}) < 1e-12);
+}
+
+TEST_CASE("Thickening a sheet closes it into a wall", "[stages][surface]") {
+    // A flat 2 x 2 grid of quads facing +z.
+    std::vector<Vec3d> p;
+    for (int j = 0; j < 3; ++j) {
+        for (int i = 0; i < 3; ++i) p.push_back({10.0 * i, 10.0 * j, 0.0});
+    }
+    std::vector<std::uint32_t> starts{0};
+    std::vector<std::uint32_t> v;
+    for (std::uint32_t j = 0; j < 2; ++j) {
+        for (std::uint32_t i = 0; i < 2; ++i) {
+            const std::uint32_t a = 3 * j + i;
+            v.insert(v.end(), {a, a + 1, a + 4, a + 3});
+            starts.push_back(static_cast<std::uint32_t>(v.size()));
+        }
+    }
+    const QuadLayout sheet = *QuadLayout::create(p, std::move(starts), std::move(v));
+    const auto wall = thickenCage(sheet, 2.0);
+    REQUIRE(wall);
+    CHECK(wall->vertexCount() == 18);
+    CHECK(wall->faceCount() == 4 + 4 + 8);
+    CHECK(cageStats(*wall).closed());
+    for (std::size_t i = 0; i < 9; ++i) {
+        CHECK(wall->positions()[i] == p[i]);
+        CHECK(wall->positions()[i + 9] == p[i] - Vec3d{0, 0, 2});
+    }
+    SurfaceBuildParams b;
+    b.fit = false;
+    const auto solid = buildSurface(*wall, nullptr, b);
+    REQUIRE(solid);
+    CHECK(solid->solid.summary().valid);
+    CHECK(solid->solid.summary().volumeMm3 > 0.0);
+
+    // The sheet thickened by the build: three surfaces whose edges meet, even at the corners
+    // (vertices of one face), around a 20 x 20 x 2 slab.
+    SurfaceBuildParams w;
+    w.fit = false;
+    w.thicknessMm = 2.0;
+    const auto slab = buildSurface(sheet, nullptr, w);
+    REQUIRE(slab);
+    CHECK(slab->solid.summary().valid);
+    CHECK(std::abs(slab->solid.summary().volumeMm3 - 800.0) < 1e-6);
+
+    CHECK(thickenCage(sheet, 0.0).error().code == ErrorCode::InvalidArgument);
+    CHECK(thickenCage(cubeCage(1.0), 1.0).error().code == ErrorCode::InvalidArgument);
+    // A sheet needs a thickness, and only a sheet takes one.
+    b.thicknessMm = 0.0;
+    CHECK(buildSurface(sheet, nullptr, b).error().code == ErrorCode::InvalidArgument);
+    b.thicknessMm = 1.0;
+    CHECK(buildSurface(cubeCage(10.0), nullptr, b).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("A scanned cap becomes a wall of the given thickness", "[stages][surface]") {
+    const double r = 20.0;
+    const double t = 2.0;
+    const TriMesh cap = makeCap(r, std::numbers::pi / 3.0, 24);
+    QuadRemeshParams q;
+    q.targetFaces = 300;
+    CageCloseParams close;
+    close.keepOutline = true;
+    const auto sheet = quadRemesh(cap, q, close);
+    REQUIRE(sheet);
+    SurfaceBuildParams p;
+    p.thicknessMm = t;
+    const auto built = buildSurface(sheet->cage, &cap, p);
+    REQUIRE(built);
+    const SolidSummary& s = built->solid.summary();
+    CHECK(s.valid);
+    CHECK(s.closed);
+    CHECK(s.solidCount == 1);
+    CHECK(s.freeEdges == 0);
+    CHECK(s.faceCount == built->solid.faces().size());
+    CHECK(cageStats(built->cage).closed());
+    // Merged across the whole wall, the faces still sew at the sharp rim.
+    CHECK(built->mergedFaces > 0);
+    CHECK(s.faceCount < built->facesBeforeMerge / 4);
+    CHECK(built->fit.p95DistanceMm < 0.05);
+    CHECK(built->fit.ignoredSamples == 0);
+    // The outer side stays on the sphere and the inner side lies t inside it.
+    std::size_t outer = 0;
+    std::size_t inner = 0;
+    for (const Vec3d& v : built->solid.display().positions()) {
+        if (std::abs(length(v) - r) < 0.05) ++outer;
+        if (std::abs(length(v) - (r - t)) < 0.05) ++inner;
+    }
+    const std::size_t all = built->solid.display().vertexCount();
+    CHECK(outer > all / 3);
+    CHECK(inner > all / 3);
+    // A spherical shell of the cap's angle: the rim strip is radial.
+    const double angle = std::numbers::pi / 3.0;
+    const double volume =
+        2.0 / 3.0 * std::numbers::pi * (1.0 - std::cos(angle)) * (r * r * r - std::pow(r - t, 3));
+    // Measured: 0.05 % over, with the rim 0.01 mm inside the scan's edge. (One closed cage rounds
+    // the rim over: 3 % under, 0.45 mm inside.)
+    CHECK(std::abs(s.volumeMm3 - volume) < 0.005 * volume);
+    CHECK(std::abs(s.bounds.max.x - r * std::sin(angle)) < 0.05);
+}
+
 TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][surface]") {
     SurfaceBuildParams p;
     p.fit = false;
