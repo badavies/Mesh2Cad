@@ -273,6 +273,7 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
                 double(solid->display().faceCount()) / double(std::max<std::size_t>(quads, 1));
             j["kind"] = "solid";
             j["brep_file"] = base + ".brep";
+            j["brep_format"] = "binary";
             j["faces_file"] = base + ".faces";
             j["display_grid"] = std::lround(std::sqrt(perQuad / 2.0));
         } else {
@@ -410,10 +411,12 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 if (!faces) return std::unexpected(faces.error());
                 auto display = tessellate(*faces, j.at("display_grid").get<int>());
                 if (!display) return std::unexpected(display.error());
-                auto solid =
-                    occt::readBrep(*brep,
-                                   std::move(*faces),
-                                   std::make_shared<const FaceTessellation>(std::move(*display)));
+                auto solid = occt::readBrep(
+                    *brep,
+                    j.value("brep_format", "text") == "binary" ? occt::BrepFormat::Binary
+                                                               : occt::BrepFormat::Text,
+                    std::move(*faces),
+                    std::make_shared<const FaceTessellation>(std::move(*display)));
                 if (!solid) return std::unexpected(solid.error());
                 o.data = std::move(*solid);
             } else if (version >= 2 && kind == "deviation") {

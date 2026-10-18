@@ -61,7 +61,7 @@ inline constexpr int kProjectFormatVersion = 3;
 
 /// Writes a project file: a zip holding manifest.json, meshes as binary PLY (double precision),
 /// selections as bitsets, quad layouts and deviations as little-endian arrays, and solids as
-/// Open CASCADE BREP text with their B-spline faces (ARCHITECTURE.md section 5). The file is
+/// Open CASCADE binary BREP with their B-spline faces (ARCHITECTURE.md section 5). The file is
 /// replaced atomically: it is written next to the target and renamed into place.
 [[nodiscard]] Result<void> writeProject(const ProjectData& project,
                                         const std::filesystem::path& path);

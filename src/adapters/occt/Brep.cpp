@@ -17,6 +17,7 @@
 #include <BRepTools.hxx>
 #include <BRep_Builder.hxx>
 #include <BRep_Tool.hxx>
+#include <BinTools.hxx>
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 #include <Geom_BSplineSurface.hxx>
@@ -269,23 +270,32 @@ writeStep(const Solid& solid, const std::filesystem::path& path, const std::stri
     });
 }
 
-Result<std::string> writeBrep(const Solid& solid) {
+Result<std::string> writeBrep(const Solid& solid, BrepFormat format) {
     return guarded("BREP export", [&]() -> Result<std::string> {
-        std::ostringstream out;
-        BRepTools::Write(solid.shape().shape, out);
+        std::ostringstream out(std::ios::binary);
+        if (format == BrepFormat::Binary) {
+            BinTools::Write(solid.shape().shape, out);
+        } else {
+            BRepTools::Write(solid.shape().shape, out);
+        }
         if (!out) return fail(ErrorCode::Internal, "Open CASCADE could not write the solid");
         return out.str();
     });
 }
 
 Result<Solid> readBrep(const std::string& brep,
+                       BrepFormat format,
                        std::vector<SurfacePatch> faces,
                        std::shared_ptr<const FaceTessellation> display) {
     if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
     return guarded("BREP import", [&]() -> Result<Solid> {
-        std::istringstream in(brep);
+        std::istringstream in(brep, std::ios::binary);
         TopoDS_Shape shape;
-        BRepTools::Read(shape, in, BRep_Builder());
+        if (format == BrepFormat::Binary) {
+            BinTools::Read(shape, in);
+        } else {
+            BRepTools::Read(shape, in, BRep_Builder());
+        }
         if (shape.IsNull()) return fail(ErrorCode::Parse, "the BREP data holds no shape");
         const SolidSummary summary = summarise(shape);
         if (summary.solidCount != 1 || !summary.closed || !summary.valid) {

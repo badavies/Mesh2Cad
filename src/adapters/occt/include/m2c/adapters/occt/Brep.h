@@ -31,12 +31,21 @@ struct SewParams {
 [[nodiscard]] Result<void>
 writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name);
 
-/// The solid's kernel shape in Open CASCADE's BREP text format, for the project file.
-[[nodiscard]] Result<std::string> writeBrep(const Solid& solid);
+/// Open CASCADE's two BREP formats. Text keeps 15 significant digits, so a solid read back can
+/// differ in the last bits; binary keeps every bit.
+enum class BrepFormat {
+    Text,
+    Binary
+};
 
-/// A solid from BREP text and the faces and display mesh saved with it. Fails unless the text
+/// The solid's kernel shape as BREP data, for the project file (which uses binary).
+[[nodiscard]] Result<std::string> writeBrep(const Solid& solid,
+                                            BrepFormat format = BrepFormat::Binary);
+
+/// A solid from BREP data and the faces and display mesh saved with it. Fails unless the data
 /// holds one valid closed solid.
 [[nodiscard]] Result<Solid> readBrep(const std::string& brep,
+                                     BrepFormat format,
                                      std::vector<SurfacePatch> faces,
                                      std::shared_ptr<const FaceTessellation> display);
 

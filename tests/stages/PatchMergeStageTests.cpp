@@ -5,9 +5,11 @@
 #include <array>
 #include <cmath>
 #include <map>
+#include <memory>
 #include <numbers>
 #include <vector>
 
+#include "m2c/adapters/occt/Brep.h"
 #include "m2c/pipeline/Deviation.h"
 #include "m2c/pipeline/PatchMerge.h"
 #include "m2c/pipeline/QuadRemesh.h"
@@ -125,6 +127,42 @@ TEST_CASE("Merging faces leaves the surface as it was", "[stages][merge]") {
     CHECK(std::max(std::abs(back->stats().minMm), back->stats().maxMm) < 1e-6);
 }
 
+TEST_CASE("A merged solid reads back from binary BREP bit for bit", "[stages][merge]") {
+    const QuadLayout cage = cubeGridCage(3, 30.0);
+    SurfaceBuildParams p;
+    p.fit = false;
+    const auto built = buildSurface(cage, nullptr, p);
+    REQUIRE(built);
+    const Solid& solid = built->solid;
+    const auto copy = [&](occt::BrepFormat format) {
+        const auto data = occt::writeBrep(solid, format);
+        REQUIRE(data);
+        auto back = occt::readBrep(*data,
+                                   format,
+                                   solid.faces(),
+                                   std::make_shared<const FaceTessellation>(solid.displayMap()));
+        REQUIRE(back);
+        return std::move(*back);
+    };
+    const Solid binary = copy(occt::BrepFormat::Binary);
+    CHECK(binary.summary().volumeMm3 == solid.summary().volumeMm3);
+    CHECK(binary.summary().areaMm2 == solid.summary().areaMm2);
+    CHECK(binary.summary().poleCount == solid.summary().poleCount);
+    // Text, as project files before format 3 hold it, keeps 15 digits: the same solid, nearly.
+    const Solid text = copy(occt::BrepFormat::Text);
+    CHECK(text.summary().valid);
+    CHECK(text.summary().faceCount == solid.summary().faceCount);
+    CHECK(std::abs(text.summary().volumeMm3 - solid.summary().volumeMm3) <
+          1e-9 * solid.summary().volumeMm3);
+    // Data in one format does not read as the other.
+    const auto data = occt::writeBrep(solid, occt::BrepFormat::Binary);
+    REQUIRE(data);
+    CHECK_FALSE(occt::readBrep(*data,
+                               occt::BrepFormat::Text,
+                               solid.faces(),
+                               std::make_shared<const FaceTessellation>(solid.displayMap())));
+}
+
 TEST_CASE("A merged sphere scan is a valid closed solid with far fewer faces", "[stages][merge]") {
     const double r = 20.0;
     const TriMesh sphere = makeSphere(r, 5);
@@ -149,8 +187,9 @@ TEST_CASE("A merged sphere scan is a valid closed solid with far fewer faces", "
     // Knots where the pieces join smoothly are gone: fewer control points.
     CHECK(s.poleCount < single->solid.summary().poleCount);
     CHECK(merged->facesBeforeMerge == single->solid.summary().faceCount);
+    // Within the fixed integration rule's per-span difference (see the cube test above).
     CHECK(std::abs(s.volumeMm3 - single->solid.summary().volumeMm3) <
-          1e-6 * single->solid.summary().volumeMm3);
+          1e-4 * single->solid.summary().volumeMm3);
     // The deviation from the scan is the same.
     const auto a = deviationToSolid(sphere, single->solid, 0.1);
     const auto b = deviationToSolid(sphere, merged->solid, 0.1);
