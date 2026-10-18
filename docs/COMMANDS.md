@@ -306,11 +306,12 @@ Save every object (meshes, selections, measurements, alignments, quad layouts, s
 
 ### `quad.remesh`
 
-Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges are dropped, open loops filled and faces pointed outward. Loose parts (such as the head of a thin post whose stem the remesher missed) are joined to the main part with a tube of quads, or left out and counted when they cannot be. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
+Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges are dropped, open loops filled and faces pointed outward. Loose parts (such as the head of a thin post whose stem the remesher missed) are joined to the main part with a tube of quads, or left out and counted when they cannot be. Guides, polylines drawn on the mesh, lay out the patches by hand: cage edges run along them. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `crease_angle_deg` | number |  | Align the quads to edges sharper than this; 0 = treat the surface as smooth. Default `0`. |
+| `guides` | array |  | Polylines on the mesh, in mm, that cage edges should follow (manual patch layout); each needs two or more points within a cage edge length of the surface. Default `[]`. |
 | `id` | integer | yes |  |
 | `join_parts` | boolean |  | Join loose closed parts to the main one instead of leaving them out. Default `true`. |
 | `name` | string |  |  |

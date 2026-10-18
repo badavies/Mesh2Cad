@@ -2,13 +2,17 @@
 // Quad layout stage tests (issue #16): synthetic closed shapes in, closed quad cages out, checked
 // by topology and distance to the input.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <map>
+#include <numbers>
+#include <utility>
 #include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "m2c/core/Error.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/pipeline/QuadRemesh.h"
 
@@ -245,6 +249,67 @@ TEST_CASE("Remeshing a torus keeps its genus", "[stages][quad]") {
     CHECK(result->stats.faceCount > params.targetFaces / 2);
     CHECK(result->stats.faceCount < params.targetFaces * 3 / 2);
     CHECK(result->maxDistanceMm < 1.0);
+}
+
+TEST_CASE("Cage edges follow a guide drawn across the field", "[stages][quad]") {
+    const double r = 20.0;
+    const TriMesh sphere = makeSphere(r, 5);
+    // A great circle tilted 35 degrees from the equator, so no axis-aligned field follows it.
+    const double tilt = 35.0 * std::numbers::pi / 180.0;
+    std::vector<Vec3d> circle;
+    for (int i = 0; i <= 96; ++i) {
+        const double a = 2.0 * std::numbers::pi * i / 96;
+        circle.push_back(
+            {r * std::cos(a), r * std::sin(a) * std::cos(tilt), r * std::sin(a) * std::sin(tilt)});
+    }
+    // Distance from each guide point to the nearest cage edge, as a share of the mean edge.
+    const auto offsets = [&circle](const QuadLayout& cage) {
+        std::vector<std::pair<Vec3d, Vec3d>> edges;
+        double sum = 0.0;
+        for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+            const auto face = cage.face(f);
+            for (std::size_t i = 0; i < face.size(); ++i) {
+                const Vec3d& a = cage.positions()[face[i]];
+                const Vec3d& b = cage.positions()[face[(i + 1) % face.size()]];
+                edges.emplace_back(a, b);
+                sum += length(b - a);
+            }
+        }
+        const double mean = sum / static_cast<double>(edges.size());
+        std::vector<double> out;
+        for (const Vec3d& q : circle) {
+            double best = 1e300;
+            for (const auto& [a, b] : edges) {
+                const Vec3d ab = b - a;
+                const double t = std::clamp(dot(q - a, ab) / dot(ab, ab), 0.0, 1.0);
+                best = std::min(best, length(q - (a + ab * t)));
+            }
+            out.push_back(best / mean);
+        }
+        std::ranges::sort(out);
+        return out;
+    };
+    QuadRemeshParams q;
+    q.targetFaces = 600;
+    const auto free = quadRemesh(sphere, q);
+    REQUIRE(free);
+    q.guides = {circle};
+    const auto guided = quadRemesh(sphere, q);
+    REQUIRE(guided);
+    CHECK(guided->stats.closed());
+    const auto before = offsets(free->cage);
+    const auto after = offsets(guided->cage);
+    // Measured: the median falls from 0.16 to 0.05 edge lengths, the 90th percentile from 0.36
+    // to 0.12.
+    CHECK(after[48] < 0.08);
+    CHECK(after[48] < before[48] / 2);
+    CHECK(after[86] < 0.15);
+    CHECK(after[86] < before[86] / 2);
+
+    q.guides = {{circle[0]}};
+    CHECK(quadRemesh(sphere, q).error().code == ErrorCode::InvalidArgument);
+    q.guides = {{Vec3d{0, 0, 0}, Vec3d{1, 0, 0}}}; // inside the sphere, off its surface
+    CHECK(quadRemesh(sphere, q).error().code == ErrorCode::InvalidArgument);
 }
 
 TEST_CASE("Remeshing is deterministic", "[stages][quad]") {
