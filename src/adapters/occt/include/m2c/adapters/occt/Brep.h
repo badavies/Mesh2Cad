@@ -23,7 +23,7 @@ struct SewParams {
 /// of it. Fails with InvalidState unless the result is one closed solid the kernel's checker
 /// accepts. The display mesh is stored with the solid as given.
 [[nodiscard]] Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
-                                      std::shared_ptr<const TriMesh> display,
+                                      std::shared_ptr<const FaceTessellation> display,
                                       const SewParams& params);
 
 /// Writes the solid as a STEP AP242 file in millimetres; `name` becomes the product name. Checks
@@ -38,10 +38,11 @@ writeStep(const Solid& solid, const std::filesystem::path& path, const std::stri
 /// holds one valid closed solid.
 [[nodiscard]] Result<Solid> readBrep(const std::string& brep,
                                      std::vector<SurfacePatch> faces,
-                                     std::shared_ptr<const TriMesh> display);
+                                     std::shared_ptr<const FaceTessellation> display);
 
 /// Signed distance from each point to the solid's faces, positive outside: the closest display
-/// triangle gives the face and a start point, and Open CASCADE projects onto that face's surface.
+/// triangle gives the face and, through the display map, a start point on it; Open CASCADE then
+/// projects onto that face's surface.
 [[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,
                                                           const std::vector<Vec3d>& points);
 

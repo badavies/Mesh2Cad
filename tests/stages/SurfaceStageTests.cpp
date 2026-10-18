@@ -185,6 +185,19 @@ TEST_CASE("A sphere scan becomes a valid closed solid of the right volume", "[st
     // The display mesh follows the faces.
     CHECK(built->solid.display().faceCount() == built->solid.faces().size() * 2 * 16);
     for (const Vec3d& p : built->solid.display().positions()) CHECK(std::abs(length(p) - r) < 0.05);
+    // Every display vertex is where its (u, v) puts it on the face of each triangle using it.
+    const FaceTessellation& map = built->solid.displayMap();
+    REQUIRE(map.triangleFaces.size() == map.mesh.faceCount());
+    REQUIRE(map.vertexUvs.size() == map.mesh.vertexCount());
+    double worst = 0.0;
+    for (std::size_t t = 0; t < map.mesh.faceCount(); ++t) {
+        const SurfacePatch& face = built->solid.faces()[map.triangleFaces[t]];
+        for (const std::uint32_t v : map.mesh.face(t)) {
+            const auto [u, w] = map.vertexUvs[v];
+            worst = std::max(worst, length(evaluate(face, u, w) - map.mesh.positions()[v]));
+        }
+    }
+    CHECK(worst < 1e-12);
 }
 
 TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][surface]") {

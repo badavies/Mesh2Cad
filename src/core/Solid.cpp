@@ -117,29 +117,37 @@ measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double 
     return out;
 }
 
-Result<TriMesh> tessellate(const std::vector<SurfacePatch>& faces, int n) {
+Result<FaceTessellation> tessellate(const std::vector<SurfacePatch>& faces, int n) {
     if (n < 1 || n > 64) return fail(ErrorCode::InvalidArgument, "grid must be 1 to 64");
     const auto row = static_cast<std::uint32_t>(n + 1);
     std::vector<Vec3d> positions;
     std::vector<std::uint32_t> indices;
+    std::vector<std::array<double, 2>> uvs;
+    std::vector<std::uint32_t> triangleFaces;
     positions.reserve(faces.size() * row * row);
     indices.reserve(faces.size() * static_cast<std::size_t>(6 * n * n));
-    for (const SurfacePatch& face : faces) {
+    uvs.reserve(positions.capacity());
+    triangleFaces.reserve(faces.size() * static_cast<std::size_t>(2 * n * n));
+    for (std::uint32_t f = 0; f < faces.size(); ++f) {
         const auto base = static_cast<std::uint32_t>(positions.size());
         for (int j = 0; j <= n; ++j) {
             for (int i = 0; i <= n; ++i) {
-                positions.push_back(
-                    evaluate(face, static_cast<double>(i) / n, static_cast<double>(j) / n));
+                const double u = static_cast<double>(i) / n, v = static_cast<double>(j) / n;
+                positions.push_back(evaluate(faces[f], u, v));
+                uvs.push_back({u, v});
             }
         }
         for (std::uint32_t j = 0; j + 1 < row; ++j) {
             for (std::uint32_t i = 0; i + 1 < row; ++i) {
                 const std::uint32_t v = base + j * row + i;
                 indices.insert(indices.end(), {v, v + 1, v + row + 1, v, v + row + 1, v + row});
+                triangleFaces.insert(triangleFaces.end(), {f, f});
             }
         }
     }
-    return TriMesh::create(std::move(positions), std::move(indices));
+    auto mesh = TriMesh::create(std::move(positions), std::move(indices));
+    if (!mesh) return std::unexpected(mesh.error());
+    return FaceTessellation{std::move(*mesh), std::move(triangleFaces), std::move(uvs)};
 }
 
 } // namespace m2c

@@ -379,8 +379,10 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 if (!faces) return std::unexpected(faces.error());
                 auto display = tessellate(*faces, j.at("display_grid").get<int>());
                 if (!display) return std::unexpected(display.error());
-                auto solid = occt::readBrep(
-                    *brep, std::move(*faces), std::make_shared<const TriMesh>(std::move(*display)));
+                auto solid =
+                    occt::readBrep(*brep,
+                                   std::move(*faces),
+                                   std::make_shared<const FaceTessellation>(std::move(*display)));
                 if (!solid) return std::unexpected(solid.error());
                 o.data = std::move(*solid);
             } else if (version >= 2 && kind == "deviation") {

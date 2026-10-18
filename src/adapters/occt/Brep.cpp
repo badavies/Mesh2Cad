@@ -155,7 +155,7 @@ SolidSummary summarise(const TopoDS_Shape& shape) {
 } // namespace
 
 Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
-                        std::shared_ptr<const TriMesh> display,
+                        std::shared_ptr<const FaceTessellation> display,
                         const SewParams& params) {
     if (faces.empty()) return fail(ErrorCode::InvalidArgument, "no faces to sew");
     if (!(params.toleranceMm > 0.0)) {
@@ -239,7 +239,7 @@ Result<std::string> writeBrep(const Solid& solid) {
 
 Result<Solid> readBrep(const std::string& brep,
                        std::vector<SurfacePatch> faces,
-                       std::shared_ptr<const TriMesh> display) {
+                       std::shared_ptr<const FaceTessellation> display) {
     if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
     return guarded("BREP import", [&]() -> Result<Solid> {
         std::istringstream in(brep);
@@ -266,11 +266,12 @@ Result<Solid> readBrep(const std::string& brep,
 
 Result<std::vector<double>> signedDistances(const Solid& solid, const std::vector<Vec3d>& points) {
     const std::vector<SurfacePatch>& faces = solid.faces();
-    const TriMesh& display = solid.display();
-    // The display mesh is tessellate(faces, n): 2 n^2 triangles per face, face by face.
-    const std::size_t perFace = faces.empty() ? 0 : display.faceCount() / faces.size();
-    const auto n = static_cast<std::size_t>(std::lround(std::sqrt(double(perFace) / 2.0)));
-    if (faces.empty() || n == 0 || 2 * n * n * faces.size() != display.faceCount()) {
+    const FaceTessellation& map = solid.displayMap();
+    const TriMesh& display = map.mesh;
+    if (faces.empty() || map.triangleFaces.size() != display.faceCount() ||
+        map.vertexUvs.size() != display.vertexCount() ||
+        std::ranges::any_of(map.triangleFaces,
+                            [&](std::uint32_t f) { return f >= faces.size(); })) {
         return fail(ErrorCode::InvalidState, "the solid's display mesh does not match its faces");
     }
     const auto corners = [&](std::size_t t) {
@@ -290,17 +291,11 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
         const SpatialIndex& index = display.spatialIndex();
         std::vector<double> out;
         out.reserve(points.size());
-        const double step = 1.0 / double(n);
         for (const Vec3d& p : points) {
             const ClosestPoint near = index.closestPoint(p);
-            const std::size_t f = near.face / (2 * n * n);
-            const std::size_t cell = (near.face % (2 * n * n)) / 2;
-            const double i = double(cell % n), j = double(cell / n);
-            // Corners of the triangle in face parameters (see tessellate), then barycentric
-            // weights of the closest point.
-            const bool lower = near.face % 2 == 0;
-            const std::array<std::array<double, 2>, 3> uv{
-                {{i, j}, {i + 1, lower ? j : j + 1}, {lower ? i + 1 : i, j + 1}}};
+            const std::size_t f = map.triangleFaces[near.face];
+            // Barycentric weights of the closest point give its (u, v) from the corners'.
+            const auto v = display.face(near.face);
             const auto [a, b, c] = corners(near.face);
             const Vec3d e0 = b - a, e1 = c - a, e2 = near.point - a;
             const double d00 = dot(e0, e0), d01 = dot(e0, e1), d11 = dot(e1, e1);
@@ -308,10 +303,11 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
             const double den = d00 * d11 - d01 * d01;
             const double wb = den > 0.0 ? (d11 * d20 - d01 * d21) / den : 0.0;
             const double wc = den > 0.0 ? (d00 * d21 - d01 * d20) / den : 0.0;
-            const double u0 =
-                (uv[0][0] + wb * (uv[1][0] - uv[0][0]) + wc * (uv[2][0] - uv[0][0])) * step;
-            const double v0 =
-                (uv[0][1] + wb * (uv[1][1] - uv[0][1]) + wc * (uv[2][1] - uv[0][1])) * step;
+            const auto& ua = map.vertexUvs[v[0]];
+            const auto& ub = map.vertexUvs[v[1]];
+            const auto& uc = map.vertexUvs[v[2]];
+            const double u0 = ua[0] + wb * (ub[0] - ua[0]) + wc * (uc[0] - ua[0]);
+            const double v0 = ua[1] + wb * (ub[1] - ua[1]) + wc * (uc[1] - ua[1]);
             if (surfaces[f].IsNull()) surfaces[f] = new ShapeAnalysis_Surface(toSurface(faces[f]));
             const gp_Pnt target(p.x, p.y, p.z);
             const gp_Pnt2d at = surfaces[f]->NextValueOfUV(gp_Pnt2d(u0, v0), target, 1e-7);

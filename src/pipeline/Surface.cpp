@@ -28,7 +28,7 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
     auto display = tessellate(patches->faces, params.displayGrid);
     if (!display) return std::unexpected(display.error());
     auto solid = occt::makeSolid(std::move(patches->faces),
-                                 std::make_shared<const TriMesh>(std::move(*display)),
+                                 std::make_shared<const FaceTessellation>(std::move(*display)),
                                  occt::SewParams{params.sewToleranceMm});
     if (!solid) return std::unexpected(solid.error());
     QuadLayout used = fit.cage;
