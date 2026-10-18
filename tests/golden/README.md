@@ -36,7 +36,7 @@ To keep the whole golden set somewhere else, point `M2C_GOLDEN_DIR` at a folder 
 {"command":"align.principal","params":{"id":1,"origin":"bounds_bottom_center"}}
 ```
 
-`metrics.json` names the scan and lists query commands to run on the final document and what their results must contain. Keys are JSON pointers into the result; a plain value must match exactly, `{"min": a, "max": b}` is an inclusive range.
+`metrics.json` names the scan and lists query commands to run on the final document and what their results must contain. A check with `"step": n` instead of a command reads the result of the session's n-th line (counting from 1), for figures only that command reports, such as `surface.build`'s seam angles. Keys are JSON pointers into the result; a plain value must match exactly, `{"min": a, "max": b}` is an inclusive range.
 
 ```json
 {
@@ -60,7 +60,7 @@ To keep the whole golden set somewhere else, point `M2C_GOLDEN_DIR` at a folder 
 
 The gate limits are fixed: watertight, no non-manifold or boundary edges, positive volume (outward faces), and the part sitting on Z = 0 after alignment. The other limits were set from the first run: face count within 5%, volume within 2% and the aligned bounding box within 1%, so a change in repair or a turned alignment shows up. `max_seconds` is about four times the first optimised (Release) run and is not checked in debug builds.
 
-`dji_controller_3_surface` (M2) requires one valid, closed solid with one shell, no free edges and a STEP file that reads back as the same solid; its face count is within 5% and its volume within 2% of the first run. Its deviation limits are the first run's values with some room (RMS 3.62 mm, 95th percentile 0.78 mm, 70% of points within 0.1 mm, largest 26.2 mm) and are there for M3 to tighten towards the M3 gate of 0.1 mm at the 95th percentile.
+`dji_controller_3_surface` (M2) requires one valid, closed solid with one shell, no free edges and a STEP file that reads back as the same solid; its face count is within 5% and its volume within 2% of the first run. Since M3 its session uses an 8,000-quad cage and a tighter fit. The 95th percentile limit is the M3 gate, 0.1 mm. The other deviation limits are the measured values with some room: 95% of points within 0.1 mm, RMS 0.1 mm and largest 2 mm, now that the thumbstick posts are joined to the body (#25). Two step checks cover the session's own figures. On `quad.remesh`, one part is joined and at most 10 faces are left out. On `surface.build`, the fit needs one try, seams next to caps stay under 4 degrees, and seams between regular pieces stay under 0.001 degrees (#26).
 
 The test replays the session through the registry (CLI path), the JSON channel and the MCP server, requires identical documents from all three, then checks the metrics. Run it on a Release build with `ctest -L golden`; it takes a few minutes.
 

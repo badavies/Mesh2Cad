@@ -36,7 +36,7 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
         ++tries;
         auto patches = extractPatches(fit.cage, PatchParams{fitting.isolationLevel});
         if (!patches) return std::unexpected(patches.error());
-        auto seams = measureSeams(patches->faces, kSeamSamples, kSeamToleranceMm);
+        auto seams = measureSeams(patches->faces, kSeamSamples, kSeamToleranceMm, patches->caps);
         if (!seams) return std::unexpected(seams.error());
         if (params.fit && seams->maxNormalAngleDeg > params.maxSeamAngleDeg &&
             tries < params.fitTries) {

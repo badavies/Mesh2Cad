@@ -121,6 +121,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
                         {"seams",
                          {{"max_gap_mm", built->seams.maxGapMm},
                           {"max_normal_angle_deg", built->seams.maxNormalAngleDeg},
+                          {"max_cap_normal_angle_deg", built->seams.maxCapNormalAngleDeg},
+                          {"max_regular_normal_angle_deg", built->seams.maxRegularNormalAngleDeg},
                           {"unmatched_samples", built->seams.unmatchedSamples}}}};
             if (p.fit) {
                 result["fit"] = Json{{"samples", built->fit.samples},

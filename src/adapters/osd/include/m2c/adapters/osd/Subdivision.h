@@ -46,6 +46,8 @@ struct PatchParams {
 
 struct PatchResult {
     std::vector<SurfacePatch> faces; ///< One per cage quad (n per n-sided cage face).
+    /// Per face, which of its pieces (j * piecesU + i) are caps.
+    std::vector<std::vector<bool>> caps;
     std::size_t regularPieces{0};
     std::size_t capPieces{0};
     double maxCapErrorMm{0.0}; ///< Largest distance from a cap to the limit surface it replaces.

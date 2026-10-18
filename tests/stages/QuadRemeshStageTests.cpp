@@ -2,7 +2,9 @@
 // Quad layout stage tests (issue #16): synthetic closed shapes in, closed quad cages out, checked
 // by topology and distance to the input.
 
+#include <array>
 #include <cmath>
+#include <map>
 #include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -36,6 +38,42 @@ QuadLayout cageOf(std::vector<Vec3d> p, const std::vector<std::vector<std::uint3
         starts.push_back(static_cast<std::uint32_t>(v.size()));
     }
     return *QuadLayout::create(std::move(p), std::move(starts), std::move(v));
+}
+
+/// Appends the surface of an axis-aligned cube, n x n quads per side, faces outward.
+void addGridCube(std::vector<Vec3d>& p,
+                 std::vector<std::vector<std::uint32_t>>& faces,
+                 int n,
+                 Vec3d origin,
+                 double size) {
+    std::map<std::array<int, 3>, std::uint32_t> index;
+    const auto vertex = [&](std::array<int, 3> c) {
+        const auto [it, added] = index.try_emplace(c, static_cast<std::uint32_t>(p.size()));
+        if (added) {
+            p.push_back(origin + Vec3d{c[0] * size / n, c[1] * size / n, c[2] * size / n});
+        }
+        return it->second;
+    };
+    for (int a = 0; a < 3; ++a) {
+        const int b = (a + 1) % 3, c = (a + 2) % 3;
+        for (const int side : {0, n}) {
+            for (int i = 0; i < n; ++i) {
+                for (int j = 0; j < n; ++j) {
+                    const auto at = [&](int u, int v) {
+                        std::array<int, 3> x{};
+                        x[static_cast<std::size_t>(a)] = side;
+                        x[static_cast<std::size_t>(b)] = u;
+                        x[static_cast<std::size_t>(c)] = v;
+                        return vertex(x);
+                    };
+                    std::vector<std::uint32_t> quad{
+                        at(i, j), at(i + 1, j), at(i + 1, j + 1), at(i, j + 1)};
+                    if (side == 0) std::swap(quad[1], quad[3]);
+                    faces.push_back(std::move(quad));
+                }
+            }
+        }
+    }
 }
 
 std::vector<std::vector<std::uint32_t>> facesOf(const QuadLayout& cage) {
@@ -96,6 +134,57 @@ TEST_CASE("Closing a cage fills an open loop and drops fragments", "[stages][qua
     CHECK(stats.faceCount == 6);
     CHECK(stats.vertexCount == 8);
     CHECK_THAT(signedVolume(*closed), WithinAbs(1.0, 1e-12));
+}
+
+TEST_CASE("Closing a cage joins a loose closed part with a tube", "[stages][quad]") {
+    // A 30 mm body and, 6 mm above it, a 6 mm block: a post whose stem the remesher missed.
+    std::vector<Vec3d> p;
+    std::vector<std::vector<std::uint32_t>> faces;
+    addGridCube(p, faces, 3, {0, 0, 0}, 30.0);
+    addGridCube(p, faces, 2, {12, 12, 36}, 6.0);
+    const QuadLayout raw = cageOf(p, faces);
+    REQUIRE(cageStats(raw).components == 2);
+
+    CageCleanup report;
+    const auto joined = closeCage(raw, report);
+    REQUIRE(joined);
+    CHECK(report.joinedComponents == 1);
+    CHECK(report.joinedComponentFaces == 24);
+    CHECK(report.droppedComponents == 0);
+    const CageStats stats = cageStats(*joined);
+    CHECK(stats.closed());
+    CHECK(stats.components == 1);
+    CHECK(stats.eulerCharacteristic() == 2);
+    // One quad of each part makes way for the four sides of a one-ring tube.
+    CHECK(stats.faceCount == 53 + 23 + 4);
+    CHECK(signedVolume(*joined) > 27000.0);
+
+    // Left out when asked, and counted.
+    CageCloseParams keepApart;
+    keepApart.joinParts = false;
+    const auto apart = closeCage(raw, report, keepApart);
+    REQUIRE(apart);
+    CHECK(report.joinedComponents == 0);
+    CHECK(report.droppedComponents == 1);
+    CHECK(report.droppedComponentFaces == 24);
+    CHECK(apart->faceCount() == 54);
+}
+
+TEST_CASE("Closing a cage leaves out parts it cannot join", "[stages][quad]") {
+    std::vector<Vec3d> p;
+    std::vector<std::vector<std::uint32_t>> faces;
+    addGridCube(p, faces, 3, {0, 0, 0}, 30.0);
+    addGridCube(p, faces, 2, {12, 12, 12}, 6.0);    // inside the body: no quad faces it
+    addGridCube(p, faces, 1, {12, 12, 40}, 2.0);    // six faces: noise
+    addGridCube(p, faces, 2, {200, 200, 200}, 6.0); // far away
+    CageCleanup report;
+    const auto closed = closeCage(cageOf(p, faces), report);
+    REQUIRE(closed);
+    CHECK(report.joinedComponents == 0);
+    CHECK(report.droppedComponents == 3);
+    CHECK(report.droppedComponentFaces == 24 + 6 + 24);
+    CHECK(closed->faceCount() == 54);
+    CHECK(cageStats(*closed).closed());
 }
 
 TEST_CASE("Closing a cage orients flipped faces outward", "[stages][quad]") {

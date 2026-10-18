@@ -47,6 +47,27 @@ struct Session {
 
 } // namespace
 
+TEST_CASE("quad.remesh joins a loose part or leaves it out on request", "[commands][quad]") {
+    // A ball with a smaller ball 4 mm above it: two closed parts, as a post whose stem is too
+    // thin for the cage comes out of the remesher.
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh =
+        s.import(dir, combine({makeSphere(20.0, 4), makeSphere(6.0, 3, {0, 0, 30})}), "balls");
+    const Json joined = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 400}});
+    CHECK(joined["cleanup"]["joined_components"] == 1);
+    CHECK(joined["cleanup"]["dropped_components"] == 0);
+    CHECK(joined["stats"]["components"] == 1);
+    CHECK(joined["stats"]["closed"] == true);
+    const Json apart =
+        s.run("quad.remesh", {{"id", mesh}, {"target_faces", 400}, {"join_parts", false}});
+    CHECK(apart["cleanup"]["joined_components"] == 0);
+    CHECK(apart["cleanup"]["dropped_components"] == 1);
+    CHECK(apart["cleanup"]["dropped_component_faces"] ==
+          joined["cleanup"]["joined_component_faces"]);
+    CHECK(apart["stats"]["face_count"].get<int>() < joined["stats"]["face_count"].get<int>());
+}
+
 TEST_CASE("quad.remesh adds a closed cage and undoes as one step", "[commands][quad]") {
     Session s;
     const TempDir dir;
@@ -111,6 +132,8 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
                Catch::Matchers::WithinAbs(20.0, 0.1));
     CHECK(result["seams"]["max_gap_mm"].get<double>() < 1e-6);
     CHECK(result["seams"]["max_normal_angle_deg"].get<double>() < 1.0);
+    CHECK(result["seams"]["max_cap_normal_angle_deg"] == result["seams"]["max_normal_angle_deg"]);
+    CHECK(result["seams"]["max_regular_normal_angle_deg"].get<double>() < 1e-3);
     CHECK(result["seams"]["unmatched_samples"] == 0);
     CHECK(result["summary"]["volume_mm3"].get<double>() > 33000.0);
     CHECK(result["summary"]["volume_mm3"].get<double>() < 33600.0);

@@ -171,6 +171,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
         face.vBreaks = face.uBreaks;
         const std::size_t row = face.polesPerRow();
         face.poles.resize(row * row);
+        std::vector<bool> caps(spans * spans, false);
         std::size_t covered = 0;
         for (std::size_t p : byFace[f]) {
             const PatchDomain& d = lim.domain(p);
@@ -179,6 +180,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
             const auto j0 = static_cast<std::size_t>(std::lround(d.v0 / finest));
             for (std::size_t a = 0; a < k; ++a) {
                 for (std::size_t b = 0; b < k; ++b) {
+                    caps[(j0 + b) * spans + i0 + a] = !lim.isRegular(p);
                     const BicubicPatch piece =
                         k == 1 ? pieces[p] : interpolate([&](double s, double t) {
                             return evaluate(pieces[p],
@@ -201,6 +203,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
                         "OpenSubdiv patches do not tile ptex face " + std::to_string(f));
         }
         result.faces.push_back(std::move(face));
+        result.caps.push_back(std::move(caps));
     }
     return result;
 }
