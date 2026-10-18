@@ -18,8 +18,10 @@ using quad::QuadRemeshParams;
 /// What closeCage() changed.
 struct CageCleanup {
     std::size_t droppedFaces{0};      ///< Faces on edges shared by more than two faces.
-    std::size_t droppedComponents{0}; ///< Loose fragments apart from the main part.
+    std::size_t droppedComponents{0}; ///< Loose parts apart from the main one, left out.
     std::size_t droppedComponentFaces{0};
+    std::size_t joinedComponents{0}; ///< Closed parts joined to the main one with a tube.
+    std::size_t joinedComponentFaces{0};
     std::size_t splitVertices{0};     ///< Copies made where faces met only at a vertex.
     std::size_t filledLoops{0};       ///< Open loops closed with one polygon each.
     std::size_t largestLoop{0};       ///< Vertices of the largest polygon added.
@@ -27,12 +29,23 @@ struct CageCleanup {
     bool flipped{false};              ///< Faces were reversed to point outward.
 };
 
-/// Makes a cage closed, manifold and outward: drops faces on non-manifold edges, keeps the
-/// largest connected part, orients faces consistently, splits vertices where separate fans meet,
-/// closes each open loop with one polygon, points faces outward and dissolves valence-2
-/// vertices. Fails with InvalidState when the faces cannot be oriented consistently or nothing
-/// valid is left.
-[[nodiscard]] Result<QuadLayout> closeCage(const QuadLayout& raw, CageCleanup& report);
+struct CageCloseParams {
+    /// Join loose parts to the main one instead of leaving them out. The remesher can miss the
+    /// stem of a thin feature (a thumbstick post), leaving its head as a separate closed part.
+    bool joinParts{true};
+    /// Parts with fewer faces are left out as noise.
+    std::size_t minPartFaces{16};
+};
+
+/// Makes a cage closed, manifold and outward: drops faces on non-manifold edges, orients faces
+/// consistently, splits vertices where separate fans meet, closes each open loop with one
+/// polygon, points faces outward and dissolves valence-2 vertices, all on the largest connected
+/// part. Each other part that closes the same way is joined to it by a tube of quads from the
+/// nearest pair of quads facing each other, no farther apart than twice the part's size; the rest
+/// are left out. Fails with InvalidState when the main part cannot be oriented consistently or
+/// nothing valid is left.
+[[nodiscard]] Result<QuadLayout>
+closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& params = {});
 
 struct QuadRemeshResult {
     QuadLayout cage;
@@ -43,7 +56,7 @@ struct QuadRemeshResult {
 };
 
 /// Remeshes a scan into a quad cage and closes it (closeCage()).
-[[nodiscard]] Result<QuadRemeshResult> quadRemesh(const TriMesh& scan,
-                                                  const QuadRemeshParams& params);
+[[nodiscard]] Result<QuadRemeshResult>
+quadRemesh(const TriMesh& scan, const QuadRemeshParams& params, const CageCloseParams& close = {});
 
 } // namespace m2c

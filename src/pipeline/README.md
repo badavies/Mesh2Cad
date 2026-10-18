@@ -15,7 +15,7 @@ OpenSubdiv adapter and solids from the Open CASCADE adapter.
 - `m2c/pipeline/Shells.h`: `detectShells` returning `ShellReport` and `ShellInfo`, plus `shellFaces` and `smallShellFaces`.
 - `m2c/pipeline/Align.h`: `fitPlane` returning `PlaneFit`, `principalAxesAlignment` with `AlignOrigin`, `symmetryAlignment` returning `SymmetryAlignment`, and `datumAlignment` with `DatumAlignParams` and `DatumAlignResult`.
 - `m2c/pipeline/Measure.h`: `snapToMesh` and `pickMesh`.
-- `m2c/pipeline/QuadRemesh.h`: `quadRemesh` with `QuadRemeshParams` returning `QuadRemeshResult` (closed cage, `CageStats`, distances), and `closeCage` with its `CageCleanup` report.
+- `m2c/pipeline/QuadRemesh.h`: `quadRemesh` with `QuadRemeshParams` and `CageCloseParams` returning `QuadRemeshResult` (closed cage, `CageStats`, distances), and `closeCage` with its `CageCleanup` report (loose closed parts, such as a post whose stem the remesher missed, are joined with a tube of quads).
 - `m2c/pipeline/Deviation.h`: `deviationToSolid` (exact, projected onto the faces by the Open CASCADE adapter) and `deviationToMesh` (through the reference's spatial index).
 - `m2c/pipeline/PatchMerge.h`: `partitionQuads` returning `QuadPartition` (rectangles of cage quads between lines traced from extraordinary vertices) and `mergeFaces` returning `MergeResult` (one multi-span face per rectangle, same surface).
 - `m2c/pipeline/Surface.h`: `buildSurface` with `SurfaceBuildParams` returning `SurfaceBuildResult` (the solid, the fitted cage, fit, cap, seam and merge figures; a fit that folds the surface is retried with more smoothing), plus re-exports of the OpenSubdiv adapter's `fitCage`, `extractPatches` and `tessellateLimit` with their parameter types.

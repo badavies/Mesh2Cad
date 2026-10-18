@@ -2,6 +2,7 @@
 #include "m2c/pipeline/QuadRemesh.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <numeric>
 #include <queue>
@@ -66,22 +67,23 @@ std::size_t dropNonManifoldEdgeFaces(std::vector<Face>& faces) {
     return dropped;
 }
 
-/// Keeps the edge-connected part with the most faces (the lowest-numbered on a tie).
-void keepLargestComponent(std::vector<Face>& faces, CageCleanup& report) {
+/// The edge-connected parts, the one with the most faces first (the lowest-numbered on a tie),
+/// then the others in the order of their first face.
+std::vector<std::vector<Face>> splitComponents(std::vector<Face> faces) {
     const auto edges = edgeFaces(faces);
     std::vector<std::uint32_t> component(faces.size(), UINT32_MAX);
-    std::vector<std::size_t> sizes;
+    std::vector<std::vector<Face>> parts;
     for (std::uint32_t seed = 0; seed < faces.size(); ++seed) {
         if (component[seed] != UINT32_MAX) continue;
-        const auto id = static_cast<std::uint32_t>(sizes.size());
-        std::size_t size = 0;
+        const auto id = static_cast<std::uint32_t>(parts.size());
+        std::vector<std::uint32_t> members;
         std::queue<std::uint32_t> open;
         open.push(seed);
         component[seed] = id;
         while (!open.empty()) {
             const std::uint32_t f = open.front();
             open.pop();
-            ++size;
+            members.push_back(f);
             const Face& face = faces[f];
             for (std::size_t i = 0; i < face.size(); ++i) {
                 for (std::uint32_t g : edges.at(undirected(face[i], face[(i + 1) % face.size()]))) {
@@ -92,17 +94,16 @@ void keepLargestComponent(std::vector<Face>& faces, CageCleanup& report) {
                 }
             }
         }
-        sizes.push_back(size);
+        std::sort(members.begin(), members.end());
+        parts.emplace_back();
+        for (std::uint32_t f : members) parts.back().push_back(std::move(faces[f]));
     }
     const auto main =
-        static_cast<std::uint32_t>(std::max_element(sizes.begin(), sizes.end()) - sizes.begin());
-    report.droppedComponents = sizes.size() - 1;
-    report.droppedComponentFaces = faces.size() - sizes[main];
-    std::vector<Face> kept;
-    for (std::size_t f = 0; f < faces.size(); ++f) {
-        if (component[f] == main) kept.push_back(std::move(faces[f]));
-    }
-    faces = std::move(kept);
+        std::max_element(parts.begin(), parts.end(), [](const auto& a, const auto& b) {
+            return a.size() < b.size();
+        });
+    std::rotate(parts.begin(), main, main + 1);
+    return parts;
 }
 
 /// Flips faces so each edge is run in opposite directions by its two faces. False if that is
@@ -284,9 +285,145 @@ Result<QuadLayout> assemble(const std::vector<Vec3d>& positions, const std::vect
     return QuadLayout::create(std::move(used), std::move(starts), std::move(vertices));
 }
 
+double volumeOf(const std::vector<Vec3d>& p, const std::vector<Face>& faces) {
+    double volume = 0.0;
+    for (const Face& face : faces) {
+        for (std::size_t i = 1; i + 1 < face.size(); ++i) {
+            volume += dot(p[face[0]], cross(p[face[i]], p[face[i + 1]]));
+        }
+    }
+    return volume / 6.0;
+}
+
+/// Orients a part, splits its non-manifold vertices, fills its open loops, dissolves its
+/// valence-2 vertices and points it outward. False if it cannot be oriented.
+bool closePart(std::vector<Vec3d>& positions, std::vector<Face>& faces, CageCleanup& report) {
+    if (!orientConsistently(faces)) return false;
+    report.splitVertices += splitNonManifoldVertices(positions, faces);
+    fillLoops(faces, report);
+    report.dissolvedVertices += dissolveValenceTwo(positions.size(), faces);
+    if (volumeOf(positions, faces) < 0.0) {
+        for (Face& face : faces) std::reverse(face.begin(), face.end());
+        report.flipped = true;
+    }
+    return true;
+}
+
+bool everyEdgeShared(const std::vector<Face>& faces) {
+    const auto edges = edgeFaces(faces);
+    return !faces.empty() && std::all_of(edges.begin(), edges.end(), [](const auto& e) {
+        return e.second.size() == 2;
+    });
+}
+
+double meanEdgeLength(const std::vector<Vec3d>& p, const std::vector<Face>& faces) {
+    double sum = 0.0;
+    std::size_t count = 0;
+    for (const Face& face : faces) {
+        for (std::size_t i = 0; i < face.size(); ++i) {
+            sum += length(p[face[(i + 1) % face.size()]] - p[face[i]]);
+            ++count;
+        }
+    }
+    return count == 0 ? 0.0 : sum / static_cast<double>(count);
+}
+
+struct Frame {
+    Vec3d centre;
+    Vec3d normal; ///< Unnormalised (Newell); points outward.
+};
+
+Frame frameOf(const std::vector<Vec3d>& p, const Face& face) {
+    Frame out{};
+    for (std::size_t i = 0; i < face.size(); ++i) {
+        out.centre = out.centre + p[face[i]] * (1.0 / static_cast<double>(face.size()));
+        out.normal = out.normal + cross(p[face[i]], p[face[(i + 1) % face.size()]]);
+    }
+    return out;
+}
+
+/// Joins a closed part to the body with a tube of quads from a quad of the body to the nearest
+/// quad of the part facing it, in rings about `edge` apart (a thin feature such as a post whose
+/// stem the remesher left out). False when no facing pair is closer than twice the part's size.
+bool bridge(std::vector<Vec3d>& positions,
+            std::vector<Face>& body,
+            std::vector<Face> part,
+            double edge) {
+    Vec3d lo = positions[part.front().front()], hi = lo;
+    for (const Face& face : part) {
+        for (std::uint32_t v : face) {
+            const Vec3d& q = positions[v];
+            lo = {std::min(lo.x, q.x), std::min(lo.y, q.y), std::min(lo.z, q.z)};
+            hi = {std::max(hi.x, q.x), std::max(hi.y, q.y), std::max(hi.z, q.z)};
+        }
+    }
+    double best = 2.0 * length(hi - lo);
+    std::size_t from = SIZE_MAX, to = SIZE_MAX;
+    std::vector<Frame> bodyFrames(body.size());
+    for (std::size_t i = 0; i < body.size(); ++i) bodyFrames[i] = frameOf(positions, body[i]);
+    for (std::size_t j = 0; j < part.size(); ++j) {
+        if (part[j].size() != 4) continue;
+        const Frame b = frameOf(positions, part[j]);
+        for (std::size_t i = 0; i < body.size(); ++i) {
+            if (body[i].size() != 4) continue;
+            const Frame& a = bodyFrames[i];
+            const Vec3d gap = b.centre - a.centre;
+            const double d = length(gap);
+            if (d < best && dot(a.normal, gap) > 0.0 && dot(b.normal, gap) < 0.0) {
+                best = d;
+                from = i;
+                to = j;
+            }
+        }
+    }
+    if (from == SIZE_MAX) return false;
+    const Face a = body[from], b = part[to];
+    // Ring vertex i of the body quad meets vertex (shift - i) of the part quad, which runs the
+    // other way round the tube; take the shift with the shortest connections.
+    std::size_t shift = 0;
+    double shortest = 0.0;
+    for (std::size_t s = 0; s < 4; ++s) {
+        double total = 0.0;
+        for (std::size_t i = 0; i < 4; ++i)
+            total += length(positions[b[(s + 4 - i) % 4]] - positions[a[i]]);
+        if (s == 0 || total < shortest) {
+            shortest = total;
+            shift = s;
+        }
+    }
+    const auto steps =
+        static_cast<std::size_t>(std::max(1L, std::lround(best / std::max(edge, 1e-12))));
+    std::vector<Face> rings{a};
+    for (std::size_t t = 1; t < steps; ++t) {
+        Face ring;
+        const double w = static_cast<double>(t) / static_cast<double>(steps);
+        for (std::size_t i = 0; i < 4; ++i) {
+            const Vec3d& p = positions[a[i]];
+            const Vec3d& q = positions[b[(shift + 4 - i) % 4]];
+            ring.push_back(static_cast<std::uint32_t>(positions.size()));
+            positions.push_back(p + (q - p) * w);
+        }
+        rings.push_back(std::move(ring));
+    }
+    Face last;
+    for (std::size_t i = 0; i < 4; ++i) last.push_back(b[(shift + 4 - i) % 4]);
+    rings.push_back(std::move(last));
+    body.erase(body.begin() + static_cast<std::ptrdiff_t>(from));
+    part.erase(part.begin() + static_cast<std::ptrdiff_t>(to));
+    for (Face& face : part) body.push_back(std::move(face));
+    for (std::size_t t = 0; t + 1 < rings.size(); ++t) {
+        for (std::size_t i = 0; i < 4; ++i) {
+            const std::size_t k = (i + 1) % 4;
+            body.push_back({rings[t][i], rings[t][k], rings[t + 1][k], rings[t + 1][i]});
+        }
+    }
+    return true;
+}
+
 } // namespace
 
-Result<QuadLayout> closeCage(const QuadLayout& raw, CageCleanup& report) {
+Result<QuadLayout>
+closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& params) {
     report = {};
     std::vector<Vec3d> positions = raw.positions();
     std::vector<Face> faces;
@@ -298,22 +435,29 @@ Result<QuadLayout> closeCage(const QuadLayout& raw, CageCleanup& report) {
 
     report.droppedFaces = dropNonManifoldEdgeFaces(faces);
     if (faces.empty()) return fail(ErrorCode::InvalidState, "no manifold faces in the cage");
-    keepLargestComponent(faces, report);
-    if (!orientConsistently(faces)) {
+    auto parts = splitComponents(std::move(faces));
+    std::vector<Face> body = std::move(parts.front());
+    if (!closePart(positions, body, report)) {
         return fail(ErrorCode::InvalidState, "the quad layout cannot be oriented consistently");
     }
-    report.splitVertices = splitNonManifoldVertices(positions, faces);
-    fillLoops(faces, report);
-    report.dissolvedVertices = dissolveValenceTwo(positions.size(), faces);
-
-    auto cage = assemble(positions, faces);
-    if (!cage) return cage;
-    if (signedVolume(*cage) < 0.0) {
-        for (Face& face : faces) std::reverse(face.begin(), face.end());
-        report.flipped = true;
-        cage = assemble(positions, faces);
-        if (!cage) return cage;
+    const double edge = meanEdgeLength(positions, body);
+    for (std::size_t k = 1; k < parts.size(); ++k) {
+        const std::size_t size = parts[k].size();
+        CageCleanup partReport;
+        const bool joined = params.joinParts && size >= params.minPartFaces &&
+                            closePart(positions, parts[k], partReport) &&
+                            everyEdgeShared(parts[k]) &&
+                            bridge(positions, body, std::move(parts[k]), edge);
+        if (joined) {
+            ++report.joinedComponents;
+            report.joinedComponentFaces += size;
+        } else {
+            ++report.droppedComponents;
+            report.droppedComponentFaces += size;
+        }
     }
+    auto cage = assemble(positions, body);
+    if (!cage) return cage;
     const CageStats stats = cageStats(*cage);
     if (!stats.closed() || stats.components != 1) {
         return fail(ErrorCode::InvalidState,
@@ -326,11 +470,12 @@ Result<QuadLayout> closeCage(const QuadLayout& raw, CageCleanup& report) {
     return cage;
 }
 
-Result<QuadRemeshResult> quadRemesh(const TriMesh& scan, const QuadRemeshParams& params) {
+Result<QuadRemeshResult>
+quadRemesh(const TriMesh& scan, const QuadRemeshParams& params, const CageCloseParams& close) {
     auto raw = quad::remesh(scan, params);
     if (!raw) return std::unexpected(raw.error());
     CageCleanup cleanup;
-    auto cage = closeCage(*raw, cleanup);
+    auto cage = closeCage(*raw, cleanup, close);
     if (!cage) return std::unexpected(cage.error());
 
     const SpatialIndex& index = scan.spatialIndex();

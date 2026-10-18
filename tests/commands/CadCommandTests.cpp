@@ -47,6 +47,27 @@ struct Session {
 
 } // namespace
 
+TEST_CASE("quad.remesh joins a loose part or leaves it out on request", "[commands][quad]") {
+    // A ball with a smaller ball 4 mm above it: two closed parts, as a post whose stem is too
+    // thin for the cage comes out of the remesher.
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh =
+        s.import(dir, combine({makeSphere(20.0, 4), makeSphere(6.0, 3, {0, 0, 30})}), "balls");
+    const Json joined = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 400}});
+    CHECK(joined["cleanup"]["joined_components"] == 1);
+    CHECK(joined["cleanup"]["dropped_components"] == 0);
+    CHECK(joined["stats"]["components"] == 1);
+    CHECK(joined["stats"]["closed"] == true);
+    const Json apart =
+        s.run("quad.remesh", {{"id", mesh}, {"target_faces", 400}, {"join_parts", false}});
+    CHECK(apart["cleanup"]["joined_components"] == 0);
+    CHECK(apart["cleanup"]["dropped_components"] == 1);
+    CHECK(apart["cleanup"]["dropped_component_faces"] ==
+          joined["cleanup"]["joined_component_faces"]);
+    CHECK(apart["stats"]["face_count"].get<int>() < joined["stats"]["face_count"].get<int>());
+}
+
 TEST_CASE("quad.remesh adds a closed cage and undoes as one step", "[commands][quad]") {
     Session s;
     const TempDir dir;
