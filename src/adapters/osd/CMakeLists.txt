@@ -3,6 +3,7 @@ m2c_add_library(osd
     SOURCES
         CageFit.cpp
         Limit.cpp
+        Refine.cpp
         Subdivision.cpp
         Tessellation.cpp
     DEPS

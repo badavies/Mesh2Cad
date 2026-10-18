@@ -276,6 +276,55 @@ TEST_CASE("A surface whose faces still meet at a sharp angle gives no solid", "[
     CHECK(buildSurface(remeshed->cage, &sphere, p).error().code == ErrorCode::InvalidArgument);
 }
 
+TEST_CASE("Subdividing a cage keeps its limit surface", "[stages][surface]") {
+    const QuadLayout cage = cubeCage(10.0);
+    const auto finer = subdivideCage(cage);
+    REQUIRE(finer);
+    CHECK(finer->faceCount() == 24);
+    CHECK(finer->vertexCount() == 26);
+    CHECK(cageStats(*finer).closed());
+    SurfaceBuildParams p;
+    p.fit = false;
+    const auto coarse = buildSurface(cage, nullptr, p);
+    const auto fine = buildSurface(*finer, nullptr, p);
+    REQUIRE(coarse);
+    REQUIRE(fine);
+    const double volume = coarse->solid.summary().volumeMm3;
+    CHECK(std::abs(fine->solid.summary().volumeMm3 - volume) < 1e-3 * volume);
+    CHECK(fine->seams.maxGapMm < 1e-6);
+}
+
+TEST_CASE("A fit farther from the scan than the target is refined and fitted again",
+          "[stages][surface]") {
+    const TriMesh sphere = makeSphere(20.0, 4);
+    QuadRemeshParams q;
+    q.targetFaces = 200;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    SurfaceBuildParams p;
+    p.fitting.iterations = 1;
+    const auto plain = buildSurface(remeshed->cage, &sphere, p);
+    REQUIRE(plain);
+    CHECK(plain->p95BeforeRefinementMm.empty());
+    CHECK(plain->fit.p95DistanceMm > 0.0);
+    CHECK(plain->fit.p95DistanceMm <= plain->fit.maxDistanceMm);
+    // A target no fit meets: refinement stops after maxRefinements steps.
+    p.refineToMm = 1e-9;
+    p.maxRefinements = 1;
+    const auto refined = buildSurface(remeshed->cage, &sphere, p);
+    REQUIRE(refined);
+    REQUIRE(refined->p95BeforeRefinementMm.size() == 1);
+    CHECK(refined->p95BeforeRefinementMm[0] == plain->fit.p95DistanceMm);
+    CHECK(refined->cage.faceCount() == remeshed->cage.faceVertices().size());
+    CHECK(refined->fit.p95DistanceMm < plain->fit.p95DistanceMm);
+    CHECK(refined->solid.summary().valid);
+    // A target the first fit meets makes no refinement.
+    p.refineToMm = 1.0;
+    CHECK(buildSurface(remeshed->cage, &sphere, p)->p95BeforeRefinementMm.empty());
+    p.refineToMm = -1.0;
+    CHECK(buildSurface(remeshed->cage, &sphere, p).error().code == ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][surface]") {
     SurfaceBuildParams p;
     p.fit = false;

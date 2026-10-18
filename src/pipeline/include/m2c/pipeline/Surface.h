@@ -4,6 +4,8 @@
 // Catmull-Clark limit surface into B-spline faces (OpenSubdiv adapter) and sew them into a solid
 // (Open CASCADE adapter).
 
+#include <vector>
+
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/adapters/osd/Subdivision.h"
 #include "m2c/core/Solid.h"
@@ -17,6 +19,7 @@ using osd::extractPatches;
 using osd::fitCage;
 using osd::PatchParams;
 using osd::PatchResult;
+using osd::subdivideCage;
 using osd::tessellateLimit;
 
 struct SurfaceBuildParams {
@@ -29,6 +32,11 @@ struct SurfaceBuildParams {
     /// Faces of the kept try that meet at a larger angle fold the surface over itself; the build
     /// then fails rather than return a solid that crosses itself.
     double maxFoldAngleDeg{90.0};
+    /// Deviation-driven refinement: while the fit's 95th-percentile sample distance is above
+    /// this, the fitted cage gets one Catmull-Clark step (four times the quads, same layout) and
+    /// is fitted again, up to maxRefinements times. 0 = off.
+    double refineToMm{0.0};
+    unsigned maxRefinements{2};
     double sewToleranceMm{1e-4};
     /// Merge rectangles of cage quads into one face each (patch merging; mergeFaces()).
     bool merge{true};
@@ -40,7 +48,7 @@ struct SurfaceBuildResult {
     QuadLayout cage;       ///< The cage the faces come from (fitted unless fit was off).
     CageFitResult fit;     ///< Zero samples when fit was off.
     double smoothing{0.0}; ///< The smoothing of the fit that was kept.
-    unsigned fits{0};      ///< Fits made (more than one when a fit folded the surface).
+    unsigned fits{0};      ///< Fits made on the final cage (more than one when a fit folded it).
     std::size_t regularPieces{0};
     std::size_t capPieces{0};
     double maxCapErrorMm{0.0};
@@ -48,6 +56,8 @@ struct SurfaceBuildResult {
     std::size_t facesBeforeMerge{0}; ///< One per cage quad (or corner quad of another face).
     std::size_t mergedFaces{0};      ///< Faces made from more than one cage quad.
     std::size_t unmergedQuads{0};    ///< Quads left single because their region was no rectangle.
+    /// The fit's 95th-percentile distance before each refinement; empty when none was made.
+    std::vector<double> p95BeforeRefinementMm;
 };
 
 /// Fits, extracts and sews in one go. The cage must be closed; `scan` may be null when fit is off.

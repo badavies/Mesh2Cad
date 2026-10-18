@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/core/Error.h"
@@ -29,24 +30,31 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
     if (params.fit && scan == nullptr) {
         return fail(ErrorCode::InvalidArgument, "fitting needs a scan");
     }
-    if (!(params.maxSeamAngleDeg > 0.0) || !(params.maxFoldAngleDeg > 0.0) || params.fitTries < 1) {
+    if (!(params.maxSeamAngleDeg > 0.0) || !(params.maxFoldAngleDeg > 0.0) || params.fitTries < 1 ||
+        !(params.refineToMm >= 0.0)) {
         return fail(ErrorCode::InvalidArgument,
-                    "the angle limits must be positive and the fit tried at least once");
+                    "the angle limits must be positive, the fit tried "
+                    "at least once and the refinement target at least 0");
     }
     // A fit that folds the surface shows as a large angle between the normals where faces meet
     // (the limit surface is smooth, apart from the small kinks at caps). Such a fit is tried
     // again with twice the smoothing; the last try is kept if none passes.
+    // A fit still farther from the scan than refineToMm (95th percentile) is refined: its cage
+    // gets one Catmull-Clark step, which keeps the surface and its layout, and is fitted again.
     CageFitParams fitting = params.fitting;
+    QuadLayout start = cage;
     unsigned tries = 0;
+    std::vector<double> p95BeforeRefinement;
     for (;;) {
-        CageFitResult fit{.cage = cage,
+        CageFitResult fit{.cage = start,
                           .samples = 0,
                           .ignoredSamples = 0,
                           .rmsDistanceMm = 0.0,
                           .maxDistanceMm = 0.0,
+                          .p95DistanceMm = 0.0,
                           .rmsBeforeRoundMm = {}};
         if (params.fit) {
-            auto fitted = fitCage(cage, *scan, fitting);
+            auto fitted = fitCage(start, *scan, fitting);
             if (!fitted) return std::unexpected(fitted.error());
             fit = std::move(*fitted);
         }
@@ -67,6 +75,15 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
                             " degrees after " + std::to_string(tries) +
                             (tries == 1 ? " fit" : " fits") +
                             "; the cage has folded faces or is too coarse for thin parts");
+        }
+        if (params.fit && params.refineToMm > 0.0 && fit.p95DistanceMm > params.refineToMm &&
+            p95BeforeRefinement.size() < params.maxRefinements) {
+            auto finer = subdivideCage(fit.cage);
+            if (!finer) return std::unexpected(finer.error());
+            p95BeforeRefinement.push_back(fit.p95DistanceMm);
+            start = std::move(*finer);
+            tries = 0;
+            continue;
         }
         const std::size_t before = patches->faces.size();
         std::size_t mergedFaces = 0, unmergedQuads = 0;
@@ -95,7 +112,8 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
                                   .seams = *seams,
                                   .facesBeforeMerge = before,
                                   .mergedFaces = mergedFaces,
-                                  .unmergedQuads = unmergedQuads};
+                                  .unmergedQuads = unmergedQuads,
+                                  .p95BeforeRefinementMm = std::move(p95BeforeRefinement)};
     }
 }
 

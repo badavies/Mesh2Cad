@@ -63,10 +63,11 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds "
         "the surface (faces meeting at more than 10 degrees) is made again with twice the "
         "smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced "
-        "from the irregular vertices, are merged into one face each. Adds a solid object; the quad "
-        "layout and mesh are "
-        "unchanged. Fails, adding nothing, unless the result is one valid closed solid of "
-        "positive volume whose faces, after the last fit, meet at no more than 90 degrees.",
+        "from the irregular vertices, are merged into one face each. With refine_to_mm, a fit "
+        "farther from the mesh than that (95th percentile) has its cage subdivided once and is "
+        "fitted again, up to max_refinements times. Adds a solid object; the quad layout and "
+        "mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid "
+        "of positive volume whose faces, after the last fit, meet at no more than 90 degrees.",
         R"({
             "type":"object",
             "properties":{
@@ -79,6 +80,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "max_sample_distance_mm":{"type":"number","minimum":0,"default":0,"description":"Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length."},
                 "isolation_level":{"type":"integer","minimum":1,"maximum":4,"default":2,"description":"Refinement around irregular vertices: higher gives smaller caps and more faces' pieces."},
                 "merge":{"type":"boolean","default":true,"description":"Merge rectangles of cage quads into one face each (fewer faces, same surface)."},
+                "refine_to_mm":{"type":"number","minimum":0,"default":0,"description":"While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off."},
+                "max_refinements":{"type":"integer","minimum":0,"maximum":3,"default":2,"description":"Most subdivisions refine_to_mm may make."},
                 "name":{"type":"string"}
             },
             "required":["id"],"additionalProperties":false})",
@@ -96,6 +99,10 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(name, optionalString(params, "name"));
             M2C_TRY(merge, optionalBool(params, "merge", true));
             p.merge = *merge;
+            M2C_TRY(refineTo, optionalNumber(params, "refine_to_mm", 0.0, 0.0, 1e6));
+            M2C_TRY(maxRefinements, optionalInteger(params, "max_refinements", 2, 0, 3));
+            p.refineToMm = *refineTo;
+            p.maxRefinements = static_cast<unsigned>(*maxRefinements);
             p.fit = *fit;
             p.fitting.iterations = static_cast<unsigned>(*iterations);
             p.fitting.smoothing = *smoothing;
@@ -138,9 +145,12 @@ void addSurfaceCommands(std::vector<Command>& out) {
                                      {"ignored_samples", built->fit.ignoredSamples},
                                      {"rms_distance_mm", built->fit.rmsDistanceMm},
                                      {"max_distance_mm", built->fit.maxDistanceMm},
+                                     {"p95_distance_mm", built->fit.p95DistanceMm},
                                      {"rms_before_round_mm", built->fit.rmsBeforeRoundMm},
                                      {"smoothing", built->smoothing},
-                                     {"fits", built->fits}};
+                                     {"fits", built->fits},
+                                     {"refinements", built->p95BeforeRefinementMm.size()},
+                                     {"p95_before_refinement_mm", built->p95BeforeRefinementMm}};
             }
             return result;
         }));

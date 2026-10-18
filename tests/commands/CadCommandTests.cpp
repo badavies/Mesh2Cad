@@ -140,6 +140,9 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK(result["fit"]["rms_distance_mm"].get<double>() < 0.05);
     CHECK(result["fit"]["fits"] == 1);
     CHECK(result["fit"]["smoothing"] == 0.05);
+    CHECK(result["fit"]["refinements"] == 0);
+    CHECK(result["fit"]["p95_distance_mm"].get<double>() <=
+          result["fit"]["max_distance_mm"].get<double>());
     CHECK(result["cap_pieces"].get<int>() > 0);
 
     const auto object = s.document.find(solid);
@@ -155,6 +158,18 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK(info["summary"] == result["summary"]);
     CHECK(info["name"] == "ball (quads) (solid)");
     CHECK_FALSE(s.tryRun("solid.info", {{"id", mesh}}));
+
+    // Refining to a target the first fit misses subdivides the cage once and fits again.
+    const double p95 = result["fit"]["p95_distance_mm"].get<double>();
+    const Json refined = s.run(
+        "surface.build",
+        {{"id", cage}, {"mesh_id", mesh}, {"refine_to_mm", p95 / 2.0}, {"max_refinements", 1}});
+    CHECK(refined["summary"]["valid"] == true);
+    CHECK(refined["fit"]["refinements"] == 1);
+    CHECK(refined["fit"]["p95_before_refinement_mm"] == Json::array({p95}));
+    CHECK(refined["fit"]["p95_distance_mm"].get<double>() < p95);
+    CHECK_FALSE(
+        s.tryRun("surface.build", {{"id", cage}, {"mesh_id", mesh}, {"max_refinements", 4}}));
 
     // Without fitting, no mesh is needed.
     const Json unfitted = s.run("surface.build", {{"id", cage}, {"fit", false}});
