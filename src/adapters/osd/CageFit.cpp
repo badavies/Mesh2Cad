@@ -133,6 +133,8 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
     double bestRms = std::numeric_limits<double>::infinity();
     std::size_t bestUsed = 0;
     double bestMax = 0.0;
+    double bestP95 = 0.0;
+    std::vector<double> distances;
     for (unsigned it = 0; it <= params.iterations; ++it) {
         auto tess = tessellate(**limit, (*limit)->patchPoints(positions), kSearchGrid);
         if (!tess) return std::unexpected(tess.error());
@@ -147,6 +149,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         double sum2 = 0.0;
         double maxD = 0.0;
         std::size_t used = 0;
+        distances.clear();
         for (Eigen::Index k = 0; k < m; ++k) {
             const Vec3d& q = samples[static_cast<std::size_t>(k)];
             const auto [patch, s, t, distance, surfaceNormal] = locate(*tess, q);
@@ -155,6 +158,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
             if (distance > gate) continue; // an empty row: the sample is left out
             sum2 += distance * distance;
             maxD = std::max(maxD, distance);
+            distances.push_back(distance);
             ++used;
             (*limit)->weights(patch, s, t, w);
             const std::array nc{surfaceNormal.x, surfaceNormal.y, surfaceNormal.z};
@@ -176,6 +180,10 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
             bestRms = rms;
             bestUsed = used;
             bestMax = maxD;
+            const auto at =
+                distances.begin() + static_cast<std::ptrdiff_t>((distances.size() - 1) * 95 / 100);
+            std::ranges::nth_element(distances, at);
+            bestP95 = *at;
             best = positions;
         }
         if (it == params.iterations) break; // the last pass only measures
@@ -220,6 +228,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
                          .ignoredSamples = samples.size() - bestUsed,
                          .rmsDistanceMm = bestUsed > 0 ? bestRms : 0.0,
                          .maxDistanceMm = bestMax,
+                         .p95DistanceMm = bestP95,
                          .rmsBeforeRoundMm = std::move(history)};
 }
 

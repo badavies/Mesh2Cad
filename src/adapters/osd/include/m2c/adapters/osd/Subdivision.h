@@ -29,6 +29,7 @@ struct CageFitResult {
     std::size_t ignoredSamples{0}; ///< Left out in the last round, too far from the surface.
     double rmsDistanceMm{0.0};     ///< From the used samples to the fitted limit surface.
     double maxDistanceMm{0.0};
+    double p95DistanceMm{0.0};            ///< 95th percentile of the used samples' distances.
     std::vector<double> rmsBeforeRoundMm; ///< RMS distance at the start of each round.
 };
 
@@ -59,6 +60,11 @@ struct PatchResult {
 /// each face is a uniform grid of pieces. Neighbouring faces can have different numbers of spans
 /// but meet along the same limit curves. The cage must be closed.
 [[nodiscard]] Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& params);
+
+/// One uniform Catmull-Clark step: every n-sided face becomes n quads. The limit surface is the
+/// same and so are the irregular vertices, so a fit of the result starts where the coarse fit
+/// ended, with four times the control. The cage must be closed.
+[[nodiscard]] Result<QuadLayout> subdivideCage(const QuadLayout& cage);
 
 /// Points of the limit surface on a grid of n x n per patch (two triangles per grid cell), with
 /// duplicated vertices along patch edges. For display and distance checks.

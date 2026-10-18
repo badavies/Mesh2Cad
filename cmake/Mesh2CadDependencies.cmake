@@ -295,6 +295,11 @@ endif()
 if(OpenSubdiv_INCLUDE_DIR)
     target_include_directories(m2c_osd_deps SYSTEM INTERFACE "${OpenSubdiv_INCLUDE_DIR}")
 endif()
+if(WIN32)
+    # OpenSubdiv's limit masks (primvarRefiner.h) use M_PI, which MSVC's <cmath> defines only on
+    # request.
+    target_compile_definitions(m2c_osd_deps INTERFACE _USE_MATH_DEFINES)
+endif()
 
 # ---- Instant Meshes (ADR 0009) ------------------------------------------------------------------
 # Not packaged anywhere: its field and extraction sources are compiled into the quad adapter
