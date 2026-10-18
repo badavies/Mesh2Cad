@@ -166,7 +166,9 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
         for (std::size_t p : byFace[f]) finest = std::min(finest, lim.domain(p).size);
         SurfacePatch face;
         face.cageFace = lim.cageFace(f);
-        face.spans = static_cast<std::size_t>(std::lround(1.0 / finest));
+        const auto spans = static_cast<std::size_t>(std::lround(1.0 / finest));
+        face.uBreaks = uniformBreaks(spans);
+        face.vBreaks = face.uBreaks;
         const std::size_t row = face.polesPerRow();
         face.poles.resize(row * row);
         std::size_t covered = 0;
@@ -194,7 +196,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
             covered += k * k;
             if (!lim.isRegular(p)) face.capPieces += k * k;
         }
-        if (covered != face.spans * face.spans) {
+        if (covered != spans * spans) {
             return fail(ErrorCode::Internal,
                         "OpenSubdiv patches do not tile ptex face " + std::to_string(f));
         }

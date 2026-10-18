@@ -69,7 +69,8 @@ private:
     SolidSummary summary_;
 };
 
-/// Triangulates faces on an n x n grid each, vertices shared along each face's own grid only.
+/// Triangulates faces on an n x n grid per cage quad they cover, vertices shared along each face's
+/// own grid only.
 /// Faces made by the surface build meet exactly, so the result looks closed but is not welded.
 [[nodiscard]] Result<FaceTessellation> tessellate(const std::vector<SurfacePatch>& faces, int n);
 
@@ -82,7 +83,9 @@ struct SeamReport {
 
 /// Samples every face edge at matching parameters (samplesPerEdge per half cage edge) and pairs
 /// samples of different faces that lie within toleranceMm of each other; knot lines inside a
-/// face are compared piece to piece. A closed surface has no unmatched samples. Deterministic.
+/// face are compared piece to piece. For faces of one cage quad each, before merging: merged
+/// faces' edge samples would not land on their neighbours'. A closed surface has no unmatched
+/// samples. Deterministic.
 [[nodiscard]] Result<SeamReport>
 measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double toleranceMm);
 

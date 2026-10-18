@@ -68,7 +68,7 @@ TEST_CASE("A regular cage gives exact faces with no caps", "[stages][surface]") 
     CHECK(result->faces.size() == cage.faceCount());
     CHECK(result->capPieces == 0);
     CHECK(result->regularPieces == cage.faceCount());
-    for (const SurfacePatch& f : result->faces) CHECK(f.spans == 1);
+    for (const SurfacePatch& f : result->faces) CHECK((f.piecesU() == 1 && f.piecesV() == 1));
     // The faces are the limit surface itself.
     const auto limit = tessellateLimit(cage, 2, 4);
     REQUIRE(limit);
@@ -97,8 +97,9 @@ TEST_CASE("Irregular corners become caps that meet their neighbours", "[stages][
         CHECK(result->faces.size() == 6);
         CHECK(result->capPieces > 0);
         for (const SurfacePatch& f : result->faces) {
-            CHECK(f.spans == std::size_t{1} << level);
-            CHECK(f.poles.size() == f.polesPerRow() * f.polesPerRow());
+            CHECK(f.piecesU() == std::size_t{1} << level);
+            CHECK(f.piecesV() == f.piecesU());
+            CHECK(f.poles.size() == f.polesPerRow() * f.poleRows());
         }
         const SeamReport s = seams(result->faces, 16, 1e-5);
         CHECK(s.unmatchedSamples == 0);

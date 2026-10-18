@@ -90,24 +90,35 @@ std::string utf8(const std::filesystem::path& path) {
     return {s.begin(), s.end()};
 }
 
+/// Knots with multiplicity four at the ends and three inside: pieces meet with position
+/// continuity.
+void bezierKnots(const std::vector<double>& breaks,
+                 NCollection_Array1<double>& knots,
+                 NCollection_Array1<int>& mults) {
+    const auto last = static_cast<int>(breaks.size()) - 1;
+    knots.Resize(1, last + 1, false);
+    mults.Resize(1, last + 1, false);
+    for (int k = 0; k <= last; ++k) {
+        knots.SetValue(k + 1, breaks[static_cast<std::size_t>(k)]);
+        mults.SetValue(k + 1, k == 0 || k == last ? 4 : 3);
+    }
+}
+
 opencascade::handle<Geom_BSplineSurface> toSurface(const SurfacePatch& patch) {
     const auto row = static_cast<int>(patch.polesPerRow());
-    NCollection_Array2<gp_Pnt> poles(1, row, 1, row);
-    for (int j = 0; j < row; ++j) {
+    const auto rows = static_cast<int>(patch.poleRows());
+    NCollection_Array2<gp_Pnt> poles(1, row, 1, rows);
+    for (int j = 0; j < rows; ++j) {
         for (int i = 0; i < row; ++i) {
             const Vec3d& p = patch.poles[static_cast<std::size_t>(j * row + i)];
             poles.SetValue(i + 1, j + 1, gp_Pnt(p.x, p.y, p.z));
         }
     }
-    // Pieces meet with position continuity: interior knots of multiplicity three.
-    const auto spans = static_cast<int>(patch.spans);
-    NCollection_Array1<double> knots(1, spans + 1);
-    NCollection_Array1<int> mults(1, spans + 1);
-    for (int k = 0; k <= spans; ++k) {
-        knots.SetValue(k + 1, static_cast<double>(k) / spans);
-        mults.SetValue(k + 1, k == 0 || k == spans ? 4 : 3);
-    }
-    return new Geom_BSplineSurface(poles, knots, knots, mults, mults, 3, 3);
+    NCollection_Array1<double> uKnots(1, 2), vKnots(1, 2);
+    NCollection_Array1<int> uMults(1, 2), vMults(1, 2);
+    bezierKnots(patch.uBreaks, uKnots, uMults);
+    bezierKnots(patch.vBreaks, vKnots, vMults);
+    return new Geom_BSplineSurface(poles, uKnots, vKnots, uMults, vMults, 3, 3);
 }
 
 SolidSummary summarise(const TopoDS_Shape& shape) {
