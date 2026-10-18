@@ -77,17 +77,24 @@ private:
 
 /// How well faces meet along their edges and along the knot lines inside them.
 struct SeamReport {
-    double maxGapMm{0.0};            ///< Largest distance between matching edge samples.
-    double maxNormalAngleDeg{0.0};   ///< Largest angle between the normals on the two sides.
+    double maxGapMm{0.0};          ///< Largest distance between matching edge samples.
+    double maxNormalAngleDeg{0.0}; ///< Largest angle between the normals on the two sides.
+    /// The same, split by whether a cap piece is on either side (where the surface is only
+    /// nearly smooth) or both pieces are regular (where it should be exactly smooth).
+    double maxCapNormalAngleDeg{0.0};
+    double maxRegularNormalAngleDeg{0.0};
     std::size_t unmatchedSamples{0}; ///< Edge samples with no other face within the tolerance.
 };
 
 /// Samples every face edge at matching parameters (samplesPerEdge per half cage edge) and pairs
 /// samples of different faces that lie within toleranceMm of each other; knot lines inside a
 /// face are compared piece to piece. For faces of one cage quad each, before merging: merged
-/// faces' edge samples would not land on their neighbours'. A closed surface has no unmatched
-/// samples. Deterministic.
-[[nodiscard]] Result<SeamReport>
-measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double toleranceMm);
+/// faces' edge samples would not land on their neighbours'. `caps` says, per face, which pieces
+/// (j * piecesU + i) are caps; empty counts every piece as regular. A closed surface has no
+/// unmatched samples. Deterministic.
+[[nodiscard]] Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
+                                              int samplesPerEdge,
+                                              double toleranceMm,
+                                              const std::vector<std::vector<bool>>& caps = {});
 
 } // namespace m2c

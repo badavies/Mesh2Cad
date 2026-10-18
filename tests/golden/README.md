@@ -36,7 +36,7 @@ To keep the whole golden set somewhere else, point `M2C_GOLDEN_DIR` at a folder 
 {"command":"align.principal","params":{"id":1,"origin":"bounds_bottom_center"}}
 ```
 
-`metrics.json` names the scan and lists query commands to run on the final document and what their results must contain. Keys are JSON pointers into the result; a plain value must match exactly, `{"min": a, "max": b}` is an inclusive range.
+`metrics.json` names the scan and lists query commands to run on the final document and what their results must contain. A check with `"step": n` instead of a command reads the result of the session's n-th line (counting from 1), for figures only that command reports, such as `surface.build`'s seam angles. Keys are JSON pointers into the result; a plain value must match exactly, `{"min": a, "max": b}` is an inclusive range.
 
 ```json
 {

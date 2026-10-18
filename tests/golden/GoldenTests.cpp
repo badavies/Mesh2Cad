@@ -209,11 +209,13 @@ void runGolden(const fs::path& folder) {
 
     // CLI path, timed against the stored budget.
     Engine cli;
+    std::vector<Json> results;
     const auto start = std::chrono::steady_clock::now();
     for (const auto& step : steps) {
         INFO(step.command << " " << step.params.dump());
         const auto result = cli.registry.execute(cli.context, step.command, step.params);
         REQUIRE(result.has_value());
+        results.push_back(*result);
     }
     const double seconds =
         std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
@@ -265,15 +267,24 @@ void runGolden(const fs::path& folder) {
         CHECK(a->mesh->indices() == c->mesh->indices());
     }
 
-    // Stored metrics, read through query commands on the final document.
+    // Stored metrics, read through query commands on the final document or, for a check that
+    // names a "step" (1 = the session's first line), from that step's own result.
     for (const Json& check : metrics.value("checks", Json::array())) {
-        const std::string command = check.at("command").get<std::string>();
         INFO("check " << check.dump());
-        const auto result = cli.registry.execute(
-            cli.context, command, resolvePaths(folder, check.value("params", Json::object())));
-        REQUIRE(result.has_value());
+        Json result;
+        if (check.contains("step")) {
+            const auto step = check.at("step").get<std::size_t>();
+            REQUIRE((step >= 1 && step <= results.size()));
+            result = results[step - 1];
+        } else {
+            const std::string command = check.at("command").get<std::string>();
+            auto queried = cli.registry.execute(
+                cli.context, command, resolvePaths(folder, check.value("params", Json::object())));
+            REQUIRE(queried.has_value());
+            result = std::move(*queried);
+        }
         for (const auto& [pointer, expected] : check.at("expect").items()) {
-            checkMetric(*result, pointer, expected);
+            checkMetric(result, pointer, expected);
         }
     }
 }

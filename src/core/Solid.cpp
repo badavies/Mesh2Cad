@@ -13,6 +13,7 @@ namespace {
 struct EdgeSample {
     Vec3d p, n; // position, unit normal (zero where the surface is degenerate)
     std::size_t face;
+    bool cap; // on a cap piece
 };
 
 Vec3d unit(const Vec3d& v) {
@@ -33,18 +34,35 @@ double angleDeg(const Vec3d& a, const Vec3d& b) {
 
 } // namespace
 
-Result<SeamReport>
-measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double toleranceMm) {
+Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
+                                int samplesPerEdge,
+                                double toleranceMm,
+                                const std::vector<std::vector<bool>>& caps) {
     if (samplesPerEdge < 1 || samplesPerEdge > 64 || !(toleranceMm > 0.0)) {
         return fail(ErrorCode::InvalidArgument,
                     "samples per edge must be 1 to 64 and the tolerance positive");
     }
+    if (!caps.empty()) {
+        bool fits = caps.size() == faces.size();
+        for (std::size_t f = 0; fits && f < faces.size(); ++f) {
+            fits = caps[f].size() == faces[f].piecesU() * faces[f].piecesV();
+        }
+        if (!fits) return fail(ErrorCode::InvalidArgument, "the cap flags do not fit the faces");
+    }
+    const auto isCap = [&](std::size_t f, std::size_t i, std::size_t j) {
+        return !caps.empty() && caps[f][j * faces[f].piecesU() + i];
+    };
     // A cage face with other than four sides has one face per corner, each spanning half of
     // the cage edges it touches; a whole quad samples its edges twice as densely so that its
     // samples land on theirs.
     std::unordered_map<std::uint32_t, std::size_t> perCageFace;
     for (const SurfacePatch& face : faces) ++perCageFace[face.cageFace];
     SeamReport out;
+    const auto record = [&out](double angle, bool cap) {
+        out.maxNormalAngleDeg = std::max(out.maxNormalAngleDeg, angle);
+        double& split = cap ? out.maxCapNormalAngleDeg : out.maxRegularNormalAngleDeg;
+        split = std::max(split, angle);
+    };
     std::vector<EdgeSample> samples;
     for (std::size_t f = 0; f < faces.size(); ++f) {
         const SurfacePatch& face = faces[f];
@@ -52,7 +70,11 @@ measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double 
         for (int i = 0; i <= k; ++i) {
             const double s = static_cast<double>(i) / k;
             for (const auto& [u, v] : {std::pair{s, 0.0}, {s, 1.0}, {0.0, s}, {1.0, s}}) {
-                samples.push_back({evaluate(face, u, v), unitNormal(face, u, v), f});
+                samples.push_back(
+                    {evaluate(face, u, v),
+                     unitNormal(face, u, v),
+                     f,
+                     isCap(f, pieceAt(face.uBreaks, u).first, pieceAt(face.vBreaks, v).first)});
             }
         }
         // Knot lines inside the face: the pieces on either side share their poles.
@@ -61,18 +83,16 @@ measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double 
             const double s = static_cast<double>(i) / kk;
             for (std::size_t a = 0; a < face.piecesU(); ++a) {
                 for (std::size_t b = 1; b < face.piecesV(); ++b) {
-                    out.maxNormalAngleDeg =
-                        std::max(out.maxNormalAngleDeg,
-                                 angleDeg(unit(normal(face.piece(a, b - 1), s, 1.0)),
-                                          unit(normal(face.piece(a, b), s, 0.0))));
+                    record(angleDeg(unit(normal(face.piece(a, b - 1), s, 1.0)),
+                                    unit(normal(face.piece(a, b), s, 0.0))),
+                           isCap(f, a, b - 1) || isCap(f, a, b));
                 }
             }
             for (std::size_t b = 0; b < face.piecesV(); ++b) {
                 for (std::size_t a = 1; a < face.piecesU(); ++a) {
-                    out.maxNormalAngleDeg =
-                        std::max(out.maxNormalAngleDeg,
-                                 angleDeg(unit(normal(face.piece(a - 1, b), 1.0, s)),
-                                          unit(normal(face.piece(a, b), 0.0, s))));
+                    record(angleDeg(unit(normal(face.piece(a - 1, b), 1.0, s)),
+                                    unit(normal(face.piece(a, b), 0.0, s))),
+                           isCap(f, a - 1, b) || isCap(f, a, b));
                 }
             }
         }
@@ -106,7 +126,7 @@ measureSeams(const std::vector<SurfacePatch>& faces, int samplesPerEdge, double 
                         if (b.face == a.face || gap > toleranceMm) continue;
                         found = true;
                         out.maxGapMm = std::max(out.maxGapMm, gap);
-                        out.maxNormalAngleDeg = std::max(out.maxNormalAngleDeg, angleDeg(a.n, b.n));
+                        record(angleDeg(a.n, b.n), a.cap || b.cap);
                     }
                 }
             }

@@ -132,6 +132,8 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
                Catch::Matchers::WithinAbs(20.0, 0.1));
     CHECK(result["seams"]["max_gap_mm"].get<double>() < 1e-6);
     CHECK(result["seams"]["max_normal_angle_deg"].get<double>() < 1.0);
+    CHECK(result["seams"]["max_cap_normal_angle_deg"] == result["seams"]["max_normal_angle_deg"]);
+    CHECK(result["seams"]["max_regular_normal_angle_deg"].get<double>() < 1e-3);
     CHECK(result["seams"]["unmatched_samples"] == 0);
     CHECK(result["summary"]["volume_mm3"].get<double>() > 33000.0);
     CHECK(result["summary"]["volume_mm3"].get<double>() < 33600.0);

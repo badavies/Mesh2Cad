@@ -2,6 +2,7 @@
 // Surface build stage tests (issue #17): cage fitting and B-spline face extraction, checked by
 // distance to known shapes, gaps between faces and the angle across cap edges.
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <vector>
@@ -86,6 +87,14 @@ TEST_CASE("A regular cage gives exact faces with no caps", "[stages][surface]") 
     CHECK(s.unmatchedSamples == 0);
     CHECK(s.maxGapMm < 1e-6);
     CHECK(s.maxNormalAngleDeg < 1e-3); // C2 everywhere
+    const auto split = measureSeams(result->faces, 8, 1e-6, result->caps);
+    REQUIRE(split);
+    CHECK(split->maxCapNormalAngleDeg == 0.0);
+    CHECK(split->maxRegularNormalAngleDeg == s.maxNormalAngleDeg);
+    // Cap flags that do not fit the faces are refused.
+    auto wrong = result->caps;
+    wrong.pop_back();
+    CHECK_FALSE(measureSeams(result->faces, 8, 1e-6, wrong));
 }
 
 TEST_CASE("Irregular corners become caps that meet their neighbours", "[stages][surface]") {
@@ -106,6 +115,18 @@ TEST_CASE("Irregular corners become caps that meet their neighbours", "[stages][
         CHECK(s.maxGapMm < 1e-6);
         CHECK(s.maxNormalAngleDeg < 0.5); // caps fit the tangent planes along their edges
         CHECK(result->maxCapErrorMm < 0.05);
+        // Only the caps bend the normal: between regular pieces the surface is C2.
+        REQUIRE(result->caps.size() == result->faces.size());
+        std::size_t flagged = 0;
+        for (const auto& c : result->caps)
+            flagged += std::size_t(std::count(c.begin(), c.end(), true));
+        CHECK(flagged == result->capPieces); // caps are of the finest size, one piece each
+        const auto split = measureSeams(result->faces, 16, 1e-5, result->caps);
+        REQUIRE(split);
+        CHECK(split->maxNormalAngleDeg == s.maxNormalAngleDeg);
+        CHECK(split->maxCapNormalAngleDeg == s.maxNormalAngleDeg);
+        CHECK(split->maxCapNormalAngleDeg > 1e-3);
+        CHECK(split->maxRegularNormalAngleDeg < 1e-3);
     }
 }
 
