@@ -136,7 +136,7 @@ CageStats cageStats(const QuadLayout& cage) {
     edges.reserve(cage.faceVertices().size());
     std::vector<std::uint32_t> uses(cage.vertexCount(), 0);
     std::vector<std::uint32_t> parent(cage.vertexCount());
-    std::iota(parent.begin(), parent.end(), 0u);
+    std::ranges::iota(parent, 0u);
     for (std::size_t f = 0; f < cage.faceCount(); ++f) {
         const auto face = cage.face(f);
         ++stats.faceDegrees[face.size()];
@@ -175,7 +175,7 @@ CageStats cageStats(const QuadLayout& cage) {
         ++stats.valences[n];
         if (n != 4) ++stats.extraordinaryVertices;
         fan.resize(n);
-        std::iota(fan.begin(), fan.end(), 0u);
+        std::ranges::iota(fan, 0u);
         firstFaceOfNeighbour.clear();
         for (std::uint32_t k = 0; k < n; ++k) {
             const auto face = cage.face(cornerFace[cornerStart[v] + k]);

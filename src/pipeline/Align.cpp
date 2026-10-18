@@ -228,7 +228,7 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
             // Matches further off than three times the (area-weighted) median are left out, so
             // an asymmetric feature does not pull the plane.
             order.resize(samples.size());
-            std::iota(order.begin(), order.end(), std::size_t{0});
+            std::ranges::iota(order, std::size_t{0});
             std::ranges::sort(order, [&](const std::size_t i, const std::size_t j) {
                 return matches[i].gap < matches[j].gap;
             });
