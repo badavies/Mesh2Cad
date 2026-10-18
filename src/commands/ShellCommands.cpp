@@ -2,9 +2,19 @@
 // Shell detection: find, select, split, keep or delete unconnected parts.
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/Transform.h"
+#include "m2c/document/Document.h"
 #include "m2c/pipeline/MeshTools.h"
 #include "m2c/pipeline/Shells.h"
 

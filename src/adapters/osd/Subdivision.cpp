@@ -3,11 +3,22 @@
 #include "m2c/adapters/osd/Subdivision.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <Eigen/Dense>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/SurfacePatch.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 #include "Limit.h"
 #include "Tessellation.h"

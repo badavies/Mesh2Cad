@@ -5,6 +5,8 @@
 #include <CGAL/Polygon_mesh_processing/remesh.h>
 
 #include "m2c/adapters/cgal/MeshTools.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 
 #include "CgalMesh.h"
 

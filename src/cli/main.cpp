@@ -11,6 +11,7 @@
 // Exit status: 0 if every command succeeded, 1 if a command failed, 2 for a usage error.
 // A batch stops at the first failing command.
 
+#include <cstddef>
 #include <fstream>
 #include <iostream>
 #include <span>
@@ -20,6 +21,7 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
 #include "m2c/document/Document.h"
 
 namespace {

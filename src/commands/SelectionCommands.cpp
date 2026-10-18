@@ -4,8 +4,19 @@
 // selections the same way and no command ever carries face index lists.
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+#include "m2c/document/Document.h"
 #include "m2c/pipeline/Select.h"
 #include "m2c/pipeline/Shells.h"
 
@@ -122,8 +133,8 @@ void addSelectionCommands(std::vector<Command>& out) {
                     return fail(ErrorCode::InvalidArgument,
                                 "give either 'center' or a non-empty 'centers' list");
                 }
-                for (std::size_t i = 0; i < list.size(); ++i) {
-                    M2C_TRY(c, requireVec3(Json{{"p", list[i]}}, "p"));
+                for (const auto& i : list) {
+                    M2C_TRY(c, requireVec3(Json{{"p", i}}, "p"));
                     centers.push_back(*c);
                 }
             } else {

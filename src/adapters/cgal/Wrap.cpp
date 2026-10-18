@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <array>
+#include <cstddef>
+#include <vector>
+
 #include <CGAL/alpha_wrap_3.h>
 
 #include "m2c/adapters/cgal/MeshTools.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 
 #include "CgalMesh.h"
 

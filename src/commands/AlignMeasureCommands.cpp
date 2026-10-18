@@ -2,9 +2,18 @@
 // Alignment (3-2-1 datum and automatic) and point-to-point measurement.
 
 #include <cmath>
+#include <cstddef>
 #include <memory>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/Measurement.h"
+#include "m2c/core/Transform.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/document/Document.h"
 #include "m2c/pipeline/Align.h"
 #include "m2c/pipeline/Measure.h"
 
@@ -214,7 +223,7 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
                 const double det = m[0] * (m[4] * m[8] - m[5] * m[7]) -
                                    m[1] * (m[3] * m[8] - m[5] * m[6]) +
                                    m[2] * (m[3] * m[7] - m[4] * m[6]);
-                if (!(error <= 1e-6 && det > 0.0)) { // also refuses NaN
+                if (error > 1e-6 || det <= 0.0) { // also refuses NaN
                     return fail(ErrorCode::InvalidArgument, "rotation is not a rotation matrix");
                 }
             }

@@ -3,12 +3,19 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <numbers>
 #include <numeric>
+#include <utility>
 #include <vector>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -65,7 +72,7 @@ VertexRing buildVertexRing(const TriMesh& mesh) {
 
 Result<TriMesh>
 smoothTaubin(const TriMesh& mesh, const SmoothParams& params, const MeshSelection* selection) {
-    if (!(params.strength > 0.0 && params.strength <= 1.0)) {
+    if (params.strength <= 0.0 || params.strength > 1.0) {
         return fail(ErrorCode::InvalidArgument, "strength must be in (0, 1]");
     }
     if (selection != nullptr && selection->size() != mesh.faceCount()) {

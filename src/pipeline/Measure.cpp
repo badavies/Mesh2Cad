@@ -1,8 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/pipeline/Measure.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <optional>
 #include <vector>
+
+#include "m2c/core/Measurement.h"
+#include "m2c/core/SpatialIndex.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

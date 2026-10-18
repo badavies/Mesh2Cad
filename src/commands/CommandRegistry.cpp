@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <exception>
 #include <ranges>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
 
 namespace m2c {
 

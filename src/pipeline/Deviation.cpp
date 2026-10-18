@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/pipeline/Deviation.h"
 
+#include <expected>
+#include <utility>
+#include <vector>
+
 #include "m2c/adapters/occt/Brep.h"
+#include "m2c/core/DeviationField.h"
+#include "m2c/core/Error.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

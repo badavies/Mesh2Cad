@@ -1,14 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Fitting the cage to the scan through limit stencils (ARCHITECTURE.md section 6, step 2).
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <limits>
 #include <set>
 #include <utility>
+#include <vector>
 
 #include <Eigen/SparseCholesky>
 
 #include "m2c/adapters/osd/Subdivision.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 #include "Limit.h"
 #include "Tessellation.h"
@@ -181,7 +190,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
             planeT * plane + kPointWeight * (pointT * point) + mu * smooth + anchor * identity;
         const Eigen::VectorXd rhs = planeT * planeTargets + kPointWeight * (pointT * pointTargets) +
                                     mu * (smooth * start) + anchor * current;
-        Eigen::SimplicialLDLT solver(normal);
+        Eigen::SimplicialLDLT const solver(normal);
         if (solver.info() != Eigen::Success) {
             return fail(ErrorCode::Internal, "the cage fit's least-squares system is singular");
         }

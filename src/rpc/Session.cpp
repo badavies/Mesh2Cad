@@ -3,11 +3,17 @@
 
 #include <array>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <ios>
+#include <memory>
 #include <random>
+#include <string>
 #include <system_error>
 
 #include <nlohmann/json.hpp>
+
+#include "m2c/core/Error.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX

@@ -1,9 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // project.save, project.open, project.new.
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
+#include <utility>
+#include <variant>
+#include <vector>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/Measurement.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Solid.h"
+#include "m2c/document/Document.h"
 #include "m2c/io/Project.h"
 
 #include "detail/Params.h"

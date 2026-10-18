@@ -4,7 +4,14 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <optional>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

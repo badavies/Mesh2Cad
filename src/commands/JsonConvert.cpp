@@ -1,6 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/commands/JsonConvert.h"
 
+#include <string>
+
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/Measurement.h"
+#include "m2c/core/MeshStats.h"
+#include "m2c/core/Transform.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+
 namespace m2c {
 
 Json toJson(const Vec3d& v) {

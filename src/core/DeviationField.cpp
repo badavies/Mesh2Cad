@@ -3,6 +3,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
 
 namespace m2c {
 

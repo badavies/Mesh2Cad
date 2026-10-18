@@ -3,17 +3,32 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <expected>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <memory>
 #include <miniz.h>
 #include <sstream>
+#include <string>
 #include <system_error>
 #include <type_traits>
+#include <utility>
+#include <variant>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "m2c/adapters/occt/Brep.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/Measurement.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Solid.h"
+#include "m2c/core/SurfacePatch.h"
+#include "m2c/core/Vec3.h"
 #include "m2c/io/Ply.h"
 
 namespace m2c {

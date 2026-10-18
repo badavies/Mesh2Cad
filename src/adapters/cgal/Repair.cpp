@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <expected>
+#include <iterator>
 #include <map>
 #include <numeric>
 #include <ranges>
@@ -23,6 +26,8 @@
 #include <boost/iterator/function_output_iterator.hpp>
 
 #include "m2c/adapters/cgal/MeshTools.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 
 #include "CgalMesh.h"
 

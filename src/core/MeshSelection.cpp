@@ -2,6 +2,10 @@
 #include "m2c/core/MeshSelection.h"
 
 #include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
 
 namespace m2c {
 

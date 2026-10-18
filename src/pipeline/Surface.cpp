@@ -1,7 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/pipeline/Surface.h"
 
+#include <cstddef>
+#include <expected>
+#include <memory>
 #include <utility>
+
+#include "m2c/adapters/occt/Brep.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Solid.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/pipeline/PatchMerge.h"
 
 namespace m2c {
 

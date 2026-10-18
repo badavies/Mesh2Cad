@@ -8,13 +8,16 @@
 //
 // Responses go to stdout, doc.changed notifications too; diagnostics go to stderr.
 
+#include <cstddef>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include "m2c/commands/Command.h"
+#include "m2c/document/Document.h"
 #include "m2c/rpc/RpcServer.h"
 
 int main(int argc, char** argv) {

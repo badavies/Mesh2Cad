@@ -3,12 +3,19 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <queue>
 #include <span>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/SurfacePatch.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

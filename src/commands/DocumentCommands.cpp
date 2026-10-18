@@ -3,7 +3,13 @@
 
 #include <filesystem>
 #include <memory>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/document/Document.h"
 #include "m2c/io/MeshIO.h"
 
 #include "detail/Params.h"

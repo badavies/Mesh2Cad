@@ -2,13 +2,26 @@
 #include "Limit.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include <opensubdiv/far/patchParam.h>
 #include <opensubdiv/far/patchTableFactory.h>
 #include <opensubdiv/far/ptexIndices.h>
 #include <opensubdiv/far/stencilTableFactory.h>
 #include <opensubdiv/far/topologyDescriptor.h>
+#include <opensubdiv/far/topologyRefinerFactory.h>
+#include <opensubdiv/sdc/options.h>
+#include <opensubdiv/sdc/types.h>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c::osd {
 

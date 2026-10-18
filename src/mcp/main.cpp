@@ -9,13 +9,20 @@
 //   mesh2cad-mcp --connect       only connect to the running app; fail if it is not open
 //   mesh2cad-mcp --session <file> session file to use (default: the app's per-user location)
 
+#include <cstddef>
 #include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/document/Document.h"
 #include "m2c/rpc/RpcServer.h"
 #include "m2c/rpc/Session.h"
 

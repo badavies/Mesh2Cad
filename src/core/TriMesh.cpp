@@ -3,10 +3,16 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/core/Error.h"
 #include "m2c/core/MeshTopology.h"
 #include "m2c/core/SpatialIndex.h"
 

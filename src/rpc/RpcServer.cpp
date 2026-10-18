@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/rpc/RpcServer.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
 
 namespace m2c {
 

@@ -3,10 +3,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

@@ -1,11 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Mesh tidy-up tools (ARCHITECTURE.md section 7). Each edits its mesh in place, as one undo step.
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <memory>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/Vec3.h"
+#include "m2c/document/Document.h"
 #include "m2c/pipeline/Measure.h"
 #include "m2c/pipeline/MeshTools.h"
 #include "m2c/pipeline/Smooth.h"

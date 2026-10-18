@@ -3,9 +3,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <string>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 #include "m2c/io/Obj.h"
 #include "m2c/io/Ply.h"
 #include "m2c/io/Stl.h"

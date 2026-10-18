@@ -2,8 +2,16 @@
 #include "m2c/core/MeshTopology.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <numeric>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

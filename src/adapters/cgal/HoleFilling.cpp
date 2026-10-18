@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <cmath>
+#include <cstddef>
+#include <expected>
 #include <iterator>
+#include <utility>
 #include <vector>
 
 #include <CGAL/Polygon_mesh_processing/fair.h>
 #include <CGAL/Polygon_mesh_processing/refine.h>
 #include <CGAL/Polygon_mesh_processing/triangulate_hole.h>
 #include <CGAL/boost/graph/Euler_operations.h>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 // Newer CGAL (6.2.1 from vcpkg) moved extract_boundary_cycles() from Polygon_mesh_processing to
 // the BGL border header and deprecated the old one; the downloaded CGAL 6.0.1 has only the old one.
 #if __has_include(<CGAL/boost/graph/border.h>)

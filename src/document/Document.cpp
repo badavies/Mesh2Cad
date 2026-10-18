@@ -2,8 +2,21 @@
 #include "m2c/document/Document.h"
 
 #include <algorithm>
+#include <expected>
+#include <iterator>
+#include <memory>
+#include <optional>
 #include <ranges>
+#include <string>
 #include <utility>
+#include <variant>
+#include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/Measurement.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/Transform.h"
+#include "m2c/core/TriMesh.h"
 
 namespace m2c {
 
@@ -320,7 +333,7 @@ std::vector<HistoryStep> Document::undoHistory() const {
 
 std::vector<HistoryStep> Document::redoHistory() const {
     std::vector<HistoryStep> steps;
-    for (auto it = redo_.rbegin(); it != redo_.rend(); ++it) steps.push_back(it->step);
+    for (const auto& it : std::views::reverse(redo_)) steps.push_back(it.step);
     return steps;
 }
 

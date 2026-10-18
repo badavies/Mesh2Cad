@@ -2,11 +2,19 @@
 #include "m2c/pipeline/Select.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <numbers>
+#include <string>
+#include <utility>
 #include <vector>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshTopology.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

@@ -2,8 +2,13 @@
 #include "m2c/pipeline/Shells.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <vector>
 
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/TriMesh.h"
 
 namespace m2c {
 

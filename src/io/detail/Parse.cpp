@@ -2,8 +2,20 @@
 #include "detail/Parse.h"
 
 #include <bit>
+#include <cstddef>
+#include <cstdint>
+#include <ios>
 #include <limits>
+#include <optional>
+#include <string>
+#include <string_view>
 #include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c::io_detail {
 

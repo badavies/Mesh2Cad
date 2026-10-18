@@ -1,6 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "McpServer.h"
 
+#include <expected>
+#include <optional>
+#include <string>
+#include <utility>
+
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+
 namespace m2c {
 
 namespace {

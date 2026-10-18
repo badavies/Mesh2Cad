@@ -2,10 +2,18 @@
 #include "Tessellation.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <utility>
+#include <vector>
 
+#include "m2c/core/Error.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+
+#include "Limit.h"
 
 namespace m2c::osd {
 

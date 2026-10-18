@@ -4,14 +4,23 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <expected>
+#include <ios>
 #include <istream>
 #include <limits>
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 #include "detail/Parse.h"
 
@@ -304,8 +313,8 @@ Result<TriMesh> readBody(Reader& reader, const Header& header, const bool weld) 
                     double countValue = 0.0;
                     // The ASCII reader accepts any number here, so also refuse NaN and counts
                     // too large to convert.
-                    if (!reader.read(p.countType, countValue) ||
-                        !(countValue >= 0.0 && countValue <= 4294967295.0)) {
+                    if (!reader.read(p.countType, countValue) || countValue < 0.0 ||
+                        countValue > 4294967295.0) {
                         return fail(ErrorCode::Parse,
                                     "truncated or invalid PLY list in '" + elementName +
                                         "' element");
@@ -318,7 +327,7 @@ Result<TriMesh> readBody(Reader& reader, const Header& header, const bool weld) 
                             return fail(ErrorCode::Parse, "truncated PLY list data");
                         }
                         if (slot == indexSlot) {
-                            if (!(v >= 0.0 && v <= static_cast<double>(kMaxIndex))) {
+                            if (v < 0.0 || v > static_cast<double>(kMaxIndex)) {
                                 return fail(ErrorCode::Parse, "invalid PLY vertex index");
                             }
                             poly.push_back(static_cast<std::uint32_t>(v));

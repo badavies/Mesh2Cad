@@ -3,12 +3,19 @@
 
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
+#include <ios>
 #include <istream>
 #include <limits>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 #include "detail/Parse.h"
 

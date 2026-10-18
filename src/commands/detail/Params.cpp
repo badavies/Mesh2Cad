@@ -2,9 +2,23 @@
 #include "detail/Params.h"
 
 #include <cmath>
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
 #include "m2c/core/MeshStats.h"
+#include "m2c/core/Solid.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+#include "m2c/document/Document.h"
 
 namespace m2c::cmd {
 

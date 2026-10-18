@@ -9,14 +9,21 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <ios>
 #include <istream>
 #include <limits>
 #include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

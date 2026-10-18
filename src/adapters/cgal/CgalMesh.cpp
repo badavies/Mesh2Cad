@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "CgalMesh.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c::cgal {
 

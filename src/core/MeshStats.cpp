@@ -2,8 +2,12 @@
 #include "m2c/core/MeshStats.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <vector>
+
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

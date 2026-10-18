@@ -2,9 +2,17 @@
 // Deviation analysis (ARCHITECTURE.md section 7): how far a mesh lies from a solid or a mesh.
 
 #include <cctype>
+#include <cstddef>
+#include <expected>
 #include <filesystem>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/DeviationField.h"
+#include "m2c/core/Error.h"
+#include "m2c/document/Document.h"
 #include "m2c/io/Report.h"
 #include "m2c/pipeline/Deviation.h"
 

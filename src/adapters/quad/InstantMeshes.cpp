@@ -6,16 +6,26 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <iostream>
 #include <memory>
 #include <set>
 #include <streambuf>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "m2c/adapters/quad/QuadRemesh.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
+#include "adjacency.h"
 #include "bvh.h"
+#include "common.h"
 #include "dedge.h"
 #include "extract.h"
 #include "field.h"
@@ -213,7 +223,7 @@ Result<QuadLayout> remesh(const TriMesh& mesh, const QuadRemeshParams& params) {
     if (mesh.faceCount() < 4) {
         return fail(ErrorCode::InvalidArgument, "the mesh has too few faces to remesh");
     }
-    SilenceConsole silence;
+    SilenceConsole const silence;
     try {
         return run(mesh, params);
     } catch (const std::exception& e) {

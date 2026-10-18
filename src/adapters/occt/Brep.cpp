@@ -4,10 +4,17 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
+#include <filesystem>
+#include <ios>
+#include <memory>
 #include <mutex>
 #include <sstream>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <BRepBndLib.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
@@ -32,11 +39,14 @@
 #include <NCollection_List.hxx>
 #include <Precision.hxx>
 #include <STEPControl_Reader.hxx>
+#include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
 #include <ShapeAnalysis_Surface.hxx>
 #include <ShapeFix_Solid.hxx>
 #include <Standard_Failure.hxx>
+#include <Standard_Handle.hxx>
 #include <Standard_Version.hxx>
+#include <TopAbs_ShapeEnum.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
@@ -47,7 +57,11 @@
 #include <gp_Pnt2d.hxx>
 #include <gp_Vec.hxx>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/SurfacePatch.h"
+#include "m2c/core/Vec3.h"
 
 #include "Shape.h"
 
@@ -207,7 +221,7 @@ Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
     return guarded("sewing", [&]() -> Result<Solid> {
         BRepBuilderAPI_Sewing sewing(params.toleranceMm);
         for (const SurfacePatch& patch : faces) {
-            BRepBuilderAPI_MakeFace face(toSurface(patch), Precision::Confusion());
+            BRepBuilderAPI_MakeFace const face(toSurface(patch), Precision::Confusion());
             if (!face.IsDone()) {
                 return fail(ErrorCode::Internal, "Open CASCADE could not make a face");
             }

@@ -3,13 +3,22 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <numeric>
 #include <queue>
+#include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
+#include "m2c/adapters/quad/QuadRemesh.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 

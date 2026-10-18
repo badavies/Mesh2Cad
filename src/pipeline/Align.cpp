@@ -3,13 +3,23 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <numbers>
 #include <numeric>
+#include <optional>
 #include <vector>
 
 #include <Eigen/Dense>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshTopology.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/Transform.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -253,7 +263,7 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
             if (!step.allFinite()) break;
             Plane next{.normal = (plane.normal + step(0) * u + step(1) * v).normalized(),
                        .offset = plane.offset + step(2)};
-            if (next.normal.dot(n0) < std::cos(30.0 * 3.141592653589793 / 180.0)) break; // ran off
+            if (next.normal.dot(n0) < std::cos(30.0 * std::numbers::pi / 180.0)) break; // ran off
             next.residual = match(next);
             plane = next;
             if (plane.residual < bestHere.residual * (1.0 - 1e-6)) {
@@ -308,7 +318,7 @@ Result<DatumAlignResult> datumAlignment(const TriMesh& mesh, const DatumAlignPar
         result.secondary = *secondary;
         const Eigen::Vector3d n2 = toEigen(secondary->normal);
         const Eigen::Vector3d projected = n2 - n2.dot(z) * z;
-        if (projected.norm() < std::sin(10.0 * 3.141592653589793 / 180.0)) {
+        if (projected.norm() < std::sin(10.0 * std::numbers::pi / 180.0)) {
             return fail(ErrorCode::InvalidArgument,
                         "secondary plane is within 10 degrees of parallel to the primary plane");
         }
@@ -344,7 +354,7 @@ Result<DatumAlignResult> datumAlignment(const TriMesh& mesh, const DatumAlignPar
         if (!tertiary) return std::unexpected(tertiary.error());
         result.tertiary = *tertiary;
         const Eigen::Vector3d n3 = toEigen(tertiary->normal);
-        if (std::abs(n3.dot(x)) < std::sin(10.0 * 3.141592653589793 / 180.0)) {
+        if (std::abs(n3.dot(x)) < std::sin(10.0 * std::numbers::pi / 180.0)) {
             return fail(ErrorCode::InvalidArgument,
                         "tertiary plane is within 10 degrees of parallel to another datum plane");
         }

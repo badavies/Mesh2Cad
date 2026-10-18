@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <cmath>
+#include <cstddef>
 
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h> // for the bounded placement
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Bounded_distance_placement.h>
@@ -8,6 +9,8 @@
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 
 #include "m2c/adapters/cgal/MeshTools.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 
 #include "CgalMesh.h"
 
