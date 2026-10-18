@@ -200,6 +200,33 @@ TEST_CASE("A sphere scan becomes a valid closed solid of the right volume", "[st
     CHECK(worst < 1e-12);
 }
 
+TEST_CASE("A fit that folds the surface is tried again with more smoothing", "[stages][surface]") {
+    const TriMesh sphere = makeSphere(20.0, 4);
+    QuadRemeshParams q;
+    q.targetFaces = 200;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    SurfaceBuildParams p;
+    p.fitting.iterations = 1;
+    // A clean fit passes the default limit at once.
+    const auto once = buildSurface(remeshed->cage, &sphere, p);
+    REQUIRE(once);
+    CHECK(once->fits == 1);
+    CHECK(once->smoothing == p.fitting.smoothing);
+    CHECK(once->seams.maxNormalAngleDeg <= p.maxSeamAngleDeg);
+    // A limit no fit can meet (caps always leave a small angle): every try is made, each with
+    // twice the smoothing of the one before, and the last is kept.
+    p.maxSeamAngleDeg = 1e-9;
+    p.fitTries = 3;
+    const auto retried = buildSurface(remeshed->cage, &sphere, p);
+    REQUIRE(retried);
+    CHECK(retried->fits == 3);
+    CHECK(retried->smoothing == 4.0 * p.fitting.smoothing);
+    CHECK(retried->solid.summary().valid);
+    p.fitTries = 0;
+    CHECK_FALSE(buildSurface(remeshed->cage, &sphere, p));
+}
+
 TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][surface]") {
     SurfaceBuildParams p;
     p.fit = false;

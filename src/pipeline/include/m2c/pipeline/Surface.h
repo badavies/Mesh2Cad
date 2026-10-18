@@ -21,14 +21,20 @@ using osd::tessellateLimit;
 struct SurfaceBuildParams {
     bool fit{true};        ///< Fit the cage to the scan first; off = use the cage as it is.
     CageFitParams fitting; ///< Its isolation level is used for the faces too.
+    /// A fit whose faces meet at a larger angle has folded the surface and is tried again with
+    /// twice the smoothing, up to fitTries fits in all.
+    double maxSeamAngleDeg{10.0};
+    unsigned fitTries{4};
     double sewToleranceMm{1e-4};
     int displayGrid{4}; ///< Display triangles: 2 n^2 per face.
 };
 
 struct SurfaceBuildResult {
     Solid solid;
-    QuadLayout cage;   ///< The cage the faces come from (fitted unless fit was off).
-    CageFitResult fit; ///< Zero samples when fit was off.
+    QuadLayout cage;       ///< The cage the faces come from (fitted unless fit was off).
+    CageFitResult fit;     ///< Zero samples when fit was off.
+    double smoothing{0.0}; ///< The smoothing of the fit that was kept.
+    unsigned fits{0};      ///< Fits made (more than one when a fit folded the surface).
     std::size_t regularPieces{0};
     std::size_t capPieces{0};
     double maxCapErrorMm{0.0};

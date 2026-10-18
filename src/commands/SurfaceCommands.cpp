@@ -50,8 +50,10 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "surface.build",
         "Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit "
         "surface follows the mesh, convert the limit surface to B-spline faces (exact where the "
-        "cage is regular, close-fitting caps at irregular vertices) and sew them. Adds a solid "
-        "object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the "
+        "cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds "
+        "the surface (faces meeting at more than 10 degrees) is made again with twice the "
+        "smoothing, up to four fits in all. Adds a solid object; the quad layout and mesh are "
+        "unchanged. Fails, adding nothing, unless the "
         "result is one valid closed solid.",
         R"({
             "type":"object",
@@ -114,7 +116,9 @@ void addSurfaceCommands(std::vector<Command>& out) {
                                      {"ignored_samples", built->fit.ignoredSamples},
                                      {"rms_distance_mm", built->fit.rmsDistanceMm},
                                      {"max_distance_mm", built->fit.maxDistanceMm},
-                                     {"rms_before_round_mm", built->fit.rmsBeforeRoundMm}};
+                                     {"rms_before_round_mm", built->fit.rmsBeforeRoundMm},
+                                     {"smoothing", built->smoothing},
+                                     {"fits", built->fits}};
             }
             return result;
         }));

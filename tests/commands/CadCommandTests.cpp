@@ -113,6 +113,8 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK(result["summary"]["volume_mm3"].get<double>() > 33000.0);
     CHECK(result["summary"]["volume_mm3"].get<double>() < 33600.0);
     CHECK(result["fit"]["rms_distance_mm"].get<double>() < 0.05);
+    CHECK(result["fit"]["fits"] == 1);
+    CHECK(result["fit"]["smoothing"] == 0.05);
     CHECK(result["cap_pieces"].get<int>() > 0);
 
     const auto object = s.document.find(solid);

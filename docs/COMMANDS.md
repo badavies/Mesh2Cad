@@ -479,7 +479,7 @@ Describe a solid: face, edge and shell counts, whether it is closed and valid, i
 
 ### `surface.build`
 
-Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid. *(changes the document)*
+Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds the surface (faces meeting at more than 10 degrees) is made again with twice the smoothing, up to four fits in all. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
