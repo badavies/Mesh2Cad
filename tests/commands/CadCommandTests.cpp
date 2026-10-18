@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The M2 commands (scan to CAD) run end to end through the registry.
 
+#include <algorithm>
 #include <fstream>
 #include <miniz.h>
 #include <string>
@@ -308,7 +309,25 @@ TEST_CASE("Project files keep quad layouts, solids and deviations", "[commands][
     const auto step = (dir.path() / "again.step").string();
     CHECK(t.run("solid.export", {{"id", solid}, {"path", step}})["check"]["passed"] == true);
 
-    // A format 2 file, whose faces cover one cage quad each, opens as the same solid.
+    // Merged faces cover more than one cage quad each.
+    CHECK(built["merge"]["merged_faces"].get<int>() > 0);
+    CHECK(std::any_of(before.faces().begin(), before.faces().end(), [](const SurfacePatch& f) {
+        return f.cellsU * f.cellsV > 1;
+    }));
+}
+
+TEST_CASE("Project files of format 2 open", "[commands][project]") {
+    // Format 2 faces covered one cage quad each, as an unmerged solid's do.
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeSphere(20.0, 4), "ball");
+    const auto cage = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}})["id"];
+    const auto solid =
+        s.run("surface.build", {{"id", cage}, {"mesh_id", mesh}, {"merge", false}})["id"]
+            .get<ObjectId>();
+    const auto path = (dir.path() / "m2.m2c").string();
+    s.run("project.save", {{"path", path}});
+    const Solid before = s.document.find(solid)->solid()->solid;
     rewriteAsVersion2(path, before.faces());
     Session u;
     u.run("project.open", {{"path", path}});

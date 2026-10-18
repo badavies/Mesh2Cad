@@ -4,6 +4,7 @@ m2c_add_library(pipeline
         Deviation.cpp
         Measure.cpp
         MeshTools.cpp
+        PatchMerge.cpp
         QuadRemesh.cpp
         Select.cpp
         Shells.cpp

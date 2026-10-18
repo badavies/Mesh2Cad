@@ -479,7 +479,7 @@ Describe a solid: face, edge and shell counts, whether it is closed and valid, i
 
 ### `surface.build`
 
-Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds the surface (faces meeting at more than 10 degrees) is made again with twice the smoothing, up to four fits in all. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid. *(changes the document)*
+Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds the surface (faces meeting at more than 10 degrees) is made again with twice the smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced from the irregular vertices, are merged into one face each. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -489,6 +489,7 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 | `iterations` | integer |  | Rounds of fitting. Default `3`. |
 | `max_sample_distance_mm` | number |  | Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length. Default `0`. |
 | `max_samples` | integer |  | Mesh vertices used for fitting (evenly thinned beyond this). Default `60000`. |
+| `merge` | boolean |  | Merge rectangles of cage quads into one face each (fewer faces, same surface). Default `true`. |
 | `mesh_id` | integer |  | The mesh to fit to; required unless fit is false. |
 | `name` | string |  |  |
 | `smoothing` | number |  | How strongly the cage keeps its own shape while fitting. Default `0.05`. |

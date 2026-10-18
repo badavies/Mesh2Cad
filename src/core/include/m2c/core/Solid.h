@@ -29,6 +29,7 @@ struct SolidSummary {
     double volumeMm3{0.0};
     double areaMm2{0.0};
     double maxToleranceMm{0.0}; ///< Largest edge or vertex tolerance after sewing.
+    std::size_t poleCount{0};   ///< Control points of all B-spline faces together.
     Aabb bounds;
 };
 

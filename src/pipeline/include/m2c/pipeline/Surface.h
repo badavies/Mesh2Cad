@@ -7,6 +7,7 @@
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/adapters/osd/Subdivision.h"
 #include "m2c/core/Solid.h"
+#include "m2c/pipeline/PatchMerge.h"
 
 namespace m2c {
 
@@ -26,6 +27,8 @@ struct SurfaceBuildParams {
     double maxSeamAngleDeg{10.0};
     unsigned fitTries{4};
     double sewToleranceMm{1e-4};
+    /// Merge rectangles of cage quads into one face each (patch merging; mergeFaces()).
+    bool merge{true};
     int displayGrid{4}; ///< Display triangles: 2 n^2 per face.
 };
 
@@ -38,7 +41,10 @@ struct SurfaceBuildResult {
     std::size_t regularPieces{0};
     std::size_t capPieces{0};
     double maxCapErrorMm{0.0};
-    SeamReport seams; ///< Gaps and normal angles where faces and pieces meet.
+    SeamReport seams; ///< Gaps and normal angles where faces and pieces meet, before merging.
+    std::size_t facesBeforeMerge{0}; ///< One per cage quad (or corner quad of another face).
+    std::size_t mergedFaces{0};      ///< Faces made from more than one cage quad.
+    std::size_t unmergedQuads{0};    ///< Quads left single because their region was no rectangle.
 };
 
 /// Fits, extracts and sews in one go. The cage must be closed; `scan` may be null when fit is off.

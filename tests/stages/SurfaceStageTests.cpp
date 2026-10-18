@@ -184,7 +184,10 @@ TEST_CASE("A sphere scan becomes a valid closed solid of the right volume", "[st
     CHECK(built->fit.samples > 0);
     CHECK(built->fit.ignoredSamples == 0);
     // The display mesh follows the faces.
-    CHECK(built->solid.display().faceCount() == built->solid.faces().size() * 2 * 16);
+    std::size_t quads = 0;
+    for (const SurfacePatch& f : built->solid.faces()) quads += std::size_t{f.cellsU} * f.cellsV;
+    CHECK(quads == built->facesBeforeMerge);
+    CHECK(built->solid.display().faceCount() == quads * 2 * 16);
     for (const Vec3d& p : built->solid.display().positions()) CHECK(std::abs(length(p) - r) < 0.05);
     // Every display vertex is where its (u, v) puts it on the face of each triangle using it.
     const FaceTessellation& map = built->solid.displayMap();

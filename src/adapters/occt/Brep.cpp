@@ -104,6 +104,26 @@ void bezierKnots(const std::vector<double>& breaks,
     }
 }
 
+/// Knots between pieces that join smoothly are removed (or lowered to multiplicity one or two)
+/// when the surface moves by no more than this: regular regions of a merged face then become one
+/// C2 B-spline, and only the knots next to caps stay triple.
+constexpr double kKnotRemovalToleranceMm = 1e-7;
+
+void removeKnots(Geom_BSplineSurface& surface) {
+    for (int k = surface.NbUKnots() - 1; k >= 2; --k) {
+        const int m = surface.UMultiplicity(k);
+        for (int target = 0; target < m; ++target) {
+            if (surface.RemoveUKnot(k, target, kKnotRemovalToleranceMm)) break;
+        }
+    }
+    for (int k = surface.NbVKnots() - 1; k >= 2; --k) {
+        const int m = surface.VMultiplicity(k);
+        for (int target = 0; target < m; ++target) {
+            if (surface.RemoveVKnot(k, target, kKnotRemovalToleranceMm)) break;
+        }
+    }
+}
+
 opencascade::handle<Geom_BSplineSurface> toSurface(const SurfacePatch& patch) {
     const auto row = static_cast<int>(patch.polesPerRow());
     const auto rows = static_cast<int>(patch.poleRows());
@@ -118,7 +138,10 @@ opencascade::handle<Geom_BSplineSurface> toSurface(const SurfacePatch& patch) {
     NCollection_Array1<int> uMults(1, 2), vMults(1, 2);
     bezierKnots(patch.uBreaks, uKnots, uMults);
     bezierKnots(patch.vBreaks, vKnots, vMults);
-    return new Geom_BSplineSurface(poles, uKnots, vKnots, uMults, vMults, 3, 3);
+    opencascade::handle<Geom_BSplineSurface> surface =
+        new Geom_BSplineSurface(poles, uKnots, vKnots, uMults, vMults, 3, 3);
+    removeKnots(*surface);
+    return surface;
 }
 
 SolidSummary summarise(const TopoDS_Shape& shape) {
@@ -132,6 +155,13 @@ SolidSummary summarise(const TopoDS_Shape& shape) {
     s.faceCount = static_cast<std::size_t>(faces.Extent());
     s.edgeCount = static_cast<std::size_t>(edges.Extent());
     s.vertexCount = static_cast<std::size_t>(vertices.Extent());
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        const auto surface = opencascade::handle<Geom_BSplineSurface>::DownCast(
+            BRep_Tool::Surface(TopoDS::Face(faces(i))));
+        if (!surface.IsNull()) {
+            s.poleCount += static_cast<std::size_t>(surface->NbUPoles() * surface->NbVPoles());
+        }
+    }
     NCollection_IndexedDataMap<TopoDS_Shape,
                                NCollection_List<TopoDS_Shape>,
                                TopTools_ShapeMapHasher>
@@ -156,8 +186,10 @@ SolidSummary summarise(const TopoDS_Shape& shape) {
         s.bounds = {{x0, y0, z0}, {x1, y1, z1}};
     }
     GProp_GProps volume, area;
-    BRepGProp::VolumeProperties(shape, volume);
-    BRepGProp::SurfaceProperties(shape, area);
+    // Adaptive integration to a relative 1e-9: the fixed rule is per span, so it would give a
+    // merged face (fewer, longer spans) a different volume from the faces it was merged from.
+    BRepGProp::VolumeProperties(shape, volume, 1e-9);
+    BRepGProp::SurfaceProperties(shape, area, 1e-9);
     s.volumeMm3 = volume.Mass();
     s.areaMm2 = area.Mass();
     return s;

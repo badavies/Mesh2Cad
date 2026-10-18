@@ -43,6 +43,15 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
             fitting.smoothing = fitting.smoothing > 0.0 ? 2.0 * fitting.smoothing : 0.01;
             continue;
         }
+        const std::size_t before = patches->faces.size();
+        std::size_t mergedFaces = 0, unmergedQuads = 0;
+        if (params.merge) {
+            auto merged = mergeFaces(fit.cage, patches->faces);
+            if (!merged) return std::unexpected(merged.error());
+            patches->faces = std::move(merged->faces);
+            mergedFaces = merged->mergedFaces;
+            unmergedQuads = merged->partition.unmergedQuads;
+        }
         auto display = tessellate(patches->faces, params.displayGrid);
         if (!display) return std::unexpected(display.error());
         auto solid = occt::makeSolid(std::move(patches->faces),
@@ -58,7 +67,10 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
                                   patches->regularPieces,
                                   patches->capPieces,
                                   patches->maxCapErrorMm,
-                                  *seams};
+                                  *seams,
+                                  before,
+                                  mergedFaces,
+                                  unmergedQuads};
     }
 }
 
