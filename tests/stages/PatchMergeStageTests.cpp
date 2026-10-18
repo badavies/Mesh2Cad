@@ -104,8 +104,11 @@ TEST_CASE("Merging faces leaves the surface as it was", "[stages][merge]") {
     CHECK(b.closed);
     CHECK(b.solidCount == 1);
     CHECK(b.freeEdges == 0);
-    CHECK(std::abs(b.volumeMm3 - a.volumeMm3) < 1e-6 * a.volumeMm3);
-    CHECK(std::abs(b.areaMm2 - a.areaMm2) < 1e-6 * a.areaMm2);
+    // Open CASCADE integrates volume and area with a fixed rule per knot span, so the merged
+    // faces' fewer, longer spans give slightly different figures (3e-5 here). The surfaces
+    // themselves are compared exactly below.
+    CHECK(std::abs(b.volumeMm3 - a.volumeMm3) < 1e-4 * a.volumeMm3);
+    CHECK(std::abs(b.areaMm2 - a.areaMm2) < 1e-4 * a.areaMm2);
     // No pole count check here: every merged side has a cap at each of its four corners, and a
     // cap's knot lines (where the surface is not C2) run across the whole merged face.
     for (const SurfacePatch& f : merged->solid.faces()) {

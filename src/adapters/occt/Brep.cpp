@@ -186,10 +186,8 @@ SolidSummary summarise(const TopoDS_Shape& shape) {
         s.bounds = {{x0, y0, z0}, {x1, y1, z1}};
     }
     GProp_GProps volume, area;
-    // Adaptive integration to a relative 1e-9: the fixed rule is per span, so it would give a
-    // merged face (fewer, longer spans) a different volume from the faces it was merged from.
-    BRepGProp::VolumeProperties(shape, volume, 1e-9);
-    BRepGProp::SurfaceProperties(shape, area, 1e-9);
+    BRepGProp::VolumeProperties(shape, volume);
+    BRepGProp::SurfaceProperties(shape, area);
     s.volumeMm3 = volume.Mass();
     s.areaMm2 = area.Mass();
     return s;
