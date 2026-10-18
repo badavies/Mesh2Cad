@@ -8,21 +8,23 @@
 //
 // Responses go to stdout, doc.changed notifications too; diagnostics go to stderr.
 
+#include <cstddef>
 #include <fstream>
 #include <iostream>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include "m2c/commands/Command.h"
+#include "m2c/document/Document.h"
 #include "m2c/rpc/RpcServer.h"
 
 int main(int argc, char** argv) {
     const std::span<char* const> args(argv, static_cast<std::size_t>(argc));
     std::ofstream logFile;
     for (std::size_t i = 1; i < args.size(); ++i) {
-        const std::string_view arg = args[i];
-        if (arg == "--log" && i + 1 < args.size()) {
+        if (const std::string_view arg = args[i]; arg == "--log" && i + 1 < args.size()) {
             logFile.open(args[++i], std::ios::app);
             if (!logFile) {
                 std::cerr << "cannot open session log '" << args[i] << "'\n";
@@ -43,7 +45,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     m2c::Document document;
-    m2c::CommandContext context{document};
+    m2c::CommandContext context{.document = document};
     context.source = "json";
     if (logFile.is_open()) {
         context.sessionLog = [&logFile](const m2c::Json& line) {
@@ -56,8 +58,8 @@ int main(int argc, char** argv) {
 
     std::string line;
     while (std::getline(std::cin, line)) {
-        const std::string response = server.handleLine(line);
-        if (!response.empty()) std::cout << response << '\n' << std::flush;
+        if (const std::string response = server.handleLine(line); !response.empty())
+            std::cout << response << '\n' << std::flush;
     }
     return 0;
 }

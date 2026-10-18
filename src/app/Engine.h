@@ -85,7 +85,7 @@ private:
     void workerLoop();
     /// Sends a new snapshot to the UI if the document changed since the last one.
     void publish();
-    void writeLog(const Json& entry);
+    void writeLog(const Json& entry) const;
     void onNewConnection();
     void onReadyRead(int connectionId);
     void onDisconnected(int connectionId);

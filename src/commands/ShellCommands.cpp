@@ -2,9 +2,19 @@
 // Shell detection: find, select, split, keep or delete unconnected parts.
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/Transform.h"
+#include "m2c/document/Document.h"
 #include "m2c/pipeline/MeshTools.h"
 #include "m2c/pipeline/Shells.h"
 
@@ -23,7 +33,7 @@ Json shellJson(const ShellInfo& s) {
                 {"is_main", s.isMain}};
 }
 
-constexpr const char* kSmallSchema = R"({
+constexpr auto kSmallSchema = R"({
     "type":"object",
     "properties":{
         "id":{"type":"integer","minimum":0},
@@ -42,7 +52,7 @@ void addShellCommands(std::vector<Command>& out) {
         R"({"type":"object","properties":{"id":{"type":"integer","minimum":0}},
             "required":["id"],"additionalProperties":false})",
         false,
-        [](CommandContext& context, const Json& params) -> Result<Json> {
+        [](const CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireMesh(context, params));
             const ShellReport report = detectShells(*object->mesh);
             Json shells = Json::array();
@@ -77,11 +87,11 @@ void addShellCommands(std::vector<Command>& out) {
                 }
                 wanted.push_back(static_cast<std::uint32_t>(index));
             }
-            auto faces = std::make_shared<const MeshSelection>(shellFaces(report, wanted));
+            const auto faces = std::make_shared<const MeshSelection>(shellFaces(report, wanted));
             const std::size_t count = faces->count();
             M2C_TRY(id,
                     context.document.add("Shell selection",
-                                         SelectionData{object->id, faces},
+                                         SelectionData{.meshId = object->id, .faces = faces},
                                          context.provenance({object->id})));
             return Json{{"selection_id", *id}, {"mesh_id", object->id}, {"face_count", count}};
         }));
@@ -105,10 +115,9 @@ void addShellCommands(std::vector<Command>& out) {
             if (removedFaces == 0) {
                 return Json{{"id", object->id}, {"deleted_shells", 0}, {"deleted_faces", 0}};
             }
-            std::vector<bool> hit(report.shells.size(), false);
+            std::vector hit(report.shells.size(), false);
             for (const std::uint32_t f : small.indices()) hit[report.faceShell[f]] = true;
-            const auto deletedShells =
-                static_cast<std::size_t>(std::count(hit.begin(), hit.end(), true));
+            const auto deletedShells = static_cast<std::size_t>(std::ranges::count(hit, true));
             M2C_TRY(kept, deleteFaces(*object->mesh, small));
             M2C_TRY(done, commitMesh(context, *object, std::move(*kept)));
             return Json{{"id", object->id},
@@ -161,7 +170,8 @@ void addShellCommands(std::vector<Command>& out) {
                 M2C_TRY(id,
                         context.document.add(
                             object->name + " shell " + std::to_string(s.index),
-                            MeshData{std::make_shared<const TriMesh>(std::move(*part)), alignment},
+                            MeshData{.mesh = std::make_shared<const TriMesh>(std::move(*part)),
+                                     .alignment = alignment},
                             context.provenance({object->id})));
                 created.push_back(*id);
             }

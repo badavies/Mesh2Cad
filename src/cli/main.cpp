@@ -11,6 +11,7 @@
 // Exit status: 0 if every command succeeded, 1 if a command failed, 2 for a usage error.
 // A batch stops at the first failing command.
 
+#include <cstddef>
 #include <fstream>
 #include <iostream>
 #include <span>
@@ -20,6 +21,7 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
 #include "m2c/document/Document.h"
 
 namespace {
@@ -45,7 +47,7 @@ void print(const Json& envelope) {
 
 bool runOne(const m2c::CommandRegistry& registry,
             m2c::CommandContext& context,
-            std::string_view name,
+            const std::string_view name,
             const Json& params) {
     const auto result = registry.execute(context, name, params);
     if (result) {
@@ -68,16 +70,16 @@ int runBatch(const m2c::CommandRegistry& registry,
         const Json request = Json::parse(line, nullptr, false);
         const auto command = request.is_object() ? request.find("command") : request.end();
         if (!request.is_object() || command == request.end() || !command->is_string()) {
-            print(Json{
-                {"ok", false},
-                {"error",
-                 m2c::toJson(m2c::Error{m2c::ErrorCode::InvalidArgument,
-                                        "line " + std::to_string(lineNumber) +
-                                            ": expected a JSON object with a string 'command'"})}});
+            print(Json{{"ok", false},
+                       {"error",
+                        m2c::toJson(m2c::Error{
+                            .code = m2c::ErrorCode::InvalidArgument,
+                            .message = "line " + std::to_string(lineNumber) +
+                                       ": expected a JSON object with a string 'command'"})}});
             return kExitCommandFailed;
         }
-        const auto params = request.find("params");
-        if (!runOne(registry,
+        if (const auto params = request.find("params");
+            !runOne(registry,
                     context,
                     command->get<std::string>(),
                     params == request.end() ? Json::object() : *params)) {
@@ -109,7 +111,7 @@ int main(int argc, char** argv) {
         return kExitCommandFailed;
     }
     m2c::Document document;
-    m2c::CommandContext context{document};
+    m2c::CommandContext context{.document = document};
     context.source = "cli";
 
     if (args[0] == "list" && args.size() == 1) {

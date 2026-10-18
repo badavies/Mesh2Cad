@@ -1,9 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/pipeline/MeshTools.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <utility>
 #include <vector>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/TriMesh.h"
 
 namespace m2c {
 

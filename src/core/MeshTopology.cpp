@@ -2,8 +2,16 @@
 #include "m2c/core/MeshTopology.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <numeric>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -21,11 +29,11 @@ FaceAdjacency buildFaceAdjacency(const TriMesh& mesh) {
         for (int k = 0; k < 3; ++k) {
             const std::uint32_t a = v[static_cast<std::size_t>(k)];
             const std::uint32_t b = v[static_cast<std::size_t>((k + 1) % 3)];
-            const std::uint64_t key = (std::uint64_t{std::min(a, b)} << 32) | std::max(a, b);
-            uses.push_back({key, static_cast<std::uint32_t>(f)});
+            const std::uint64_t key = (std::uint64_t{std::min(a, b)} << 32U) | std::max(a, b);
+            uses.push_back({.key = key, .face = static_cast<std::uint32_t>(f)});
         }
     }
-    std::sort(uses.begin(), uses.end(), [](const EdgeUse& l, const EdgeUse& r) {
+    std::ranges::sort(uses, [](const EdgeUse& l, const EdgeUse& r) {
         return l.key < r.key || (l.key == r.key && l.face < r.face);
     });
 
@@ -46,14 +54,14 @@ FaceAdjacency buildFaceAdjacency(const TriMesh& mesh) {
     };
     FaceAdjacency adj;
     adj.offsets.assign(faceCount + 1, 0);
-    forEachPair([&](std::uint32_t f, std::uint32_t g) {
+    forEachPair([&](const std::uint32_t f, const std::uint32_t g) {
         ++adj.offsets[f + 1];
         ++adj.offsets[g + 1];
     });
     std::partial_sum(adj.offsets.begin(), adj.offsets.end(), adj.offsets.begin());
     adj.neighbours.resize(adj.offsets.back());
-    std::vector<std::uint32_t> next(adj.offsets.begin(), adj.offsets.end() - 1);
-    forEachPair([&](std::uint32_t f, std::uint32_t g) {
+    std::vector next(adj.offsets.begin(), adj.offsets.end() - 1);
+    forEachPair([&](const std::uint32_t f, const std::uint32_t g) {
         adj.neighbours[next[f]++] = g;
         adj.neighbours[next[g]++] = f;
     });
@@ -74,9 +82,9 @@ FaceAdjacency buildFaceAdjacency(const TriMesh& mesh) {
 }
 
 std::vector<std::uint32_t> faceComponents(const TriMesh& mesh, std::uint32_t* componentCount) {
-    const FaceAdjacency& adj = mesh.faceAdjacency();
+    const auto& [offsets, neighbours] = mesh.faceAdjacency();
     constexpr std::uint32_t kUnset = std::numeric_limits<std::uint32_t>::max();
-    std::vector<std::uint32_t> component(mesh.faceCount(), kUnset);
+    std::vector component(mesh.faceCount(), kUnset);
     std::vector<std::uint32_t> stack;
     std::uint32_t next = 0;
     for (std::uint32_t seed = 0; seed < component.size(); ++seed) {
@@ -86,9 +94,8 @@ std::vector<std::uint32_t> faceComponents(const TriMesh& mesh, std::uint32_t* co
         while (!stack.empty()) {
             const std::uint32_t f = stack.back();
             stack.pop_back();
-            for (std::uint32_t i = adj.offsets[f]; i < adj.offsets[f + 1]; ++i) {
-                const std::uint32_t g = adj.neighbours[i];
-                if (component[g] == kUnset) {
+            for (std::uint32_t i = offsets[f]; i < offsets[f + 1]; ++i) {
+                if (const std::uint32_t g = neighbours[i]; component[g] == kUnset) {
                     component[g] = next;
                     stack.push_back(g);
                 }
@@ -100,7 +107,7 @@ std::vector<std::uint32_t> faceComponents(const TriMesh& mesh, std::uint32_t* co
     return component;
 }
 
-Vec3d faceNormal(const TriMesh& mesh, std::size_t f) noexcept {
+Vec3d faceNormal(const TriMesh& mesh, const std::size_t f) noexcept {
     const auto [a, b, c] = mesh.face(f);
     const auto& p = mesh.positions();
     const Vec3d n = cross(p[b] - p[a], p[c] - p[a]);
@@ -108,7 +115,7 @@ Vec3d faceNormal(const TriMesh& mesh, std::size_t f) noexcept {
     return len > 0.0 ? n * (1.0 / len) : Vec3d{};
 }
 
-double faceArea(const TriMesh& mesh, std::size_t f) noexcept {
+double faceArea(const TriMesh& mesh, const std::size_t f) noexcept {
     const auto [a, b, c] = mesh.face(f);
     const auto& p = mesh.positions();
     return 0.5 * length(cross(p[b] - p[a], p[c] - p[a]));
@@ -116,7 +123,7 @@ double faceArea(const TriMesh& mesh, std::size_t f) noexcept {
 
 Result<TriMesh> extractFaces(const TriMesh& mesh, const std::vector<bool>& keep) {
     constexpr std::uint32_t kUnset = std::numeric_limits<std::uint32_t>::max();
-    std::vector<bool> used(mesh.vertexCount(), false);
+    std::vector used(mesh.vertexCount(), false);
     std::size_t kept = 0;
     for (std::size_t f = 0; f < mesh.faceCount() && f < keep.size(); ++f) {
         if (!keep[f]) continue;
@@ -125,7 +132,7 @@ Result<TriMesh> extractFaces(const TriMesh& mesh, const std::vector<bool>& keep)
     }
     if (kept == 0) return fail(ErrorCode::InvalidArgument, "the result would have no faces");
 
-    std::vector<std::uint32_t> remap(mesh.vertexCount(), kUnset);
+    std::vector remap(mesh.vertexCount(), kUnset);
     std::vector<Vec3d> positions;
     for (std::size_t v = 0; v < used.size(); ++v) {
         if (!used[v]) continue;

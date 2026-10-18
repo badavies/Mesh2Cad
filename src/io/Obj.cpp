@@ -3,12 +3,19 @@
 
 #include <array>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
+#include <ios>
 #include <istream>
 #include <limits>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 #include "detail/Parse.h"
 
@@ -26,8 +33,7 @@ Result<TriMesh> readObj(std::istream& in) {
 
     while (const auto lineOpt = reader.next()) {
         std::string_view line = *lineOpt;
-        const std::string_view keyword = nextToken(line);
-        if (keyword == "v") {
+        if (const std::string_view keyword = nextToken(line); keyword == "v") {
             std::array<double, 3> xyz{};
             for (double& c : xyz) {
                 const std::string_view token = nextToken(line);
@@ -40,7 +46,7 @@ Result<TriMesh> readObj(std::istream& in) {
                 c = *value;
             }
             // Optional w or vertex colour values after x y z are ignored.
-            positions.push_back({xyz[0], xyz[1], xyz[2]});
+            positions.push_back({.x = xyz[0], .y = xyz[1], .z = xyz[2]});
         } else if (keyword == "f") {
             poly.clear();
             for (std::string_view token = nextToken(line); !token.empty();
@@ -52,7 +58,7 @@ Result<TriMesh> readObj(std::istream& in) {
                                 where() + ": invalid face index '" + std::string(token) + "'");
                 }
                 // OBJ indices are 1-based; negative ones count back from the last vertex so far.
-                const std::int64_t count = static_cast<std::int64_t>(positions.size());
+                const auto count = static_cast<std::int64_t>(positions.size());
                 const std::int64_t index = *value > 0 ? *value - 1 : count + *value;
                 if (index < 0 || index >= count) {
                     return fail(ErrorCode::Parse,
@@ -77,24 +83,24 @@ Result<TriMesh> readObj(std::istream& in) {
 
 Result<void> writeObj(const TriMesh& mesh, std::ostream& out) {
     std::string buffer;
-    buffer.reserve(std::size_t{1} << 16);
+    buffer.reserve(std::size_t{1} << 16U);
     const auto flush = [&] {
         out.write(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         buffer.clear();
     };
     std::array<char, 32> number{};
-    const auto append = [&](double v) {
+    const auto append = [&](const double v) {
         const auto [ptr, ec] = std::to_chars(number.data(), number.data() + number.size(), v);
         buffer.push_back(' ');
         buffer.append(number.data(), ptr);
     };
 
     buffer += "# Mesh2Cad OBJ\n";
-    for (const Vec3d& p : mesh.positions()) {
+    for (const auto& [x, y, z] : mesh.positions()) {
         buffer += 'v';
-        append(p.x);
-        append(p.y);
-        append(p.z);
+        append(x);
+        append(y);
+        append(z);
         buffer += '\n';
         if (buffer.size() > 60000) flush();
     }

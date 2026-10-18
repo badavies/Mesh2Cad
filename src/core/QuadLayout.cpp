@@ -3,10 +3,21 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <limits>
+#include <memory>
 #include <numeric>
+#include <ranges>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -14,20 +25,22 @@ namespace {
 
 std::uint64_t edgeKey(std::uint32_t a, std::uint32_t b) noexcept {
     if (a > b) std::swap(a, b);
-    return (std::uint64_t{a} << 32) | b;
+    return (std::uint64_t{a} << 32U) | b;
 }
 
 Result<Aabb> boundsOf(const std::vector<Vec3d>& positions) {
     if (positions.empty()) return fail(ErrorCode::InvalidArgument, "cage has no vertices");
-    Aabb box{positions.front(), positions.front()};
+    Aabb box{.min = positions.front(), .max = positions.front()};
     for (std::size_t i = 0; i < positions.size(); ++i) {
-        const Vec3d& p = positions[i];
-        if (!std::isfinite(p.x) || !std::isfinite(p.y) || !std::isfinite(p.z)) {
+        const auto& [x, y, z] = positions[i];
+        if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
             return fail(ErrorCode::InvalidArgument,
                         "cage vertex " + std::to_string(i) + " has a non-finite coordinate");
         }
-        box.min = {std::min(box.min.x, p.x), std::min(box.min.y, p.y), std::min(box.min.z, p.z)};
-        box.max = {std::max(box.max.x, p.x), std::max(box.max.y, p.y), std::max(box.max.z, p.z)};
+        box.min = {
+            .x = std::min(box.min.x, x), .y = std::min(box.min.y, y), .z = std::min(box.min.z, z)};
+        box.max = {
+            .x = std::max(box.max.x, x), .y = std::max(box.max.y, y), .z = std::max(box.max.z, z)};
     }
     return box;
 }
@@ -44,7 +57,7 @@ std::uint32_t findRoot(std::vector<std::uint32_t>& parent, std::uint32_t x) {
 
 QuadLayout::QuadLayout(std::shared_ptr<const std::vector<Vec3d>> positions,
                        std::shared_ptr<const Topology> topology,
-                       Aabb bounds)
+                       const Aabb& bounds)
     : positions_(std::move(positions)), topology_(std::move(topology)), bounds_(bounds) {}
 
 Result<QuadLayout> QuadLayout::create(std::vector<Vec3d> positions,
@@ -130,15 +143,15 @@ CageStats cageStats(const QuadLayout& cage) {
         for (std::size_t i = 0; i < face.size(); ++i) {
             const std::uint32_t a = face[i];
             const std::uint32_t b = face[(i + 1) % face.size()];
-            EdgeUse& use = edges[edgeKey(a, b)];
-            ++use.faces;
-            use.direction += a < b ? 1 : -1;
+            auto& [faces, direction] = edges[edgeKey(a, b)];
+            ++faces;
+            direction += a < b ? 1 : -1;
             ++uses[a];
             parent[findRoot(parent, a)] = findRoot(parent, b);
         }
     }
     stats.edgeCount = edges.size();
-    for (const auto& [key, use] : edges) {
+    for (const EdgeUse& use : std::views::values(edges)) {
         if (use.faces == 1) ++stats.boundaryEdges;
         if (use.faces > 2) ++stats.nonManifoldEdges;
         if (use.faces == 2 && use.direction != 0) ++stats.misorientedEdges;
@@ -150,7 +163,7 @@ CageStats cageStats(const QuadLayout& cage) {
     for (std::uint32_t v = 0; v < cage.vertexCount(); ++v)
         cornerStart[v + 1] = cornerStart[v] + uses[v];
     std::vector<std::uint32_t> cornerFace(cornerStart.back());
-    std::vector<std::uint32_t> fill(cornerStart.begin(), cornerStart.end() - 1);
+    std::vector fill(cornerStart.begin(), cornerStart.end() - 1);
     for (std::uint32_t f = 0; f < cage.faceCount(); ++f) {
         for (std::uint32_t v : cage.face(f)) cornerFace[fill[v]++] = f;
     }
@@ -166,12 +179,12 @@ CageStats cageStats(const QuadLayout& cage) {
         firstFaceOfNeighbour.clear();
         for (std::uint32_t k = 0; k < n; ++k) {
             const auto face = cage.face(cornerFace[cornerStart[v] + k]);
-            const auto at = std::find(face.begin(), face.end(), v) - face.begin();
-            const auto size = static_cast<std::ptrdiff_t>(face.size());
-            for (const std::uint32_t w : {face[static_cast<std::size_t>((at + 1) % size)],
+            const auto at = std::ranges::find(face, v) - face.begin();
+            for (const auto size = static_cast<std::ptrdiff_t>(face.size());
+                 const std::uint32_t w : {face[static_cast<std::size_t>((at + 1) % size)],
                                           face[static_cast<std::size_t>((at + size - 1) % size)]}) {
-                const auto [it, inserted] = firstFaceOfNeighbour.emplace(w, k);
-                if (!inserted) fan[findRoot(fan, k)] = findRoot(fan, it->second);
+                if (const auto [it, inserted] = firstFaceOfNeighbour.emplace(w, k); !inserted)
+                    fan[findRoot(fan, k)] = findRoot(fan, it->second);
             }
         }
         std::size_t fans = 0;

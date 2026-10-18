@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <array>
+#include <cstddef>
+#include <vector>
+
 #include <CGAL/alpha_wrap_3.h>
 
 #include "m2c/adapters/cgal/MeshTools.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 
 #include "CgalMesh.h"
 
@@ -14,7 +20,7 @@ Result<TriMesh> shrinkWrap(const TriMesh& input, const WrapParams& params) {
     return guarded("shrink-wrap", [&]() -> Result<TriMesh> {
         std::vector<Point> points;
         points.reserve(input.vertexCount());
-        for (const Vec3d& p : input.positions()) points.emplace_back(p.x, p.y, p.z);
+        for (const auto& [x, y, z] : input.positions()) points.emplace_back(x, y, z);
         std::vector<std::array<std::size_t, 3>> faces;
         faces.reserve(input.faceCount());
         for (std::size_t f = 0; f < input.faceCount(); ++f) {

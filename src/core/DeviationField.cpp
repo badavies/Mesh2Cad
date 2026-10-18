@@ -3,10 +3,17 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <memory>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
 
 namespace m2c {
 
-Result<DeviationField> DeviationField::create(std::vector<double> distancesMm, double toleranceMm) {
+Result<DeviationField> DeviationField::create(std::vector<double> distancesMm,
+                                              const double toleranceMm) {
     if (distancesMm.empty()) return fail(ErrorCode::InvalidArgument, "no distances");
     if (!(toleranceMm > 0.0) || !std::isfinite(toleranceMm)) {
         return fail(ErrorCode::InvalidArgument, "the tolerance must be positive");
@@ -35,14 +42,12 @@ Result<DeviationField> DeviationField::create(std::vector<double> distancesMm, d
     s.withinTolerance = static_cast<double>(within) / n;
     // Nearest-rank percentile: the smallest value with at least 95% of the values at or below it.
     const auto rank = static_cast<std::size_t>(std::ceil(0.95 * n)) - 1;
-    std::nth_element(magnitudes.begin(),
-                     magnitudes.begin() + static_cast<std::ptrdiff_t>(rank),
-                     magnitudes.end());
+    std::ranges::nth_element(magnitudes, magnitudes.begin() + static_cast<std::ptrdiff_t>(rank));
     s.p95AbsMm = magnitudes[rank];
     return DeviationField(std::make_shared<const std::vector<double>>(std::move(distancesMm)), s);
 }
 
-Result<DeviationHistogram> histogram(const DeviationField& field, std::size_t bins) {
+Result<DeviationHistogram> histogram(const DeviationField& field, const std::size_t bins) {
     if (bins < 1 || bins > 1000) return fail(ErrorCode::InvalidArgument, "bins must be 1 to 1000");
     const DeviationStats& s = field.stats();
     DeviationHistogram h;

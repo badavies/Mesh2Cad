@@ -31,7 +31,7 @@ public:
     /// Reads the fields. Fails with a message naming the bad field.
     [[nodiscard]] Result<Json> params() const;
 
-    void setBusy(bool busy);
+    void setBusy(bool busy) const;
 
 signals:
     void runRequested();

@@ -3,17 +3,32 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
+#include <expected>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <memory>
 #include <miniz.h>
 #include <sstream>
+#include <string>
 #include <system_error>
 #include <type_traits>
+#include <utility>
+#include <variant>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "m2c/adapters/occt/Brep.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/Measurement.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Solid.h"
+#include "m2c/core/SurfacePatch.h"
+#include "m2c/core/Vec3.h"
 #include "m2c/io/Ply.h"
 
 namespace m2c {
@@ -22,13 +37,13 @@ namespace {
 
 using Json = nlohmann::json;
 
-constexpr const char* kFormatName = "mesh2cad-project";
+constexpr auto kFormatName = "mesh2cad-project";
 
 Json vec(const Vec3d& v) {
     return Json::array({v.x, v.y, v.z});
 }
 Vec3d vec(const Json& j) {
-    return {j.at(0).get<double>(), j.at(1).get<double>(), j.at(2).get<double>()};
+    return {.x = j.at(0).get<double>(), .y = j.at(1).get<double>(), .z = j.at(2).get<double>()};
 }
 
 Json pickedJson(const PickedPoint& p) {
@@ -76,12 +91,11 @@ public:
         std::memcpy(&count, data_.data() + pos_, sizeof count);
         pos_ += sizeof count;
         if (count > (data_.size() - pos_) / sizeof(T)) return truncated();
-        std::vector<T> values(static_cast<std::size_t>(count));
+        std::vector<T> values(count);
         if (count > 0) std::memcpy(values.data(), data_.data() + pos_, values.size() * sizeof(T));
         pos_ += values.size() * sizeof(T);
         return values;
     }
-    [[nodiscard]] bool done() const noexcept { return pos_ == data_.size(); }
 
 private:
     static std::unexpected<Error> truncated() {
@@ -116,11 +130,11 @@ Result<QuadLayout> decodeQuadLayout(const std::string& data) {
 std::string encode(const std::vector<SurfacePatch>& faces) {
     std::string out;
     append(out, std::vector<std::uint64_t>{faces.size()});
-    for (const SurfacePatch& f : faces) {
-        append(out, std::vector<std::uint64_t>{f.cageFace, f.cellsU, f.cellsV, f.capPieces});
-        append(out, f.uBreaks);
-        append(out, f.vBreaks);
-        append(out, f.poles);
+    for (const auto& [cageFace, cellsU, cellsV, uBreaks, vBreaks, poles, capPieces] : faces) {
+        append(out, std::vector<std::uint64_t>{cageFace, cellsU, cellsV, capPieces});
+        append(out, uBreaks);
+        append(out, vBreaks);
+        append(out, poles);
     }
     return out;
 }
@@ -146,9 +160,9 @@ Result<std::vector<SurfacePatch>> decodeFaces(const std::string& data, int versi
         SurfacePatch f;
         if (version < 3) {
             if (header->size() != 3 || (*header)[1] < 1 || (*header)[1] > 1024) return bad();
-            f.uBreaks = uniformBreaks(static_cast<std::size_t>((*header)[1]));
+            f.uBreaks = uniformBreaks((*header)[1]);
             f.vBreaks = f.uBreaks;
-            f.capPieces = static_cast<std::size_t>((*header)[2]);
+            f.capPieces = (*header)[2];
         } else {
             if (header->size() != 4 || (*header)[1] < 1 || (*header)[1] > 4096 ||
                 (*header)[2] < 1 || (*header)[2] > 4096) {
@@ -161,7 +175,7 @@ Result<std::vector<SurfacePatch>> decodeFaces(const std::string& data, int versi
             if (!validBreaks(*uBreaks) || !validBreaks(*vBreaks)) return bad();
             f.cellsU = static_cast<std::uint32_t>((*header)[1]);
             f.cellsV = static_cast<std::uint32_t>((*header)[2]);
-            f.capPieces = static_cast<std::size_t>((*header)[3]);
+            f.capPieces = (*header)[3];
             f.uBreaks = std::move(*uBreaks);
             f.vBreaks = std::move(*vBreaks);
         }
@@ -190,8 +204,10 @@ struct ZipArchive {
     }
 };
 
-Result<void>
-addEntry(ZipArchive& archive, const std::string& name, const std::string& data, mz_uint level) {
+Result<void> addEntry(ZipArchive& archive,
+                      const std::string& name,
+                      const std::string& data,
+                      const mz_uint level) {
     if (!mz_zip_writer_add_mem(&archive.zip, name.c_str(), data.data(), data.size(), level)) {
         return fail(ErrorCode::Io,
                     "cannot add '" + name + "' to the project archive: " +
@@ -217,21 +233,21 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
     ZipArchive archive;
     archive.writer = true;
     // Built in memory and written with std::ofstream, so non-ASCII paths work on Windows.
-    if (!mz_zip_writer_init_heap(&archive.zip, 0, 1 << 20)) {
+    if (!mz_zip_writer_init_heap(&archive.zip, 0, 1U << 20U)) {
         return fail(ErrorCode::Internal, "cannot start the project archive");
     }
     archive.open = true;
 
     Json objects = Json::array();
-    for (const ProjectObject& o : project.objects) {
-        Json j{{"id", o.id},
-               {"name", o.name},
-               {"visible", o.visible},
-               {"made_by", o.madeBy},
-               {"made_with", o.madeWith},
-               {"inputs", o.inputs}};
-        if (const auto* m = std::get_if<ProjectMesh>(&o.data)) {
-            const std::string file = "meshes/" + std::to_string(o.id) + ".ply";
+    for (const auto& [id, name, visible, data, madeBy, madeWith, inputs] : project.objects) {
+        Json j{{"id", id},
+               {"name", name},
+               {"visible", visible},
+               {"made_by", madeBy},
+               {"made_with", madeWith},
+               {"inputs", inputs}};
+        if (const auto* m = std::get_if<ProjectMesh>(&data)) {
+            const std::string file = "meshes/" + std::to_string(id) + ".ply";
             std::ostringstream ply(std::ios::out | std::ios::binary);
             if (auto ok = writePly(*m->mesh, ply); !ok) return ok;
             if (auto ok = addEntry(archive, file, ply.str(), MZ_BEST_SPEED); !ok) return ok;
@@ -239,8 +255,8 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             j["file"] = file;
             j["alignment"] = Json{{"rotation", m->alignment.rotation},
                                   {"translation", vec(m->alignment.translation)}};
-        } else if (const auto* s = std::get_if<ProjectSelection>(&o.data)) {
-            const std::string file = "selections/" + std::to_string(o.id) + ".bits";
+        } else if (const auto* s = std::get_if<ProjectSelection>(&data)) {
+            const std::string file = "selections/" + std::to_string(id) + ".bits";
             const auto& words = s->faces->words();
             std::string bytes(words.size() * sizeof(std::uint64_t), '\0');
             if (!words.empty()) std::memcpy(bytes.data(), words.data(), bytes.size());
@@ -249,17 +265,17 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             j["file"] = file;
             j["mesh_id"] = s->meshId;
             j["face_count"] = s->faces->size();
-        } else if (const auto* measurement = std::get_if<Measurement>(&o.data)) {
+        } else if (const auto* measurement = std::get_if<Measurement>(&data)) {
             j["kind"] = "measurement";
             j["a"] = pickedJson(measurement->a);
             j["b"] = pickedJson(measurement->b);
-        } else if (const auto* cage = std::get_if<QuadLayout>(&o.data)) {
-            const std::string file = "quad_layouts/" + std::to_string(o.id) + ".bin";
+        } else if (const auto* cage = std::get_if<QuadLayout>(&data)) {
+            const std::string file = "quad_layouts/" + std::to_string(id) + ".bin";
             if (auto ok = addEntry(archive, file, encode(*cage), MZ_BEST_SPEED); !ok) return ok;
             j["kind"] = "quad_layout";
             j["file"] = file;
-        } else if (const auto* solid = std::get_if<Solid>(&o.data)) {
-            const std::string base = "solids/" + std::to_string(o.id);
+        } else if (const auto* solid = std::get_if<Solid>(&data)) {
+            const std::string base = "solids/" + std::to_string(id);
             auto brep = occt::writeBrep(*solid);
             if (!brep) return std::unexpected(brep.error());
             if (auto ok = addEntry(archive, base + ".brep", *brep, MZ_BEST_SPEED); !ok) return ok;
@@ -269,24 +285,24 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             // is all it takes to rebuild it.
             std::size_t quads = 0;
             for (const SurfacePatch& f : solid->faces()) quads += std::size_t{f.cellsU} * f.cellsV;
-            const double perQuad =
-                double(solid->display().faceCount()) / double(std::max<std::size_t>(quads, 1));
+            const double perQuad = static_cast<double>(solid->display().faceCount()) /
+                                   static_cast<double>(std::max<std::size_t>(quads, 1));
             j["kind"] = "solid";
             j["brep_file"] = base + ".brep";
             j["brep_format"] = "binary";
             j["faces_file"] = base + ".faces";
             j["display_grid"] = std::lround(std::sqrt(perQuad / 2.0));
         } else {
-            const auto& d = std::get<ProjectDeviation>(o.data);
-            const std::string file = "deviations/" + std::to_string(o.id) + ".bin";
+            const auto& [meshId, referenceId, field] = std::get<ProjectDeviation>(data);
+            const std::string file = "deviations/" + std::to_string(id) + ".bin";
             std::string bytes;
-            append(bytes, d.field.distances());
+            append(bytes, field.distances());
             if (auto ok = addEntry(archive, file, bytes, MZ_BEST_SPEED); !ok) return ok;
             j["kind"] = "deviation";
             j["file"] = file;
-            j["mesh_id"] = d.meshId;
-            j["reference_id"] = d.referenceId;
-            j["tolerance_mm"] = d.field.stats().toleranceMm;
+            j["mesh_id"] = meshId;
+            j["reference_id"] = referenceId;
+            j["tolerance_mm"] = field.stats().toleranceMm;
         }
         objects.push_back(std::move(j));
     }
@@ -367,18 +383,18 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
             o.madeBy = j.value("made_by", "");
             o.madeWith = j.value("made_with", "");
             o.inputs = j.value("inputs", std::vector<std::uint64_t>{});
-            const std::string kind = j.at("kind").get<std::string>();
-            if (kind == "mesh") {
+            if (const std::string kind = j.at("kind").get<std::string>(); kind == "mesh") {
                 auto text = readEntry(archive, j.at("file").get<std::string>());
                 if (!text) return std::unexpected(text.error());
                 std::istringstream in(*text, std::ios::in | std::ios::binary);
                 auto mesh = readPlyUnwelded(in);
                 if (!mesh) return std::unexpected(mesh.error());
-                ProjectMesh m{std::make_shared<const TriMesh>(std::move(*mesh)), {}};
+                ProjectMesh m{.mesh = std::make_shared<const TriMesh>(std::move(*mesh)),
+                              .alignment = {}};
                 const Json& a = j.at("alignment");
                 const auto rotation = a.at("rotation").get<std::vector<double>>();
                 if (rotation.size() != 9) return fail(ErrorCode::Parse, "bad alignment in project");
-                std::copy(rotation.begin(), rotation.end(), m.alignment.rotation.begin());
+                std::ranges::copy(rotation, m.alignment.rotation.begin());
                 m.alignment.translation = vec(a.at("translation"));
                 o.data = std::move(m);
             } else if (kind == "selection") {
@@ -391,11 +407,11 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 }
                 if (!words.empty()) std::memcpy(words.data(), raw->data(), words.size() * 8);
                 o.data =
-                    ProjectSelection{j.at("mesh_id").get<std::uint64_t>(),
-                                     std::make_shared<const MeshSelection>(
+                    ProjectSelection{.meshId = j.at("mesh_id").get<std::uint64_t>(),
+                                     .faces = std::make_shared<const MeshSelection>(
                                          MeshSelection::fromWords(std::move(words), faceCount))};
             } else if (kind == "measurement") {
-                o.data = Measurement{pickedFrom(j.at("a")), pickedFrom(j.at("b"))};
+                o.data = Measurement{.a = pickedFrom(j.at("a")), .b = pickedFrom(j.at("b"))};
             } else if (version >= 2 && kind == "quad_layout") {
                 auto raw = readEntry(archive, j.at("file").get<std::string>());
                 if (!raw) return std::unexpected(raw.error());
@@ -428,9 +444,9 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 auto field = DeviationField::create(std::move(*distances),
                                                     j.at("tolerance_mm").get<double>());
                 if (!field) return std::unexpected(field.error());
-                o.data = ProjectDeviation{j.at("mesh_id").get<std::uint64_t>(),
-                                          j.at("reference_id").get<std::uint64_t>(),
-                                          std::move(*field)};
+                o.data = ProjectDeviation{.meshId = j.at("mesh_id").get<std::uint64_t>(),
+                                          .referenceId = j.at("reference_id").get<std::uint64_t>(),
+                                          .field = std::move(*field)};
             } else {
                 return fail(ErrorCode::Parse, "unknown object kind '" + kind + "' in project");
             }

@@ -4,10 +4,19 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/Solid.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/document/Document.h"
 #include "m2c/io/Step.h"
 #include "m2c/pipeline/Surface.h"
 
@@ -36,7 +45,7 @@ Json toJson(const SolidSummary& s) {
 
 bool isStepPath(const std::filesystem::path& path) {
     std::string ext = path.extension().string();
-    std::ranges::transform(ext, ext.begin(), [](unsigned char c) { return std::tolower(c); });
+    std::ranges::transform(ext, ext.begin(), [](const unsigned char c) { return std::tolower(c); });
     return ext == ".step" || ext == ".stp";
 }
 
@@ -93,7 +102,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
             p.fitting.maxSamples = static_cast<std::size_t>(*samples);
             p.fitting.isolationLevel = static_cast<int>(*level);
 
-            std::vector<ObjectId> inputs{layout->id};
+            std::vector inputs{layout->id};
             std::shared_ptr<const TriMesh> scan;
             if (params.contains("mesh_id")) {
                 M2C_TRY(mesh, requireMesh(context, params, "mesh_id"));
@@ -145,7 +154,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
             "properties":{"id":{"type":"integer","minimum":0,"description":"The solid."}},
             "required":["id"],"additionalProperties":false})",
         false,
-        [](CommandContext& context, const Json& params) -> Result<Json> {
+        [](const CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireObject(context, params, "id", "solid"));
             return Json{{"id", object->id},
                         {"name", object->name},

@@ -3,13 +3,22 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <numeric>
 #include <queue>
+#include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
+#include "m2c/adapters/quad/QuadRemesh.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -19,11 +28,11 @@ using Face = std::vector<std::uint32_t>;
 
 std::uint64_t undirected(std::uint32_t a, std::uint32_t b) noexcept {
     if (a > b) std::swap(a, b);
-    return (std::uint64_t{a} << 32) | b;
+    return (std::uint64_t{a} << 32U) | b;
 }
 
-std::uint64_t directed(std::uint32_t a, std::uint32_t b) noexcept {
-    return (std::uint64_t{a} << 32) | b;
+std::uint64_t directed(const std::uint32_t a, const std::uint32_t b) noexcept {
+    return (std::uint64_t{a} << 32U) | b;
 }
 
 /// Faces using each undirected edge, in face order.
@@ -40,7 +49,7 @@ edgeFaces(const std::vector<Face>& faces) {
 }
 
 /// True when the face runs a -> b (b directly after a).
-bool runs(const Face& face, std::uint32_t a, std::uint32_t b) {
+bool runs(const Face& face, const std::uint32_t a, const std::uint32_t b) {
     for (std::size_t i = 0; i < face.size(); ++i) {
         if (face[i] == a) return face[(i + 1) % face.size()] == b;
     }
@@ -49,7 +58,7 @@ bool runs(const Face& face, std::uint32_t a, std::uint32_t b) {
 
 std::size_t dropNonManifoldEdgeFaces(std::vector<Face>& faces) {
     const auto edges = edgeFaces(faces);
-    std::vector<bool> drop(faces.size(), false);
+    std::vector drop(faces.size(), false);
     for (std::uint32_t f = 0; f < faces.size(); ++f) {
         const Face& face = faces[f];
         for (std::size_t i = 0; i < face.size(); ++i) {
@@ -71,7 +80,7 @@ std::size_t dropNonManifoldEdgeFaces(std::vector<Face>& faces) {
 /// then the others in the order of their first face.
 std::vector<std::vector<Face>> splitComponents(std::vector<Face> faces) {
     const auto edges = edgeFaces(faces);
-    std::vector<std::uint32_t> component(faces.size(), UINT32_MAX);
+    std::vector component(faces.size(), UINT32_MAX);
     std::vector<std::vector<Face>> parts;
     for (std::uint32_t seed = 0; seed < faces.size(); ++seed) {
         if (component[seed] != UINT32_MAX) continue;
@@ -110,7 +119,7 @@ std::vector<std::vector<Face>> splitComponents(std::vector<Face> faces) {
 /// impossible (a non-orientable surface).
 bool orientConsistently(std::vector<Face>& faces) {
     const auto edges = edgeFaces(faces);
-    std::vector<int> flip(faces.size(), -1);
+    std::vector flip(faces.size(), -1);
     for (std::uint32_t seed = 0; seed < faces.size(); ++seed) {
         if (flip[seed] != -1) continue;
         flip[seed] = 0;
@@ -129,7 +138,7 @@ bool orientConsistently(std::vector<Face>& faces) {
                     if (g == f) continue;
                     const bool gForward = runs(faces[g], a, b);
                     // g must end up running b -> a: forward(g) xor flip(g) != fForward.
-                    const int need = (gForward == fForward) ? 1 : 0;
+                    const int need = gForward == fForward ? 1 : 0;
                     if (flip[g] == -1) {
                         flip[g] = need;
                         open.push(g);
@@ -141,7 +150,7 @@ bool orientConsistently(std::vector<Face>& faces) {
         }
     }
     for (std::size_t f = 0; f < faces.size(); ++f) {
-        if (flip[f] == 1) std::reverse(faces[f].begin(), faces[f].end());
+        if (flip[f] == 1) std::ranges::reverse(faces[f]);
     }
     return true;
 }
@@ -150,7 +159,7 @@ bool orientConsistently(std::vector<Face>& faces) {
 std::size_t splitNonManifoldVertices(std::vector<Vec3d>& positions, std::vector<Face>& faces) {
     std::vector<std::vector<std::uint32_t>> around(positions.size());
     for (std::uint32_t f = 0; f < faces.size(); ++f) {
-        for (std::uint32_t v : faces[f]) around[v].push_back(f);
+        for (const std::uint32_t v : faces[f]) around[v].push_back(f);
     }
     std::size_t split = 0;
     const auto originalCount = static_cast<std::uint32_t>(positions.size());
@@ -167,12 +176,11 @@ std::size_t splitNonManifoldVertices(std::vector<Vec3d>& positions, std::vector<
         std::unordered_map<std::uint32_t, std::uint32_t> seen;
         for (std::uint32_t k = 0; k < incident.size(); ++k) {
             const Face& face = faces[incident[k]];
-            const auto at =
-                static_cast<std::size_t>(std::find(face.begin(), face.end(), v) - face.begin());
+            const auto at = static_cast<std::size_t>(std::ranges::find(face, v) - face.begin());
             for (std::uint32_t w :
                  {face[(at + 1) % face.size()], face[(at + face.size() - 1) % face.size()]}) {
-                const auto [it, inserted] = seen.emplace(w, k);
-                if (!inserted) parent[root(k)] = root(it->second);
+                if (const auto [it, inserted] = seen.emplace(w, k); !inserted)
+                    parent[root(k)] = root(it->second);
             }
         }
         std::unordered_map<std::uint32_t, std::uint32_t> copyOfFan;
@@ -207,11 +215,11 @@ void fillLoops(std::vector<Face>& faces, CageCleanup& report) {
     std::vector<std::uint32_t> starts;
     for (const Face& face : faces) {
         for (std::size_t i = 0; i < face.size(); ++i) {
-            const std::uint32_t a = face[i];
-            const std::uint32_t b = face[(i + 1) % face.size()];
-            if (!halfEdges.contains(directed(b, a))) {
-                next[a] = b;
-                starts.push_back(a);
+            const std::uint32_t from = face[i];
+            if (const std::uint32_t to = face[(i + 1) % face.size()];
+                !halfEdges.contains(directed(to, from))) {
+                next[from] = to;
+                starts.push_back(from);
             }
         }
     }
@@ -224,7 +232,7 @@ void fillLoops(std::vector<Face>& faces, CageCleanup& report) {
             loop.push_back(v);
         }
         if (loop.size() < 3) continue;
-        std::reverse(loop.begin(), loop.end());
+        std::ranges::reverse(loop);
         report.largestLoop = std::max(report.largestLoop, loop.size());
         ++report.filledLoops;
         faces.push_back(std::move(loop));
@@ -232,25 +240,25 @@ void fillLoops(std::vector<Face>& faces, CageCleanup& report) {
 }
 
 /// Removes vertices that only two faces share (repeatedly, as removing one can make another).
-std::size_t dissolveValenceTwo(std::size_t vertexCount, std::vector<Face>& faces) {
+std::size_t dissolveValenceTwo(const std::size_t vertexCount, std::vector<Face>& faces) {
     std::size_t dissolved = 0;
     for (bool changed = true; changed;) {
         changed = false;
         std::vector<std::vector<std::uint32_t>> around(vertexCount);
         for (std::uint32_t f = 0; f < faces.size(); ++f) {
-            for (std::uint32_t v : faces[f]) around[v].push_back(f);
+            for (const std::uint32_t v : faces[f]) around[v].push_back(f);
         }
-        std::vector<bool> dropFace(faces.size(), false);
-        std::vector<bool> touched(faces.size(), false);
+        std::vector dropFace(faces.size(), false);
+        std::vector touched(faces.size(), false);
         for (std::uint32_t v = 0; v < vertexCount; ++v) {
             if (around[v].size() != 2) continue;
             const std::uint32_t f1 = around[v][0];
             const std::uint32_t f2 = around[v][1];
             if (touched[f1] || touched[f2]) continue; // one change per face per pass
             const bool small1 = faces[f1].size() == 3;
-            const bool small2 = faces[f2].size() == 3;
-            if (small1 && small2) continue; // two triangles on the same three vertices
-            for (std::uint32_t f : {f1, f2}) {
+            // Two triangles on the same three vertices.
+            if (const bool small2 = faces[f2].size() == 3; small1 && small2) continue;
+            for (const std::uint32_t f : {f1, f2}) {
                 std::erase(faces[f], v);
                 if (faces[f].size() < 3) dropFace[f] = true;
                 touched[f] = true;
@@ -268,12 +276,12 @@ std::size_t dissolveValenceTwo(std::size_t vertexCount, std::vector<Face>& faces
 }
 
 Result<QuadLayout> assemble(const std::vector<Vec3d>& positions, const std::vector<Face>& faces) {
-    std::vector<std::uint32_t> remap(positions.size(), UINT32_MAX);
+    std::vector remap(positions.size(), UINT32_MAX);
     std::vector<Vec3d> used;
     std::vector<std::uint32_t> starts{0};
     std::vector<std::uint32_t> vertices;
     for (const Face& face : faces) {
-        for (std::uint32_t v : face) {
+        for (const std::uint32_t v : face) {
             if (remap[v] == UINT32_MAX) {
                 remap[v] = static_cast<std::uint32_t>(used.size());
                 used.push_back(positions[v]);
@@ -458,8 +466,7 @@ closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& par
     }
     auto cage = assemble(positions, body);
     if (!cage) return cage;
-    const CageStats stats = cageStats(*cage);
-    if (!stats.closed() || stats.components != 1) {
+    if (const CageStats stats = cageStats(*cage); !stats.closed() || stats.components != 1) {
         return fail(ErrorCode::InvalidState,
                     "the quad layout could not be closed: " + std::to_string(stats.boundaryEdges) +
                         " open, " + std::to_string(stats.nonManifoldEdges) + " non-manifold and " +
@@ -488,7 +495,11 @@ quadRemesh(const TriMesh& scan, const QuadRemeshParams& params, const CageCloseP
     }
     const CageStats stats = cageStats(*cage);
     const double mean = sum / static_cast<double>(cage->vertexCount());
-    return QuadRemeshResult{std::move(*cage), cleanup, stats, maxDistance, mean};
+    return QuadRemeshResult{.cage = std::move(*cage),
+                            .cleanup = cleanup,
+                            .stats = stats,
+                            .maxDistanceMm = maxDistance,
+                            .meanDistanceMm = mean};
 }
 
 } // namespace m2c

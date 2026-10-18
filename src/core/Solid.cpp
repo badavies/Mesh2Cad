@@ -2,9 +2,20 @@
 #include "m2c/core/Solid.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <numbers>
 #include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/SurfacePatch.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -21,7 +32,7 @@ Vec3d unit(const Vec3d& v) {
     return l > 0.0 ? v * (1.0 / l) : Vec3d{};
 }
 
-Vec3d unitNormal(const SurfacePatch& face, double u, double v) {
+Vec3d unitNormal(const SurfacePatch& face, const double u, const double v) {
     const auto [i, s] = pieceAt(face.uBreaks, u);
     const auto [j, t] = pieceAt(face.vBreaks, v);
     return unit(normal(face.piece(i, j), s, t));
@@ -35,8 +46,8 @@ double angleDeg(const Vec3d& a, const Vec3d& b) {
 } // namespace
 
 Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
-                                int samplesPerEdge,
-                                double toleranceMm,
+                                const int samplesPerEdge,
+                                const double toleranceMm,
                                 const std::vector<std::vector<bool>>& caps) {
     if (samplesPerEdge < 1 || samplesPerEdge > 64 || !(toleranceMm > 0.0)) {
         return fail(ErrorCode::InvalidArgument,
@@ -68,13 +79,14 @@ Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
         const SurfacePatch& face = faces[f];
         const int k = perCageFace[face.cageFace] == 1 ? 2 * samplesPerEdge : samplesPerEdge;
         for (int i = 0; i <= k; ++i) {
-            const double s = static_cast<double>(i) / k;
-            for (const auto& [u, v] : {std::pair{s, 0.0}, {s, 1.0}, {0.0, s}, {1.0, s}}) {
+            for (const double s = static_cast<double>(i) / k;
+                 const auto& [u, v] : {std::pair{s, 0.0}, {s, 1.0}, {0.0, s}, {1.0, s}}) {
                 samples.push_back(
-                    {evaluate(face, u, v),
-                     unitNormal(face, u, v),
-                     f,
-                     isCap(f, pieceAt(face.uBreaks, u).first, pieceAt(face.vBreaks, v).first)});
+                    {.p = evaluate(face, u, v),
+                     .n = unitNormal(face, u, v),
+                     .face = f,
+                     .cap =
+                         isCap(f, pieceAt(face.uBreaks, u).first, pieceAt(face.vBreaks, v).first)});
             }
         }
         // Knot lines inside the face: the pieces on either side share their poles.
@@ -106,27 +118,27 @@ Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
     };
     struct CellHash {
         std::size_t operator()(const Cell& c) const noexcept {
-            const auto h = [](long long x) { return std::hash<long long>{}(x); };
-            return h(c[0]) ^ (h(c[1]) * 0x9e3779b97f4a7c15ULL) ^ (h(c[2]) * 0xc2b2ae3d27d4eb4fULL);
+            const auto h = [](const long long x) { return std::hash<long long>{}(x); };
+            return h(c[0]) ^ h(c[1]) * 0x9e3779b97f4a7c15ULL ^ h(c[2]) * 0xc2b2ae3d27d4eb4fULL;
         }
     };
     std::unordered_map<Cell, std::vector<std::size_t>, CellHash> grid;
     for (std::size_t i = 0; i < samples.size(); ++i) grid[cell(samples[i].p)].push_back(i);
-    for (const EdgeSample& a : samples) {
-        const Cell c = cell(a.p);
+    for (const auto& [pointA, normalA, faceA, capA] : samples) {
+        const Cell c = cell(pointA);
         bool found = false;
         for (long long dx = -1; dx <= 1; ++dx) {
             for (long long dy = -1; dy <= 1; ++dy) {
                 for (long long dz = -1; dz <= 1; ++dz) {
                     const auto it = grid.find({c[0] + dx, c[1] + dy, c[2] + dz});
                     if (it == grid.end()) continue;
-                    for (std::size_t j : it->second) {
-                        const EdgeSample& b = samples[j];
-                        const double gap = length(a.p - b.p);
-                        if (b.face == a.face || gap > toleranceMm) continue;
+                    for (const std::size_t j : it->second) {
+                        const auto& [pointB, normalB, faceB, capB] = samples[j];
+                        const double gap = length(pointA - pointB);
+                        if (faceB == faceA || gap > toleranceMm) continue;
                         found = true;
                         out.maxGapMm = std::max(out.maxGapMm, gap);
-                        record(angleDeg(a.n, b.n), a.cap || b.cap);
+                        record(angleDeg(normalA, normalB), capA || capB);
                     }
                 }
             }
@@ -136,7 +148,7 @@ Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
     return out;
 }
 
-Result<FaceTessellation> tessellate(const std::vector<SurfacePatch>& faces, int n) {
+Result<FaceTessellation> tessellate(const std::vector<SurfacePatch>& faces, const int n) {
     if (n < 1 || n > 64) return fail(ErrorCode::InvalidArgument, "grid must be 1 to 64");
     std::vector<Vec3d> positions;
     std::vector<std::uint32_t> indices;
@@ -165,7 +177,9 @@ Result<FaceTessellation> tessellate(const std::vector<SurfacePatch>& faces, int 
     }
     auto mesh = TriMesh::create(std::move(positions), std::move(indices));
     if (!mesh) return std::unexpected(mesh.error());
-    return FaceTessellation{std::move(*mesh), std::move(triangleFaces), std::move(uvs)};
+    return FaceTessellation{.mesh = std::move(*mesh),
+                            .triangleFaces = std::move(triangleFaces),
+                            .vertexUvs = std::move(uvs)};
 }
 
 } // namespace m2c

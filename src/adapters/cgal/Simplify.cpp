@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <cmath>
-#include <type_traits>
+#include <cstddef>
 
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h> // for the bounded placement
 #include <CGAL/Surface_mesh_simplification/Policies/Edge_collapse/Bounded_distance_placement.h>
@@ -9,6 +9,8 @@
 #include <CGAL/Surface_mesh_simplification/edge_collapse.h>
 
 #include "m2c/adapters/cgal/MeshTools.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 
 #include "CgalMesh.h"
 
@@ -61,12 +63,12 @@ Result<TriMesh> simplify(const TriMesh& input, const SimplifyParams& params) {
         }
 
         using Policies = SMS::GarlandHeckbert_plane_policies<SurfaceMesh, Kernel>;
-        Policies policies(mesh);
-        const SimplifyStop stop{params.targetFaces, params.maxErrorMm * params.maxErrorMm};
-        const auto collapse = [&](const auto& basePlacement) {
-            const SMS::Constrained_placement<std::decay_t<decltype(basePlacement)>,
-                                             decltype(constrained)>
-                placement(constrained, basePlacement);
+        const Policies policies(mesh);
+        const SimplifyStop stop{.targetFaces = params.targetFaces,
+                                .maxSquaredError = params.maxErrorMm * params.maxErrorMm};
+        const auto collapse = [&]<typename BasePlacement>(const BasePlacement& basePlacement) {
+            const SMS::Constrained_placement<BasePlacement, decltype(constrained)> placement(
+                constrained, basePlacement);
             SMS::edge_collapse(mesh,
                                stop,
                                CGAL::parameters::get_cost(policies.get_cost())

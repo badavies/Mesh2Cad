@@ -9,12 +9,20 @@
 //   mesh2cad-mcp --connect       only connect to the running app; fail if it is not open
 //   mesh2cad-mcp --session <file> session file to use (default: the app's per-user location)
 
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <filesystem>
 #include <iostream>
 #include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/document/Document.h"
 #include "m2c/rpc/RpcServer.h"
 #include "m2c/rpc/Session.h"
 
@@ -29,7 +37,7 @@ using m2c::Result;
 struct HeadlessEngine {
     m2c::CommandRegistry registry;
     m2c::Document document;
-    m2c::CommandContext context{document};
+    m2c::CommandContext context{.document = document};
     std::unique_ptr<m2c::RpcServer> server;
 
     HeadlessEngine() {
@@ -38,7 +46,7 @@ struct HeadlessEngine {
         server = std::make_unique<m2c::RpcServer>(registry, context);
     }
 
-    Result<Json> call(const std::string& method, const Json& params) {
+    Result<Json> call(const std::string& method, const Json& params) const {
         static long long next = 1;
         const auto reply = server->handle(
             Json{{"jsonrpc", "2.0"}, {"id", next++}, {"method", method}, {"params", params}});
@@ -58,9 +66,10 @@ struct RemoteEngine {
         while (true) {
             auto line = client->readLine();
             if (!line) return std::unexpected(line.error());
-            const Json reply = Json::parse(*line, nullptr, false);
             // Skip doc.changed notifications and anything that is not our answer.
-            if (reply.is_object() && reply.value("id", Json()) == Json(id)) return reply;
+            if (Json reply = Json::parse(*line, nullptr, false);
+                reply.is_object() && reply.value("id", Json()) == Json(id))
+                return reply;
         }
     }
 
@@ -85,15 +94,14 @@ struct RemoteEngine {
 
 int main(int argc, char** argv) {
     const std::span<char* const> args(argv, static_cast<std::size_t>(argc));
-    enum class Mode {
+    enum class Mode : std::uint8_t {
         Auto,
         Headless,
         Connect
     } mode = Mode::Auto;
     std::filesystem::path sessionFile = m2c::defaultSessionFile();
     for (std::size_t i = 1; i < args.size(); ++i) {
-        const std::string_view arg = args[i];
-        if (arg == "--headless") {
+        if (const std::string_view arg = args[i]; arg == "--headless") {
             mode = Mode::Headless;
         } else if (arg == "--connect") {
             mode = Mode::Connect;
@@ -111,8 +119,7 @@ int main(int argc, char** argv) {
     std::unique_ptr<HeadlessEngine> headless;
     std::unique_ptr<RemoteEngine> remote;
     if (mode != Mode::Headless) {
-        auto opened = RemoteEngine::open(sessionFile);
-        if (opened) {
+        if (auto opened = RemoteEngine::open(sessionFile)) {
             remote = std::move(*opened);
             std::cerr << "mesh2cad-mcp: connected to the running Mesh2Cad app\n";
         } else if (mode == Mode::Connect) {

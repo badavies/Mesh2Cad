@@ -1,8 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Quad layout (ARCHITECTURE.md section 6): a closed scan mesh in, a quad control cage out.
 
+#include <cstddef>
 #include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/document/Document.h"
 #include "m2c/pipeline/QuadRemesh.h"
 
 #include "detail/Params.h"

@@ -65,7 +65,7 @@ public:
     [[nodiscard]] const FaceAdjacency& faceAdjacency() const;
 
 private:
-    TriMesh(PositionBuffer positions, IndexBuffer indices, Aabb bounds);
+    TriMesh(PositionBuffer positions, IndexBuffer indices, const Aabb& bounds);
 
     PositionBuffer positions_;
     IndexBuffer indices_;

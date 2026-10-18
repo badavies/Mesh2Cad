@@ -138,10 +138,11 @@ public:
 
     /// Replaces a mesh object's mesh (an edit in place, keeping id and name). Deviations from or
     /// to it are dropped; selections on it too unless the new mesh shares the old face buffer.
-    [[nodiscard]] Result<void> replaceMesh(ObjectId id,
-                                           std::shared_ptr<const TriMesh> mesh,
-                                           Provenance provenance,
-                                           std::optional<Transform3d> alignment = std::nullopt);
+    [[nodiscard]] Result<void>
+    replaceMesh(ObjectId id,
+                std::shared_ptr<const TriMesh> mesh,
+                Provenance provenance,
+                const std::optional<Transform3d>& alignment = std::nullopt);
 
     /// Replaces the faces of a selection object. The new selection must fit the same mesh.
     [[nodiscard]] Result<void> replaceSelection(ObjectId id,

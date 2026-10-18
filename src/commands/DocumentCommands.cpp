@@ -3,7 +3,13 @@
 
 #include <filesystem>
 #include <memory>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/document/Document.h"
 #include "m2c/io/MeshIO.h"
 
 #include "detail/Params.h"
@@ -13,17 +19,16 @@ namespace m2c::cmd {
 
 namespace {
 
-constexpr const char* kNoParams =
-    R"({"type":"object","properties":{},"additionalProperties":false})";
-constexpr const char* kIdOnly = R"({
+constexpr auto kNoParams = R"({"type":"object","properties":{},"additionalProperties":false})";
+constexpr auto kIdOnly = R"({
     "type":"object",
     "properties":{"id":{"type":"integer","minimum":0,"description":"Object id."}},
     "required":["id"],"additionalProperties":false})";
 
 Json historyJson(const std::vector<HistoryStep>& steps) {
     Json out = Json::array();
-    for (const HistoryStep& s : steps)
-        out.push_back(Json{{"label", s.label}, {"source", s.source}});
+    for (const auto& [label, source] : steps)
+        out.push_back(Json{{"label", label}, {"source", source}});
     return out;
 }
 
@@ -51,7 +56,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
         "List the objects in the document: meshes, selections, measurements and quad layouts.",
         kNoParams,
         false,
-        [](CommandContext& context, const Json&) -> Result<Json> {
+        [](const CommandContext& context, const Json&) -> Result<Json> {
             Json objects = Json::array();
             for (const DocumentObject& o : context.document.objects()) {
                 objects.push_back(describe(o));
@@ -64,7 +69,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                     "List the undo and redo steps, with the source (ui, cli, json, mcp) of each.",
                     kNoParams,
                     false,
-                    [](CommandContext& context, const Json&) -> Result<Json> {
+                    [](const CommandContext& context, const Json&) -> Result<Json> {
                         return Json{{"undo", historyJson(context.document.undoHistory())},
                                     {"redo", historyJson(context.document.redoHistory())}};
                     }));
@@ -159,28 +164,28 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
         "a mesh.",
         kIdOnly,
         false,
-        [](CommandContext& context, const Json& params) -> Result<Json> {
+        [](const CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireMesh(context, params));
             return describeMesh(context.document, object->id);
         }));
 
-    out.push_back(makeCommand("mesh.export",
-                              "Write a mesh object to a file: binary STL, OBJ, or binary PLY.",
-                              R"({
+    out.push_back(
+        makeCommand("mesh.export",
+                    "Write a mesh object to a file: binary STL, OBJ, or binary PLY.",
+                    R"({
             "type":"object",
             "properties":{
                 "id":{"type":"integer","minimum":0,"description":"Object id."},
                 "path":{"type":"string","description":"Destination file; the extension (.stl, .obj, .ply) selects the format."}
             },
             "required":["id","path"],"additionalProperties":false})",
-                              false,
-                              [](CommandContext& context, const Json& params) -> Result<Json> {
-                                  M2C_TRY(object, requireMesh(context, params));
-                                  M2C_TRY(path, requireString(params, "path"));
-                                  M2C_TRY(written,
-                                          writeMesh(*object->mesh, std::filesystem::path(*path)));
-                                  return Json{{"id", object->id}, {"path", *path}};
-                              }));
+                    false,
+                    [](const CommandContext& context, const Json& params) -> Result<Json> {
+                        M2C_TRY(object, requireMesh(context, params));
+                        M2C_TRY(path, requireString(params, "path"));
+                        M2C_TRY(written, writeMesh(*object->mesh, std::filesystem::path(*path)));
+                        return Json{{"id", object->id}, {"path", *path}};
+                    }));
 }
 
 } // namespace m2c::cmd

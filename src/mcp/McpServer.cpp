@@ -1,11 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "McpServer.h"
 
+#include <expected>
+#include <optional>
+#include <string>
+#include <utility>
+
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+
 namespace m2c {
 
 namespace {
 
-constexpr const char* kProtocolVersion = "2025-06-18";
+constexpr auto kProtocolVersion = "2025-06-18";
 
 Json response(const Json& id, Json result) {
     return Json{{"jsonrpc", "2.0"}, {"id", id}, {"result", std::move(result)}};
@@ -93,7 +101,7 @@ std::optional<Json> McpServer::handle(const Json& message) {
         return std::nullopt; // a response or junk: nothing to answer
     }
     if (!message.contains("id")) return std::nullopt; // notifications (initialized, cancelled)
-    const Json id = message["id"];
+    const Json& id = message["id"];
     if (!message["method"].is_string()) {
         return std::make_optional(errorResponse(id, -32600, "invalid request"));
     }

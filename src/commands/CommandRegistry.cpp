@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <exception>
+#include <ranges>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
 
 namespace m2c {
 
@@ -12,14 +17,14 @@ Result<void> CommandRegistry::add(Command command) {
     if (!command.handler) {
         return fail(ErrorCode::InvalidArgument, "command '" + command.name + "' has no handler");
     }
-    std::string name = command.name;
-    if (!commands_.try_emplace(name, std::move(command)).second) {
+    if (const std::string name = command.name;
+        !commands_.try_emplace(name, std::move(command)).second) {
         return fail(ErrorCode::InvalidArgument, "command '" + name + "' is already registered");
     }
     return {};
 }
 
-const Command* CommandRegistry::find(std::string_view name) const {
+const Command* CommandRegistry::find(const std::string_view name) const {
     const auto it = commands_.find(name);
     return it == commands_.end() ? nullptr : &it->second;
 }
@@ -27,12 +32,13 @@ const Command* CommandRegistry::find(std::string_view name) const {
 std::vector<const Command*> CommandRegistry::list() const {
     std::vector<const Command*> result;
     result.reserve(commands_.size());
-    for (const auto& entry : commands_) result.push_back(&entry.second);
+    for (const Command& command : std::views::values(commands_)) result.push_back(&command);
     return result;
 }
 
-Result<Json>
-CommandRegistry::execute(CommandContext& context, std::string_view name, const Json& params) const {
+Result<Json> CommandRegistry::execute(CommandContext& context,
+                                      const std::string_view name,
+                                      const Json& params) const {
     const Command* command = find(name);
     if (command == nullptr) {
         return fail(ErrorCode::NotFound, "unknown command '" + std::string(name) + "'");

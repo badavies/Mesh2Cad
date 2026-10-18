@@ -3,11 +3,17 @@
 
 #include <array>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <ios>
+#include <memory>
 #include <random>
+#include <string>
 #include <system_error>
 
 #include <nlohmann/json.hpp>
+
+#include "m2c/core/Error.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -69,18 +75,19 @@ Result<SessionInfo> readSessionFile(const std::filesystem::path& path) {
         (j.contains("pid") && !j["pid"].is_number_integer())) {
         return fail(ErrorCode::Parse, "session file '" + path.string() + "' is malformed");
     }
-    return SessionInfo{
-        j["endpoint"].get<std::string>(), j["token"].get<std::string>(), j.value("pid", 0LL)};
+    return SessionInfo{.endpoint = j["endpoint"].get<std::string>(),
+                       .token = j["token"].get<std::string>(),
+                       .processId = j.value("pid", 0LL)};
 }
 
 std::string makeSessionToken() {
     std::random_device rd;
     std::string hex;
-    constexpr std::array<char, 16> digits{
-        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
     for (int i = 0; i < 4; ++i) {
+        constexpr std::array digits{
+            '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
         const unsigned v = rd();
-        for (int k = 0; k < 8; ++k) hex.push_back(digits[(v >> (4 * k)) & 0xF]);
+        for (unsigned k = 0; k < 8; ++k) hex.push_back(digits[(v >> (4U * k)) & 0xFU]);
     }
     return hex;
 }
@@ -99,7 +106,7 @@ Result<std::unique_ptr<LocalClient>> LocalClient::connect(const std::string& end
     const int n = MultiByteToWideChar(CP_UTF8, 0, endpoint.c_str(), -1, nullptr, 0);
     std::wstring wide(static_cast<std::size_t>(n > 0 ? n : 1), L'\0');
     MultiByteToWideChar(CP_UTF8, 0, endpoint.c_str(), -1, wide.data(), n);
-    HANDLE pipe = CreateFileW(
+    const HANDLE pipe = CreateFileW(
         wide.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
     if (pipe == INVALID_HANDLE_VALUE) {
         return fail(ErrorCode::Io, "cannot connect to the Mesh2Cad app at '" + endpoint + "'");
@@ -110,7 +117,7 @@ Result<std::unique_ptr<LocalClient>> LocalClient::connect(const std::string& end
     return client;
 }
 
-Result<void> LocalClient::writeLine(const std::string& line) {
+Result<void> LocalClient::writeLine(const std::string& line) const {
     const std::string data = line + "\n";
     DWORD written = 0;
     if (!WriteFile(impl_->pipe, data.data(), static_cast<DWORD>(data.size()), &written, nullptr) ||
@@ -122,8 +129,7 @@ Result<void> LocalClient::writeLine(const std::string& line) {
 
 Result<std::string> LocalClient::readLine() {
     while (true) {
-        const auto nl = pending_.find('\n');
-        if (nl != std::string::npos) {
+        if (const auto nl = pending_.find('\n'); nl != std::string::npos) {
             std::string line = pending_.substr(0, nl);
             pending_.erase(0, nl + 1);
             return line;
@@ -165,7 +171,7 @@ Result<std::unique_ptr<LocalClient>> LocalClient::connect(const std::string& end
     return client;
 }
 
-Result<void> LocalClient::writeLine(const std::string& line) {
+Result<void> LocalClient::writeLine(const std::string& line) const {
     const std::string data = line + "\n";
     std::size_t sent = 0;
     while (sent < data.size()) {

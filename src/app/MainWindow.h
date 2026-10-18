@@ -44,9 +44,9 @@ private:
     void onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot);
     void refreshTree();
     void onTreeSelection();
-    void showTool(const QString& name);
+    void showTool(const QString& name) const;
     void runForm();
-    void run(const QString& command, const Json& params, Engine::Done done = {});
+    void run(const QString& command, const Json& params, Engine::Done done = {}) const;
 
     // Interaction results from the viewport.
     void onBrushStroke(ObjectId mesh, const std::vector<Vec3d>& centers, bool subtract, bool add);

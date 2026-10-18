@@ -3,22 +3,27 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <unordered_map>
+#include <utility>
 #include <vector>
+
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
 namespace {
 
-std::optional<TriMesh> cluster(const TriMesh& mesh, double cell) {
+std::optional<TriMesh> cluster(const TriMesh& mesh, const double cell) {
     const Aabb& box = mesh.bounds();
     const auto cellOf = [&](const Vec3d& p) {
         const auto ix = static_cast<std::uint64_t>((p.x - box.min.x) / cell);
         const auto iy = static_cast<std::uint64_t>((p.y - box.min.y) / cell);
         const auto iz = static_cast<std::uint64_t>((p.z - box.min.z) / cell);
-        return (ix << 42) | (iy << 21) | iz; // 21 bits per axis is plenty for a display grid
+        return (ix << 42U) | (iy << 21U) | iz; // 21 bits per axis is plenty for a display grid
     };
     std::unordered_map<std::uint64_t, std::uint32_t> cellIndex;
     std::vector<Vec3d> sum;
@@ -55,10 +60,10 @@ std::optional<TriMesh> cluster(const TriMesh& mesh, double cell) {
 
 } // namespace
 
-TriMesh buildDisplayProxy(const TriMesh& mesh, std::size_t targetFaces) {
+TriMesh buildDisplayProxy(const TriMesh& mesh, const std::size_t targetFaces) {
     if (mesh.faceCount() <= targetFaces || targetFaces == 0) return mesh;
-    const Aabb& box = mesh.bounds();
-    const Vec3d extent = box.max - box.min;
+    const auto& [boxMin, boxMax] = mesh.bounds();
+    const Vec3d extent = boxMax - boxMin;
     const double diagonal = length(extent);
     if (!(diagonal > 0.0)) return mesh;
     // A surface sampled on a grid of cell size h keeps roughly area / h^2 vertices and twice as

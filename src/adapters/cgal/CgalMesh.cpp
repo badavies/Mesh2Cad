@@ -1,10 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "CgalMesh.h"
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
 #include <vector>
 
 #include <CGAL/Polygon_mesh_processing/orient_polygon_soup.h>
 #include <CGAL/Polygon_mesh_processing/polygon_soup_to_polygon_mesh.h>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c::cgal {
 
@@ -15,7 +23,7 @@ SurfaceMesh toSurfaceMesh(const TriMesh& mesh) {
                 static_cast<SurfaceMesh::size_type>(mesh.faceCount()));
     std::vector<Point> points;
     points.reserve(mesh.vertexCount());
-    for (const Vec3d& p : mesh.positions()) points.emplace_back(p.x, p.y, p.z);
+    for (const auto& [x, y, z] : mesh.positions()) points.emplace_back(x, y, z);
     std::vector<std::array<std::size_t, 3>> faces;
     faces.reserve(mesh.faceCount());
     for (std::size_t f = 0; f < mesh.faceCount(); ++f) {
@@ -39,10 +47,10 @@ Result<TriMesh> fromSurfaceMesh(const SurfaceMesh& mesh) {
     for (const auto v : mesh.vertices()) {
         index[v.idx()] = static_cast<std::uint32_t>(positions.size());
         const Point& p = mesh.point(v);
-        positions.push_back({p.x(), p.y(), p.z()});
+        positions.push_back({.x = p.x(), .y = p.y(), .z = p.z()});
     }
     std::vector<std::uint32_t> indices;
-    indices.reserve(mesh.number_of_faces() * 3);
+    indices.reserve(static_cast<std::size_t>(mesh.number_of_faces()) * 3);
     for (const auto f : mesh.faces()) {
         const auto h = mesh.halfedge(f);
         if (mesh.next(mesh.next(mesh.next(h))) != h) continue; // not a triangle

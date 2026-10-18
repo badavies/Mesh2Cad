@@ -136,7 +136,7 @@ private:
 
     void cleanupGl();
     void syncGpu();
-    void upload(GpuMesh& gpu,
+    void upload(const GpuMesh& gpu,
                 const std::vector<Vec3d>& positions,
                 const std::vector<std::uint32_t>& indices,
                 GLuint& vao,
@@ -147,7 +147,7 @@ private:
     void syncColors(GpuMesh& gpu, const DocumentObject& mesh);
     /// The deviation whose legend is shown: on the current mesh if it has one, else the first.
     [[nodiscard]] const DocumentObject* legendDeviation() const;
-    void drawLegend(QPainter& painter, const DocumentObject& deviation);
+    void drawLegend(QPainter& painter, const DocumentObject& deviation) const;
     void release(GpuMesh& gpu);
     void drawOverlay();
 

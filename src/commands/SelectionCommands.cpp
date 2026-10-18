@@ -4,8 +4,19 @@
 // selections the same way and no command ever carries face index lists.
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "m2c/commands/Command.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
+#include "m2c/document/Document.h"
 #include "m2c/pipeline/Select.h"
 #include "m2c/pipeline/Shells.h"
 
@@ -54,7 +65,8 @@ Result<Json> storeSelection(CommandContext& context,
     M2C_TRY(id,
             context.document.add(
                 name->value_or("Selection"),
-                SelectionData{mesh.id, std::make_shared<const MeshSelection>(std::move(faces))},
+                SelectionData{.meshId = mesh.id,
+                              .faces = std::make_shared<const MeshSelection>(std::move(faces))},
                 context.provenance({mesh.id})));
     return Json{{"selection_id", *id}, {"mesh_id", mesh.id}, {"face_count", count}};
 }
@@ -121,8 +133,8 @@ void addSelectionCommands(std::vector<Command>& out) {
                     return fail(ErrorCode::InvalidArgument,
                                 "give either 'center' or a non-empty 'centers' list");
                 }
-                for (std::size_t i = 0; i < list.size(); ++i) {
-                    M2C_TRY(c, requireVec3(Json{{"p", list[i]}}, "p"));
+                for (const auto& i : list) {
+                    M2C_TRY(c, requireVec3(Json{{"p", i}}, "p"));
                     centers.push_back(*c);
                 }
             } else {
@@ -131,8 +143,9 @@ void addSelectionCommands(std::vector<Command>& out) {
             }
             MeshSelection faces(mesh->mesh->faceCount());
             for (const Vec3d& c : centers) {
-                const MeshSelection dab = brushSelect(*mesh->mesh, c, *radius, *connected);
-                for (const std::uint32_t f : dab.indices()) faces.set(f);
+                for (const MeshSelection dab = brushSelect(*mesh->mesh, c, *radius, *connected);
+                     const std::uint32_t f : dab.indices())
+                    faces.set(f);
             }
             return storeSelection(context, *mesh, std::move(faces), params);
         }));

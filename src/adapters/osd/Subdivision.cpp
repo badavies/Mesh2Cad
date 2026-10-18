@@ -3,11 +3,22 @@
 #include "m2c/adapters/osd/Subdivision.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include <Eigen/Dense>
+
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/SurfacePatch.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 #include "Limit.h"
 #include "Tessellation.h"
@@ -46,7 +57,8 @@ BicubicPatch interpolate(F f) {
     BicubicPatch patch;
     for (int i = 0; i < 4; ++i) {
         for (int j = 0; j < 4; ++j)
-            patch.poles[static_cast<std::size_t>(4 * j + i)] = {x(i, j), y(i, j), z(i, j)};
+            patch.poles[4 * static_cast<std::size_t>(j) + static_cast<std::size_t>(i)] = {
+                .x = x(i, j), .y = y(i, j), .z = z(i, j)};
     }
     return patch;
 }
@@ -58,9 +70,8 @@ BicubicPatch interpolate(F f) {
 template <class F>
 void fitCapInterior(BicubicPatch& patch, F f) {
     constexpr std::array<std::size_t, 4> interior{5, 6, 9, 10};
-    constexpr double h = 1e-6; // step for derivatives of f
     BicubicPatch boundary = patch;
-    for (std::size_t k : interior) boundary.poles[k] = {};
+    for (const std::size_t k : interior) boundary.poles[k] = {};
     const auto rest = [&](double s, double t) { return f(s, t) - evaluate(boundary, s, t); };
     // Unknowns: x, y and z of each interior pole. Rows: three per position sample, one per
     // edge sample for the derivative across the edge along f's normal there.
@@ -86,6 +97,7 @@ void fitCapInterior(BicubicPatch& patch, F f) {
     // Edges t = 0, t = 1, s = 0 and s = 1. Of the interior poles only the row next to an edge
     // moves the derivative across it, by b_1'(0) = 3 or b_2'(1) = -3.
     for (int edge = 0; edge < 4; ++edge) {
+        constexpr double h = 1e-6; // step for derivatives of f
         const bool alongU = edge < 2;
         const bool first = edge % 2 == 0;
         const double side = first ? 0.0 : 1.0;
@@ -93,7 +105,9 @@ void fitCapInterior(BicubicPatch& patch, F f) {
         for (int k = 0; k < kCapFit; ++k, ++r) {
             const double a = (k + 0.5) / kCapFit;
             const double s0 = alongU ? a : side, t0 = alongU ? side : a;
-            const auto at = [&](auto g, double ds, double dt) { return g(s0 + ds, t0 + dt); };
+            const auto at = [&](auto g, const double ds, const double dt) {
+                return g(s0 + ds, t0 + dt);
+            };
             const Vec3d across = alongU ? (at(rest, 0.0, step) - at(rest, 0.0, 0.0)) * (1.0 / step)
                                         : (at(rest, step, 0.0) - at(rest, 0.0, 0.0)) * (1.0 / step);
             const double da = a < 0.5 ? h : -h; // along the edge, staying inside it
@@ -124,7 +138,7 @@ void fitCapInterior(BicubicPatch& patch, F f) {
         (design.transpose() * design).ldlt().solve(design.transpose() * target);
     for (std::size_t q = 0; q < 4; ++q) {
         const auto i = static_cast<Eigen::Index>(3 * q);
-        patch.poles[interior[q]] = {fit(i), fit(i + 1), fit(i + 2)};
+        patch.poles[interior[q]] = {.x = fit(i), .y = fit(i + 1), .z = fit(i + 2)};
     }
 }
 
@@ -140,7 +154,9 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
     // Bezier form of each OpenSubdiv patch.
     std::vector<BicubicPatch> pieces(lim.patchCount());
     for (std::size_t p = 0; p < lim.patchCount(); ++p) {
-        const auto limitAt = [&](double s, double t) { return lim.evaluate(points, p, s, t); };
+        const auto limitAt = [&](const double s, const double t) {
+            return lim.evaluate(points, p, s, t);
+        };
         pieces[p] = interpolate(limitAt);
         if (lim.isRegular(p)) {
             ++result.regularPieces;
@@ -150,7 +166,8 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
         ++result.capPieces;
         for (int i = 0; i <= kCapCheck; ++i) {
             for (int j = 0; j <= kCapCheck; ++j) {
-                const double s = double(i) / kCapCheck, t = double(j) / kCapCheck;
+                const double s = static_cast<double>(i) / kCapCheck,
+                             t = static_cast<double>(j) / kCapCheck;
                 result.maxCapErrorMm = std::max(result.maxCapErrorMm,
                                                 length(limitAt(s, t) - evaluate(pieces[p], s, t)));
             }
@@ -163,7 +180,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
     result.faces.reserve(byFace.size());
     for (std::uint32_t f = 0; f < byFace.size(); ++f) {
         double finest = 1.0;
-        for (std::size_t p : byFace[f]) finest = std::min(finest, lim.domain(p).size);
+        for (const std::size_t p : byFace[f]) finest = std::min(finest, lim.domain(p).size);
         SurfacePatch face;
         face.cageFace = lim.cageFace(f);
         const auto spans = static_cast<std::size_t>(std::lround(1.0 / finest));
@@ -181,16 +198,16 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
             for (std::size_t a = 0; a < k; ++a) {
                 for (std::size_t b = 0; b < k; ++b) {
                     caps[(j0 + b) * spans + i0 + a] = !lim.isRegular(p);
-                    const BicubicPatch piece =
-                        k == 1 ? pieces[p] : interpolate([&](double s, double t) {
+                    const auto [piecePoles] =
+                        k == 1 ? pieces[p] : interpolate([&](const double s, const double t) {
                             return evaluate(pieces[p],
-                                            (double(a) + s) / double(k),
-                                            (double(b) + t) / double(k));
+                                            (static_cast<double>(a) + s) / static_cast<double>(k),
+                                            (static_cast<double>(b) + t) / static_cast<double>(k));
                         });
                     for (std::size_t r = 0; r < 4; ++r) {
                         for (std::size_t c = 0; c < 4; ++c) {
                             face.poles[(3 * (j0 + b) + r) * row + 3 * (i0 + a) + c] =
-                                piece.poles[4 * r + c];
+                                piecePoles[4 * r + c];
                         }
                     }
                 }
@@ -208,7 +225,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
     return result;
 }
 
-Result<TriMesh> tessellateLimit(const QuadLayout& cage, int isolationLevel, int n) {
+Result<TriMesh> tessellateLimit(const QuadLayout& cage, const int isolationLevel, const int n) {
     if (n < 1 || n > 64) return fail(ErrorCode::InvalidArgument, "grid must be 1 to 64");
     auto limit = Limit::create(cage, isolationLevel);
     if (!limit) return std::unexpected(limit.error());

@@ -3,13 +3,23 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <expected>
+#include <numbers>
 #include <numeric>
+#include <optional>
 #include <vector>
 
 #include <Eigen/Dense>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshTopology.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/Transform.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -19,7 +29,7 @@ Eigen::Vector3d toEigen(const Vec3d& v) {
     return {v.x, v.y, v.z};
 }
 Vec3d fromEigen(const Eigen::Vector3d& v) {
-    return {v.x(), v.y(), v.z()};
+    return {.x = v.x(), .y = v.y(), .z = v.z()};
 }
 
 /// Area-weighted first and second moments of a set of triangles (exact for the triangle
@@ -84,13 +94,17 @@ double skewSign(const TriMesh& mesh, const Eigen::Vector3d& centroid, const Eige
 
 /// Shifts an aligned part so its bounding box is centred on the origin (or sits on Z = 0) as
 /// `origin` asks. With `shiftX` false the X position is left alone.
-void moveOrigin(const TriMesh& mesh, AlignOrigin origin, bool shiftX, Transform3d& t) {
+void moveOrigin(const TriMesh& mesh, const AlignOrigin origin, const bool shiftX, Transform3d& t) {
     if (origin == AlignOrigin::Centroid) return;
-    Aabb box{t.apply(mesh.positions().front()), t.apply(mesh.positions().front())};
+    Aabb box{.min = t.apply(mesh.positions().front()), .max = t.apply(mesh.positions().front())};
     for (const Vec3d& v : mesh.positions()) {
-        const Vec3d q = t.apply(v);
-        box.min = {std::min(box.min.x, q.x), std::min(box.min.y, q.y), std::min(box.min.z, q.z)};
-        box.max = {std::max(box.max.x, q.x), std::max(box.max.y, q.y), std::max(box.max.z, q.z)};
+        const auto [qx, qy, qz] = t.apply(v);
+        box.min = {.x = std::min(box.min.x, qx),
+                   .y = std::min(box.min.y, qy),
+                   .z = std::min(box.min.z, qz)};
+        box.max = {.x = std::max(box.max.x, qx),
+                   .y = std::max(box.max.y, qy),
+                   .z = std::max(box.max.z, qz)};
     }
     Vec3d shift = (box.min + box.max) * -0.5;
     if (origin == AlignOrigin::BoundsBottomCenter) shift.z = -box.min.z;
@@ -104,32 +118,33 @@ Result<PlaneFit> fitPlane(const TriMesh& mesh, const MeshSelection& faces) {
     if (faces.size() != mesh.faceCount()) {
         return fail(ErrorCode::InvalidArgument, "selection does not belong to this mesh");
     }
-    const Moments m = surfaceMoments(mesh, [&](std::size_t f) { return faces.test(f); });
-    if (!(m.area > 0.0)) {
+    const auto [area, centroid, covariance, averageNormal] =
+        surfaceMoments(mesh, [&](const std::size_t f) { return faces.test(f); });
+    if (!(area > 0.0)) {
         return fail(ErrorCode::InvalidArgument, "cannot fit a plane: the selection has no area");
     }
-    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(m.covariance);
+    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(covariance);
     Eigen::Vector3d normal = solver.eigenvectors().col(0); // smallest eigenvalue
-    if (normal.dot(m.averageNormal) < 0.0) normal = -normal;
+    if (normal.dot(averageNormal) < 0.0) normal = -normal;
 
     double sum2 = 0.0;
     std::size_t count = 0;
-    std::vector<bool> seen(mesh.vertexCount(), false);
+    std::vector seen(mesh.vertexCount(), false);
     for (const std::uint32_t f : faces.indices()) {
         for (const std::uint32_t v : mesh.face(f)) {
             if (seen[v]) continue;
             seen[v] = true;
-            const double d = (toEigen(mesh.positions()[v]) - m.centroid).dot(normal);
+            const double d = (toEigen(mesh.positions()[v]) - centroid).dot(normal);
             sum2 += d * d;
             ++count;
         }
     }
-    return PlaneFit{fromEigen(m.centroid),
-                    fromEigen(normal),
-                    count > 0 ? std::sqrt(sum2 / static_cast<double>(count)) : 0.0};
+    return PlaneFit{.point = fromEigen(centroid),
+                    .normal = fromEigen(normal),
+                    .rmsMm = count > 0 ? std::sqrt(sum2 / static_cast<double>(count)) : 0.0};
 }
 
-Result<Transform3d> principalAxesAlignment(const TriMesh& mesh, AlignOrigin origin) {
+Result<Transform3d> principalAxesAlignment(const TriMesh& mesh, const AlignOrigin origin) {
     const Moments m = surfaceMoments(mesh, [](std::size_t) { return true; });
     if (!(m.area > 0.0)) return fail(ErrorCode::InvalidArgument, "mesh has no surface area");
     const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> solver(m.covariance);
@@ -163,7 +178,7 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
         const Eigen::Vector3d vc = toEigen(mesh.positions()[c]);
         const double area = 0.5 * (vb - va).cross(vc - va).norm();
         if (!(area > 0.0)) continue;
-        samples.push_back((va + vb + vc) / 3.0);
+        samples.emplace_back((va + vb + vc) / 3.0);
         weights.push_back(area);
         totalWeight += area;
     }
@@ -188,13 +203,13 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
         double sum2 = 0.0;
         for (std::size_t i = 0; i < samples.size(); ++i) {
             const Eigen::Vector3d local = samples[i] - m.centroid;
-            Match& mt = matches[i];
-            mt.image = samples[i] - 2.0 * (plane.normal.dot(local) - plane.offset) * plane.normal;
-            const ClosestPoint c = index.closestPoint(fromEigen(mt.image));
-            mt.nearest = toEigen(c.point);
-            mt.normal = toEigen(faceNormal(mesh, c.face));
-            mt.gap = c.distance;
-            sum2 += weights[i] * c.distance * c.distance;
+            auto& [image, nearest, normal, gap] = matches[i];
+            image = samples[i] - 2.0 * (plane.normal.dot(local) - plane.offset) * plane.normal;
+            const auto [face, distance, point] = index.closestPoint(fromEigen(image));
+            nearest = toEigen(point);
+            normal = toEigen(faceNormal(mesh, face));
+            gap = distance;
+            sum2 += weights[i] * distance * distance;
         }
         return std::sqrt(sum2 / totalWeight);
     };
@@ -203,7 +218,7 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
     std::vector<std::size_t> order;
     for (int axis = 0; axis < 3; ++axis) {
         const Eigen::Vector3d n0 = solver.eigenvectors().col(axis);
-        Plane plane{n0};
+        Plane plane{.normal = n0};
         plane.residual = match(plane);
         Plane bestHere = plane; // a step can make the fit worse when the left-out set changes
         int sinceBest = 0;
@@ -214,7 +229,7 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
             // an asymmetric feature does not pull the plane.
             order.resize(samples.size());
             std::iota(order.begin(), order.end(), std::size_t{0});
-            std::sort(order.begin(), order.end(), [&](std::size_t i, std::size_t j) {
+            std::ranges::sort(order, [&](const std::size_t i, const std::size_t j) {
                 return matches[i].gap < matches[j].gap;
             });
             double below = 0.0;
@@ -232,23 +247,23 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
             Eigen::Matrix3d a = Eigen::Matrix3d::Zero();
             Eigen::Vector3d b = Eigen::Vector3d::Zero();
             for (std::size_t i = 0; i < samples.size(); ++i) {
-                const Match& mt = matches[i];
-                if (mt.gap > cutoff) continue;
+                const auto& [image, nearest, normal, gap] = matches[i];
+                if (gap > cutoff) continue;
                 const Eigen::Vector3d local = samples[i] - m.centroid;
                 const double h = plane.normal.dot(local) - plane.offset;
-                const double sn = mt.normal.dot(plane.normal);
-                const Eigen::Vector3d row{-2.0 * (u.dot(local) * sn + h * mt.normal.dot(u)),
-                                          -2.0 * (v.dot(local) * sn + h * mt.normal.dot(v)),
+                const double sn = normal.dot(plane.normal);
+                const Eigen::Vector3d row{-2.0 * (u.dot(local) * sn + h * normal.dot(u)),
+                                          -2.0 * (v.dot(local) * sn + h * normal.dot(v)),
                                           2.0 * sn};
-                const double r = mt.normal.dot(mt.image - mt.nearest);
+                const double r = normal.dot(image - nearest);
                 a += weights[i] * row * row.transpose();
                 b -= weights[i] * row * r;
             }
             const Eigen::Vector3d step = a.ldlt().solve(b);
             if (!step.allFinite()) break;
-            Plane next{(plane.normal + step(0) * u + step(1) * v).normalized(),
-                       plane.offset + step(2)};
-            if (next.normal.dot(n0) < std::cos(30.0 * 3.141592653589793 / 180.0)) break; // ran off
+            Plane next{.normal = (plane.normal + step(0) * u + step(1) * v).normalized(),
+                       .offset = plane.offset + step(2)};
+            if (next.normal.dot(n0) < std::cos(30.0 * std::numbers::pi / 180.0)) break; // ran off
             next.residual = match(next);
             plane = next;
             if (plane.residual < bestHere.residual * (1.0 - 1e-6)) {
@@ -280,7 +295,10 @@ Result<SymmetryAlignment> symmetryAlignment(const TriMesh& mesh, AlignOrigin ori
         m.centroid - (x.dot(m.centroid) - x.dot(best->normal) * best->offset) * x;
     Transform3d t = fromFrame(x, y, z, onPlane);
     moveOrigin(mesh, origin, false, t);
-    return SymmetryAlignment{t, fromEigen(onPlane), fromEigen(x), best->residual};
+    return SymmetryAlignment{.transform = t,
+                             .planePoint = fromEigen(onPlane),
+                             .planeNormal = fromEigen(x),
+                             .residualMm = best->residual};
 }
 
 Result<DatumAlignResult> datumAlignment(const TriMesh& mesh, const DatumAlignParams& params) {
@@ -300,7 +318,7 @@ Result<DatumAlignResult> datumAlignment(const TriMesh& mesh, const DatumAlignPar
         result.secondary = *secondary;
         const Eigen::Vector3d n2 = toEigen(secondary->normal);
         const Eigen::Vector3d projected = n2 - n2.dot(z) * z;
-        if (projected.norm() < std::sin(10.0 * 3.141592653589793 / 180.0)) {
+        if (projected.norm() < std::sin(10.0 * std::numbers::pi / 180.0)) {
             return fail(ErrorCode::InvalidArgument,
                         "secondary plane is within 10 degrees of parallel to the primary plane");
         }
@@ -336,7 +354,7 @@ Result<DatumAlignResult> datumAlignment(const TriMesh& mesh, const DatumAlignPar
         if (!tertiary) return std::unexpected(tertiary.error());
         result.tertiary = *tertiary;
         const Eigen::Vector3d n3 = toEigen(tertiary->normal);
-        if (std::abs(n3.dot(x)) < std::sin(10.0 * 3.141592653589793 / 180.0)) {
+        if (std::abs(n3.dot(x)) < std::sin(10.0 * std::numbers::pi / 180.0)) {
             return fail(ErrorCode::InvalidArgument,
                         "tertiary plane is within 10 degrees of parallel to another datum plane");
         }

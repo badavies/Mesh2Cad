@@ -3,9 +3,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
+#include <ios>
 #include <string>
 
+#include "m2c/core/Error.h"
+#include "m2c/core/TriMesh.h"
 #include "m2c/io/Obj.h"
 #include "m2c/io/Ply.h"
 #include "m2c/io/Stl.h"
@@ -16,9 +20,8 @@ namespace {
 
 std::string lowerExtension(const std::filesystem::path& path) {
     std::string ext = path.extension().string();
-    std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
+    std::ranges::transform(
+        ext, ext.begin(), [](const unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return ext;
 }
 

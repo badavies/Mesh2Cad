@@ -6,17 +6,26 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <set>
 #include <streambuf>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "m2c/adapters/quad/QuadRemesh.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
+#include "adjacency.h"
 #include "bvh.h"
+#include "common.h"
 #include "dedge.h"
 #include "extract.h"
 #include "field.h"
@@ -46,7 +55,8 @@ public:
 
 private:
     struct NullBuffer : std::streambuf {
-        int overflow(int c) override { return c; }
+    protected:
+        int overflow(const int c) override { return c; }
     };
     NullBuffer null_;
     std::streambuf* out_;
@@ -84,9 +94,9 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
         }
     }
     for (std::size_t v = 0; v < mesh.vertexCount(); ++v) {
-        const Vec3d& p = mesh.positions()[v];
+        const auto& [x, y, z] = mesh.positions()[v];
         V.col(static_cast<Eigen::Index>(v)) =
-            Vector3f(static_cast<Float>(p.x), static_cast<Float>(p.y), static_cast<Float>(p.z));
+            Vector3f(static_cast<Float>(x), static_cast<Float>(y), static_cast<Float>(z));
     }
 
     const MeshStats stats = compute_mesh_stats(F, V, deterministic);
@@ -103,8 +113,8 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     VectorXu V2E, E2E;
     VectorXb boundary, nonManifold;
     const auto maxEdge = static_cast<Float>(stats.mMaximumEdgeLength);
-    const auto meanEdge = static_cast<Float>(stats.mAverageEdgeLength);
-    if (maxEdge * 2 > scale || maxEdge > meanEdge * 2) {
+    if (const auto meanEdge = static_cast<Float>(stats.mAverageEdgeLength);
+        maxEdge * 2 > scale || maxEdge > meanEdge * 2) {
         build_dedge(F, V, V2E, E2E, boundary, nonManifold);
         subdivide(F,
                   V,
@@ -138,7 +148,7 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     mRes.setE2E(std::move(E2E));
     mRes.setF(std::move(F));
     mRes.setV(std::move(V));
-    mRes.setA(std::move(A));
+    mRes.setA(A); // copied either way: setA() takes a MatrixXf
     mRes.setN(std::move(N));
     mRes.setScale(scale);
     mRes.build(deterministic);
@@ -183,7 +193,7 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     // dropped here (the pipeline repairs the holes they leave).
     std::vector<Vec3d> positions(static_cast<std::size_t>(O.cols()));
     for (Eigen::Index v = 0; v < O.cols(); ++v) {
-        positions[static_cast<std::size_t>(v)] = {O(0, v), O(1, v), O(2, v)};
+        positions[static_cast<std::size_t>(v)] = {.x = O(0, v), .y = O(1, v), .z = O(2, v)};
     }
     std::vector<std::uint32_t> starts{0};
     std::vector<std::uint32_t> vertices;
@@ -192,7 +202,7 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
         for (Eigen::Index k = 0; k < Fq.rows(); ++k) {
             const std::uint32_t v = Fq(k, f);
             if (v == INVALID) continue;
-            if (std::find(face.begin(), face.end(), v) == face.end()) face.push_back(v);
+            if (std::ranges::find(face, v) == face.end()) face.push_back(v);
         }
         if (face.size() < 3) continue;
         vertices.insert(vertices.end(), face.begin(), face.end());
@@ -213,7 +223,7 @@ Result<QuadLayout> remesh(const TriMesh& mesh, const QuadRemeshParams& params) {
     if (mesh.faceCount() < 4) {
         return fail(ErrorCode::InvalidArgument, "the mesh has too few faces to remesh");
     }
-    SilenceConsole silence;
+    SilenceConsole const silence;
     try {
         return run(mesh, params);
     } catch (const std::exception& e) {

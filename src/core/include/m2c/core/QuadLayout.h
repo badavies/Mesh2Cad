@@ -64,7 +64,7 @@ private:
 
     QuadLayout(std::shared_ptr<const std::vector<Vec3d>> positions,
                std::shared_ptr<const Topology> topology,
-               Aabb bounds);
+               const Aabb& bounds);
 
     std::shared_ptr<const std::vector<Vec3d>> positions_;
     std::shared_ptr<const Topology> topology_;
