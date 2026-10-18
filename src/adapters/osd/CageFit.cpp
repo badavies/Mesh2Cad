@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <Eigen/IterativeLinearSolvers>
 #include <Eigen/SparseCholesky>
 
 #include "m2c/adapters/osd/Subdivision.h"
@@ -58,8 +59,9 @@ SparseMatrix laplacian(const QuadLayout& cage) {
     return l;
 }
 
-constexpr int kSearchGrid = 4;       // tessellation per patch for the closest-point search
-constexpr double kPointWeight = 0.1; // share of point-to-point distance in the fit
+constexpr int kSearchGrid = 4;           // tessellation per patch for the closest-point search
+constexpr double kPointWeight = 0.1;     // share of point-to-point distance in the fit
+constexpr double kSolveTolerance = 1e-9; // relative residual of each round's solve
 
 } // namespace
 
@@ -190,11 +192,21 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
             planeT * plane + kPointWeight * (pointT * point) + mu * smooth + anchor * identity;
         const Eigen::VectorXd rhs = planeT * planeTargets + kPointWeight * (pointT * pointTargets) +
                                     mu * (smooth * start) + anchor * current;
-        Eigen::SimplicialLDLT const solver(normal);
-        if (solver.info() != Eigen::Success) {
-            return fail(ErrorCode::Internal, "the cage fit's least-squares system is singular");
+        // Conjugate gradients from the last round's positions converge in a few dozen
+        // iterations: the point and smoothing terms keep the system well conditioned. A direct
+        // factorisation costs most of the fit on large cages, so it is only the fallback.
+        Eigen::ConjugateGradient<SparseMatrix, Eigen::Lower | Eigen::Upper> iterative;
+        iterative.setTolerance(kSolveTolerance);
+        iterative.compute(normal);
+        const Eigen::VectorXd guess = current;
+        current = iterative.solveWithGuess(rhs, guess);
+        if (iterative.info() != Eigen::Success) {
+            Eigen::SimplicialLDLT const solver(normal);
+            if (solver.info() != Eigen::Success) {
+                return fail(ErrorCode::Internal, "the cage fit's least-squares system is singular");
+            }
+            current = solver.solve(rhs);
         }
-        current = solver.solve(rhs);
         for (Eigen::Index v = 0; v < n; ++v) {
             positions[static_cast<std::size_t>(v)] = {
                 .x = current(v), .y = current(n + v), .z = current(2 * n + v)};
