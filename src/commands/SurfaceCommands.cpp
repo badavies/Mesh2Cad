@@ -65,8 +65,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced "
         "from the irregular vertices, are merged into one face each. Adds a solid object; the quad "
         "layout and mesh are "
-        "unchanged. Fails, adding nothing, unless the "
-        "result is one valid closed solid.",
+        "unchanged. Fails, adding nothing, unless the result is one valid closed solid of "
+        "positive volume whose faces, after the last fit, meet at no more than 90 degrees.",
         R"({
             "type":"object",
             "properties":{

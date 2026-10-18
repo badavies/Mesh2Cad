@@ -5,8 +5,10 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <string>
 #include <vector>
 
+#include "m2c/core/Error.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
@@ -250,6 +252,28 @@ TEST_CASE("A fit that folds the surface is tried again with more smoothing", "[s
     CHECK(retried->solid.summary().valid);
     p.fitTries = 0;
     CHECK_FALSE(buildSurface(remeshed->cage, &sphere, p));
+}
+
+TEST_CASE("A surface whose faces still meet at a sharp angle gives no solid", "[stages][surface]") {
+    const TriMesh sphere = makeSphere(20.0, 4);
+    QuadRemeshParams q;
+    q.targetFaces = 200;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    SurfaceBuildParams p;
+    p.fitting.iterations = 1;
+    REQUIRE(buildSurface(remeshed->cage, &sphere, p));
+    // Caps always leave a small angle, so with a hard limit below it every try folds and the
+    // build fails instead of keeping the last one.
+    p.maxSeamAngleDeg = 1e-9;
+    p.maxFoldAngleDeg = 1e-9;
+    p.fitTries = 2;
+    const auto folded = buildSurface(remeshed->cage, &sphere, p);
+    REQUIRE_FALSE(folded);
+    CHECK(folded.error().code == ErrorCode::InvalidState);
+    CHECK(folded.error().message.find("after 2 fits") != std::string::npos);
+    p.maxFoldAngleDeg = 0.0;
+    CHECK(buildSurface(remeshed->cage, &sphere, p).error().code == ErrorCode::InvalidArgument);
 }
 
 TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][surface]") {

@@ -248,6 +248,13 @@ Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
                             std::to_string(summary.freeEdges) + " free edges, " +
                             (summary.valid ? "valid" : "invalid") + ")");
         }
+        // ShapeFix_Solid orients a shell outward; one that crosses itself can still come out
+        // with negative volume, and BRepCheck does not report the crossing.
+        if (!(summary.volumeMm3 > 0.0)) {
+            return fail(ErrorCode::InvalidState,
+                        "the sewn faces cross themselves (the solid's volume is " +
+                            std::to_string(summary.volumeMm3) + " mm^3)");
+        }
         // A face that sewed into no shell is left out of the solid; the project file then
         // could not be read back, as its face table would not match.
         if (summary.faceCount != faces.size()) {

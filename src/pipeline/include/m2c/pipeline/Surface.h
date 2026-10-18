@@ -26,6 +26,9 @@ struct SurfaceBuildParams {
     /// twice the smoothing, up to fitTries fits in all.
     double maxSeamAngleDeg{10.0};
     unsigned fitTries{4};
+    /// Faces of the kept try that meet at a larger angle fold the surface over itself; the build
+    /// then fails rather than return a solid that crosses itself.
+    double maxFoldAngleDeg{90.0};
     double sewToleranceMm{1e-4};
     /// Merge rectangles of cage quads into one face each (patch merging; mergeFaces()).
     bool merge{true};
@@ -48,7 +51,8 @@ struct SurfaceBuildResult {
 };
 
 /// Fits, extracts and sews in one go. The cage must be closed; `scan` may be null when fit is off.
-/// Fails unless the result is one valid closed solid. Deterministic for the same inputs.
+/// Fails unless the result is one valid closed solid of positive volume whose faces meet at no
+/// more than maxFoldAngleDeg. Deterministic for the same inputs.
 [[nodiscard]] Result<SurfaceBuildResult>
 buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildParams& params);
 

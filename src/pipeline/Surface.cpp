@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/pipeline/Surface.h"
 
+#include <cmath>
 #include <cstddef>
 #include <expected>
 #include <memory>
+#include <string>
 #include <utility>
 
 #include "m2c/adapters/occt/Brep.h"
@@ -27,9 +29,9 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
     if (params.fit && scan == nullptr) {
         return fail(ErrorCode::InvalidArgument, "fitting needs a scan");
     }
-    if (!(params.maxSeamAngleDeg > 0.0) || params.fitTries < 1) {
+    if (!(params.maxSeamAngleDeg > 0.0) || !(params.maxFoldAngleDeg > 0.0) || params.fitTries < 1) {
         return fail(ErrorCode::InvalidArgument,
-                    "the seam angle limit must be positive and the fit tried at least once");
+                    "the angle limits must be positive and the fit tried at least once");
     }
     // A fit that folds the surface shows as a large angle between the normals where faces meet
     // (the limit surface is smooth, apart from the small kinks at caps). Such a fit is tried
@@ -57,6 +59,14 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
             tries < params.fitTries) {
             fitting.smoothing = fitting.smoothing > 0.0 ? 2.0 * fitting.smoothing : 0.01;
             continue;
+        }
+        if (seams->maxNormalAngleDeg > params.maxFoldAngleDeg) {
+            return fail(ErrorCode::InvalidState,
+                        "the surface folds over itself: faces meet at " +
+                            std::to_string(std::lround(seams->maxNormalAngleDeg)) +
+                            " degrees after " + std::to_string(tries) +
+                            (tries == 1 ? " fit" : " fits") +
+                            "; the cage has folded faces or is too coarse for thin parts");
         }
         const std::size_t before = patches->faces.size();
         std::size_t mergedFaces = 0, unmergedQuads = 0;
