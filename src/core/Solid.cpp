@@ -60,7 +60,7 @@ Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
         }
         if (!fits) return fail(ErrorCode::InvalidArgument, "the cap flags do not fit the faces");
     }
-    const auto isCap = [&](std::size_t f, std::size_t i, std::size_t j) {
+    const auto isCap = [&](const std::size_t f, const std::size_t i, const std::size_t j) {
         return !caps.empty() && caps[f][j * faces[f].piecesU() + i];
     };
     // A cage face with other than four sides has one face per corner, each spanning half of
@@ -69,7 +69,7 @@ Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
     std::unordered_map<std::uint32_t, std::size_t> perCageFace;
     for (const SurfacePatch& face : faces) ++perCageFace[face.cageFace];
     SeamReport out;
-    const auto record = [&out](double angle, bool cap) {
+    const auto record = [&out](const double angle, const bool cap) {
         out.maxNormalAngleDeg = std::max(out.maxNormalAngleDeg, angle);
         double& split = cap ? out.maxCapNormalAngleDeg : out.maxRegularNormalAngleDeg;
         split = std::max(split, angle);

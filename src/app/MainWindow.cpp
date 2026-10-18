@@ -453,8 +453,8 @@ void MainWindow::onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot) 
     if (!brushSized_) {
         for (const DocumentObject& o : snapshot_->objects) {
             if (o.mesh() == nullptr) continue;
-            const auto& [lo, hi] = o.mesh()->mesh->bounds();
-            brushRadius_->setValue(length(hi - lo) * 0.02);
+            const auto& [min, max] = o.mesh()->mesh->bounds();
+            brushRadius_->setValue(length(max - min) * 0.02);
             brushSized_ = true;
             break;
         }

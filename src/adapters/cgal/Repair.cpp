@@ -166,7 +166,7 @@ void uniteCrossingShells(SurfaceMesh& mesh) {
         mesh, shells, CGAL::parameters::face_patch_map(CGAL::make_property_map(scan.shellOf)));
 
     std::vector<std::size_t> group(shells.size());
-    std::iota(group.begin(), group.end(), 0);
+    std::ranges::iota(group, 0);
     const auto root = [&](std::size_t s) {
         while (group[s] != s) s = group[s] = group[group[s]];
         return s;

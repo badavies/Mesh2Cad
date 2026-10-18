@@ -188,7 +188,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
         face.vBreaks = face.uBreaks;
         const std::size_t row = face.polesPerRow();
         face.poles.resize(row * row);
-        std::vector<bool> caps(spans * spans, false);
+        std::vector caps(spans * spans, false);
         std::size_t covered = 0;
         for (std::size_t p : byFace[f]) {
             const PatchDomain& d = lim.domain(p);

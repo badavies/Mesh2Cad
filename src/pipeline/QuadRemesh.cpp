@@ -103,14 +103,12 @@ std::vector<std::vector<Face>> splitComponents(std::vector<Face> faces) {
                 }
             }
         }
-        std::sort(members.begin(), members.end());
+        std::ranges::sort(members);
         parts.emplace_back();
-        for (std::uint32_t f : members) parts.back().push_back(std::move(faces[f]));
+        for (const std::uint32_t f : members) parts.back().push_back(std::move(faces[f]));
     }
-    const auto main =
-        std::max_element(parts.begin(), parts.end(), [](const auto& a, const auto& b) {
-            return a.size() < b.size();
-        });
+    const auto main = std::ranges::max_element(
+        parts, [](const auto& a, const auto& b) { return a.size() < b.size(); });
     std::rotate(parts.begin(), main, main + 1);
     return parts;
 }
@@ -168,7 +166,7 @@ std::size_t splitNonManifoldVertices(std::vector<Vec3d>& positions, std::vector<
         if (incident.size() < 2) continue;
         // Union faces that share an edge at v (the same neighbour vertex next to v).
         std::vector<std::uint32_t> parent(incident.size());
-        std::iota(parent.begin(), parent.end(), 0u);
+        std::ranges::iota(parent, 0u);
         auto root = [&parent](std::uint32_t x) {
             while (parent[x] != x) x = parent[x] = parent[parent[x]];
             return x;
@@ -176,8 +174,9 @@ std::size_t splitNonManifoldVertices(std::vector<Vec3d>& positions, std::vector<
         std::unordered_map<std::uint32_t, std::uint32_t> seen;
         for (std::uint32_t k = 0; k < incident.size(); ++k) {
             const Face& face = faces[incident[k]];
-            const auto at = static_cast<std::size_t>(std::ranges::find(face, v) - face.begin());
-            for (std::uint32_t w :
+            for (const auto at =
+                     static_cast<std::size_t>(std::ranges::find(face, v) - face.begin());
+                 std::uint32_t w :
                  {face[(at + 1) % face.size()], face[(at + face.size() - 1) % face.size()]}) {
                 if (const auto [it, inserted] = seen.emplace(w, k); !inserted)
                     parent[root(k)] = root(it->second);
@@ -311,7 +310,7 @@ bool closePart(std::vector<Vec3d>& positions, std::vector<Face>& faces, CageClea
     fillLoops(faces, report);
     report.dissolvedVertices += dissolveValenceTwo(positions.size(), faces);
     if (volumeOf(positions, faces) < 0.0) {
-        for (Face& face : faces) std::reverse(face.begin(), face.end());
+        for (Face& face : faces) std::ranges::reverse(face);
         report.flipped = true;
     }
     return true;
@@ -319,9 +318,8 @@ bool closePart(std::vector<Vec3d>& positions, std::vector<Face>& faces, CageClea
 
 bool everyEdgeShared(const std::vector<Face>& faces) {
     const auto edges = edgeFaces(faces);
-    return !faces.empty() && std::all_of(edges.begin(), edges.end(), [](const auto& e) {
-        return e.second.size() == 2;
-    });
+    return !faces.empty() &&
+           std::ranges::all_of(edges, [](const auto& e) { return e.second.size() == 2; });
 }
 
 double meanEdgeLength(const std::vector<Vec3d>& p, const std::vector<Face>& faces) {
@@ -356,13 +354,13 @@ Frame frameOf(const std::vector<Vec3d>& p, const Face& face) {
 bool bridge(std::vector<Vec3d>& positions,
             std::vector<Face>& body,
             std::vector<Face> part,
-            double edge) {
+            const double edge) {
     Vec3d lo = positions[part.front().front()], hi = lo;
     for (const Face& face : part) {
-        for (std::uint32_t v : face) {
-            const Vec3d& q = positions[v];
-            lo = {std::min(lo.x, q.x), std::min(lo.y, q.y), std::min(lo.z, q.z)};
-            hi = {std::max(hi.x, q.x), std::max(hi.y, q.y), std::max(hi.z, q.z)};
+        for (const std::uint32_t v : face) {
+            const auto& [x, y, z] = positions[v];
+            lo = {.x = std::min(lo.x, x), .y = std::min(lo.y, y), .z = std::min(lo.z, z)};
+            hi = {.x = std::max(hi.x, x), .y = std::max(hi.y, y), .z = std::max(hi.z, z)};
         }
     }
     double best = 2.0 * length(hi - lo);
@@ -371,13 +369,13 @@ bool bridge(std::vector<Vec3d>& positions,
     for (std::size_t i = 0; i < body.size(); ++i) bodyFrames[i] = frameOf(positions, body[i]);
     for (std::size_t j = 0; j < part.size(); ++j) {
         if (part[j].size() != 4) continue;
-        const Frame b = frameOf(positions, part[j]);
+        const auto [partCentre, partNormal] = frameOf(positions, part[j]);
         for (std::size_t i = 0; i < body.size(); ++i) {
             if (body[i].size() != 4) continue;
-            const Frame& a = bodyFrames[i];
-            const Vec3d gap = b.centre - a.centre;
-            const double d = length(gap);
-            if (d < best && dot(a.normal, gap) > 0.0 && dot(b.normal, gap) < 0.0) {
+            const auto& [bodyCentre, bodyNormal] = bodyFrames[i];
+            const Vec3d gap = partCentre - bodyCentre;
+            if (const double d = length(gap);
+                d < best && dot(bodyNormal, gap) > 0.0 && dot(partNormal, gap) < 0.0) {
                 best = d;
                 from = i;
                 to = j;

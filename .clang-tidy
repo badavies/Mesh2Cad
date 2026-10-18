@@ -24,4 +24,4 @@ HeaderFilterRegex: '.*/src/.*'
 WarningsAsErrors: ''
 CheckOptions:
   - key: misc-include-cleaner.IgnoreHeaders
-    value: 'nlohmann/.*;Eigen/.*;miniz.*;CGAL/.*'
+    value: 'nlohmann[/\\].*;Eigen[/\\].*;miniz.*;CGAL[/\\].*'

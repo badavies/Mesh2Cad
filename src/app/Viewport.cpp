@@ -261,13 +261,13 @@ Aabb Viewport::visibleBounds(const std::optional<ObjectId> only) const {
     if (!snapshot_) return box;
     for (const DocumentObject& o : snapshot_->objects) {
         if (!isDrawn(o) || (only ? o.id != *only : !o.visible)) continue;
-        const auto [lo, hi] = drawnBounds(o);
-        box.min = {.x = std::min(box.min.x, lo.x),
-                   .y = std::min(box.min.y, lo.y),
-                   .z = std::min(box.min.z, lo.z)};
-        box.max = {.x = std::max(box.max.x, hi.x),
-                   .y = std::max(box.max.y, hi.y),
-                   .z = std::max(box.max.z, hi.z)};
+        const auto [min, max] = drawnBounds(o);
+        box.min = {.x = std::min(box.min.x, min.x),
+                   .y = std::min(box.min.y, min.y),
+                   .z = std::min(box.min.z, min.z)};
+        box.max = {.x = std::max(box.max.x, max.x),
+                   .y = std::max(box.max.y, max.y),
+                   .z = std::max(box.max.z, max.z)};
     }
     return box;
 }
@@ -448,8 +448,8 @@ void Viewport::syncGpu() {
                 gpu.keepAlive = std::move(solid);
             } else {
                 auto cage = std::make_shared<const QuadLayout>(o.quadLayout()->cage);
-                const auto& [lo, hi] = cage->bounds();
-                gpu.offset = (lo + hi) * 0.5;
+                const auto& [min, max] = cage->bounds();
+                gpu.offset = (min + max) * 0.5;
                 gpu.lines = true;
                 upload(gpu,
                        cage->positions(),
