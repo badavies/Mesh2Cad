@@ -145,7 +145,7 @@ void fitCapInterior(BicubicPatch& patch, F f) {
 } // namespace
 
 Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& params) {
-    auto limit = Limit::create(cage, params.isolationLevel);
+    auto limit = Limit::create(cage, params.isolationLevel, params.open);
     if (!limit) return std::unexpected(limit.error());
     const Limit& lim = **limit;
     const std::vector<Vec3d> points = lim.patchPoints(cage.positions());

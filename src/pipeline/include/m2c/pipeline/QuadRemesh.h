@@ -35,6 +35,10 @@ struct CageCloseParams {
     bool joinParts{true};
     /// Parts with fewer faces are left out as noise.
     std::size_t minPartFaces{16};
+    /// Keep the main part's longest open loop open: the cage of a sheet (a scan of one side of
+    /// a thin part) keeps its outline. Other loops are still filled. The main part is then
+    /// left facing the way the remesher made it, which follows the mesh.
+    bool keepOutline{false};
 };
 
 /// Makes a cage closed, manifold and outward: drops faces on non-manifold edges, orients faces
@@ -43,7 +47,7 @@ struct CageCloseParams {
 /// part. Each other part that closes the same way is joined to it by a tube of quads from the
 /// nearest pair of quads facing each other, no farther apart than twice the part's size; the rest
 /// are left out. Fails with InvalidState when the main part cannot be oriented consistently or
-/// nothing valid is left.
+/// nothing valid is left. With keepOutline the result is open along one loop (see above).
 [[nodiscard]] Result<QuadLayout>
 closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& params = {});
 

@@ -78,6 +78,25 @@ private:
     MultiResolutionHierarchy& hierarchy_;
 };
 
+/// Holds the field to the mesh's open edges, as Instant Meshes' batch tool does with
+/// align_to_boundaries: a sheet's cage then runs along its outline.
+void alignToBoundaries(MultiResolutionHierarchy& hierarchy) {
+    const MatrixXu& F = hierarchy.F();
+    const MatrixXf& V = hierarchy.V();
+    for (std::uint32_t i = 0; i < 3 * F.cols(); ++i) {
+        if (hierarchy.E2E()[i] != INVALID) continue;
+        const std::uint32_t i0 = F(i % 3, i / 3);
+        const std::uint32_t i1 = F((i + 1) % 3, i / 3);
+        const Vector3f edge = V.col(i1) - V.col(i0);
+        if (edge.squaredNorm() <= 0) continue;
+        hierarchy.CO().col(i0) = V.col(i0);
+        hierarchy.CO().col(i1) = V.col(i1);
+        hierarchy.CQ().col(i0) = hierarchy.CQ().col(i1) = edge.normalized();
+        hierarchy.CQw()[i0] = hierarchy.CQw()[i1] = hierarchy.COw()[i0] = hierarchy.COw()[i1] =
+            1.0f;
+    }
+}
+
 /// Holds the field to the guides, as Instant Meshes' own edge strokes do: each guide is sampled
 /// at half the finest edge length, and the corners of the triangle under each sample get the
 /// guide's direction and the sample as a point the lattice passes through.
@@ -102,7 +121,6 @@ Result<void> constrainToGuides(MultiResolutionHierarchy& hierarchy,
     if (!surface) return std::unexpected(surface.error());
     const SpatialIndex& index = surface->spatialIndex();
     const MatrixXf& N = hierarchy.N();
-    hierarchy.clearConstraints();
     for (std::size_t g = 0; g < guides.size(); ++g) {
         const std::vector<Vec3d>& guide = guides[g];
         if (guide.size() < 2) {
@@ -219,7 +237,10 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     mRes.setScale(scale);
     mRes.build(deterministic);
     mRes.resetSolution();
-    if (!params.guides.empty()) {
+    // Closed meshes without guides run unconstrained, exactly as before constraints existed.
+    if (const bool open = (mRes.E2E().array() == INVALID).any(); open || !params.guides.empty()) {
+        mRes.clearConstraints();
+        if (open) alignToBoundaries(mRes);
         if (auto held = constrainToGuides(mRes, params.guides, static_cast<double>(scale)); !held) {
             return std::unexpected(held.error());
         }

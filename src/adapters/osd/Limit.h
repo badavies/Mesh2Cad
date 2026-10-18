@@ -36,8 +36,11 @@ struct PatchDomain {
 /// patch, in [0, 1]^2.
 class Limit {
 public:
-    [[nodiscard]] static Result<std::unique_ptr<Limit>> create(const QuadLayout& cage,
-                                                               int isolationLevel);
+    /// The cage must be closed, or with `open` an oriented manifold sheet, whose limit surface
+    /// ends at the boundary curve of its boundary vertices; that curve passes through vertices
+    /// used by one face only, with a sharp turn there.
+    [[nodiscard]] static Result<std::unique_ptr<Limit>>
+    create(const QuadLayout& cage, int isolationLevel, bool open = false);
 
     [[nodiscard]] std::size_t patchCount() const noexcept { return handles_.size(); }
     [[nodiscard]] bool isRegular(std::size_t patch) const;

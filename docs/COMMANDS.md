@@ -306,7 +306,7 @@ Save every object (meshes, selections, measurements, alignments, quad layouts, s
 
 ### `quad.remesh`
 
-Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges are dropped, open loops filled and faces pointed outward. Loose parts (such as the head of a thin post whose stem the remesher missed) are joined to the main part with a tube of quads, or left out and counted when they cannot be. Guides, polylines drawn on the mesh, lay out the patches by hand: cage edges run along them. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
+Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges are dropped, open loops filled and faces pointed outward. Loose parts (such as the head of a thin post whose stem the remesher missed) are joined to the main part with a tube of quads, or left out and counted when they cannot be. Guides, polylines drawn on the mesh, lay out the patches by hand: cage edges run along them. With keep_outline, an open mesh (a scanned sheet such as a lid) gives an open cage: its longest boundary loop stays open, cage edges follow it, and the faces point the way the mesh does. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -314,6 +314,7 @@ Make a quad control cage from a closed mesh with Instant Meshes, then close it: 
 | `guides` | array |  | Polylines on the mesh, in mm, that cage edges should follow (manual patch layout); each needs two or more points within a cage edge length of the surface. Default `[]`. |
 | `id` | integer | yes |  |
 | `join_parts` | boolean |  | Join loose closed parts to the main one instead of leaving them out. Default `true`. |
+| `keep_outline` | boolean |  | Leave the longest boundary loop open, for a sheet that surface.build thickens. Default `false`. |
 | `name` | string |  |  |
 | `smooth_iterations` | integer |  | Rounds of smoothing that pull the cage vertices back onto the mesh. Default `2`. |
 | `target_faces` | integer |  | Approximate number of quads in the cage. Default `2000`. |
