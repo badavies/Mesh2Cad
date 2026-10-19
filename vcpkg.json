@@ -3,11 +3,6 @@
   "name": "mesh2cad",
   "version": "0.1.0",
   "builtin-baseline": "44ccfd88b3eca6929d6d16398c7b19945c29a5f6",
-  "vcpkg-configuration": {
-    "overlay-ports": [
-      "cmake/vcpkg-ports"
-    ]
-  },
   "dependencies": [
     "nlohmann-json",
     "eigen3",

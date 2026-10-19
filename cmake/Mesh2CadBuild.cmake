@@ -68,7 +68,11 @@ if(MESH2CAD_SANITIZE)
     if(MSVC)
         message(FATAL_ERROR "MESH2CAD_SANITIZE is only supported with GCC or Clang.")
     endif()
-    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined)
+    # Alignment reports are recoverable so that cmake/ubsan-suppressions.txt can drop the ones
+    # inside Open CASCADE (ADR-028); the sanitize test preset sets halt_on_error=1, so every other
+    # report still stops the test.
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer
+                        -fno-sanitize-recover=undefined -fsanitize-recover=alignment)
     add_link_options(-fsanitize=address,undefined)
 endif()
 

@@ -213,6 +213,9 @@
     {
       "name": "linux-gcc-sanitize",
       "configurePreset": "linux-gcc-sanitize",
+      "environment": {
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1:suppressions=${sourceDir}/cmake/ubsan-suppressions.txt"
+      },
       "output": {
         "outputOnFailure": true
       }

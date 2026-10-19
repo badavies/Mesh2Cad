@@ -1,0 +1,6 @@
+# UndefinedBehaviorSanitizer suppressions for the linux-gcc-sanitize preset (ADR-028).
+# Open CASCADE 8.0.1's NCollection_IncAllocator does not align its allocations, so BRepMesh places
+# shapes at misaligned addresses, and OCCT's Debug libraries call the instrumented inline copy
+# constructors of TopoDS_Shape and friends in Open CASCADE's own headers. Only alignment reports
+# located in those headers are dropped. Remove this once the vcpkg baseline ships a fixed OCCT.
+alignment:/opencascade/
