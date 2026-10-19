@@ -5,6 +5,7 @@ m2c_add_library(core
         DisplayProxy.cpp
         MeshStats.cpp
         MeshTopology.cpp
+        Primitive.cpp
         QuadLayout.cpp
         Solid.cpp
         SpatialIndex.cpp

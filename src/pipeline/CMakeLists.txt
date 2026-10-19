@@ -5,6 +5,7 @@ m2c_add_library(pipeline
         Measure.cpp
         MeshTools.cpp
         PatchMerge.cpp
+        PrimitiveFit.cpp
         QuadRemesh.cpp
         Select.cpp
         Shells.cpp
