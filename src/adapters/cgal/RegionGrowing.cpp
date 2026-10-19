@@ -8,11 +8,14 @@
 #include <cstdint>
 #include <iterator>
 #include <limits>
+#include <span>
+#include <string>
 #include <vector>
 
 #include <CGAL/Shape_detection/Region_growing/Point_set.h>
 #include <CGAL/Shape_detection/Region_growing/Polygon_mesh.h>
 #include <CGAL/Shape_detection/Region_growing/Region_growing.h>
+#include <CGAL/property_map.h>
 
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
@@ -183,6 +186,61 @@ growRegions(const TriMesh& input, const std::vector<char>& free, const GrowParam
         auto seeds = seedsOf(sorting);
         Region region(np);
         return detect(items, seeds, neighbours, region);
+    });
+}
+
+Result<Primitive>
+estimatePrimitive(const TriMesh& mesh, std::span<const std::uint32_t> faces, PrimitiveKind kind) {
+    if (kind != PrimitiveKind::Cylinder && kind != PrimitiveKind::Sphere) {
+        return fail(ErrorCode::InvalidArgument, "CGAL estimates cylinders and spheres only");
+    }
+    const char* name = kind == PrimitiveKind::Cylinder ? "cylinder" : "sphere";
+    if (faces.size() < 6) {
+        return fail(ErrorCode::InvalidArgument,
+                    std::string("a ") + name + " needs at least six faces");
+    }
+    return guarded("primitive estimate", [&]() -> Result<Primitive> {
+        std::vector<Point> centroids;
+        std::vector<Vector> normals;
+        const auto& p = mesh.positions();
+        for (const std::uint32_t f : faces) {
+            if (f >= mesh.faceCount()) {
+                return fail(ErrorCode::InvalidArgument, "face index out of range");
+            }
+            const auto [a, b, c] = mesh.face(f);
+            const Vec3d m = (p[a] + p[b] + p[c]) * (1.0 / 3.0);
+            const Vec3d n = cross(p[b] - p[a], p[c] - p[a]);
+            const double size = length(n);
+            centroids.emplace_back(m.x, m.y, m.z);
+            normals.push_back(size > 0.0 ? Vector(n.x, n.y, n.z) / size : Vector(0, 0, 0));
+        }
+        std::vector<std::size_t> items(faces.size());
+        for (std::size_t i = 0; i < items.size(); ++i) items[i] = i;
+        const auto np = CGAL::parameters::point_map(CGAL::make_property_map(centroids))
+                            .normal_map(CGAL::make_property_map(normals));
+        using Points = decltype(CGAL::make_property_map(centroids));
+        using Normals = decltype(CGAL::make_property_map(normals));
+        const auto estimate = [&](auto region) -> Result<Primitive> {
+            if (!region.update(items)) {
+                return fail(ErrorCode::InvalidArgument,
+                            std::string("no ") + name + " fits these faces");
+            }
+            const Primitive s = toPrimitive(region.primitive());
+            if (!(s.radiusMm > 0.0) || !std::isfinite(s.radiusMm) ||
+                !std::isfinite(s.point.x + s.point.y + s.point.z)) {
+                return fail(ErrorCode::InvalidArgument,
+                            std::string("no ") + name + " fits these faces");
+            }
+            return s;
+        };
+        if (kind == PrimitiveKind::Cylinder) {
+            return estimate(
+                SD::Point_set::
+                    Least_squares_cylinder_fit_region<Kernel, std::size_t, Points, Normals>(np));
+        }
+        return estimate(
+            SD::Point_set::Least_squares_sphere_fit_region<Kernel, std::size_t, Points, Normals>(
+                np));
     });
 }
 

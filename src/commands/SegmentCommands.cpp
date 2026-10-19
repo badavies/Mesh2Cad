@@ -25,21 +25,9 @@ namespace m2c::cmd {
 
 namespace {
 
-const char* kindName(const PrimitiveKind kind) {
-    switch (kind) {
-    case PrimitiveKind::Plane:
-        return "plane";
-    case PrimitiveKind::Cylinder:
-        return "cylinder";
-    case PrimitiveKind::Sphere:
-        return "sphere";
-    }
-    return "";
-}
-
 Json regionJson(const SegmentRegion& r) {
     const Primitive& s = r.primitive;
-    Json out{{"kind", kindName(s.kind)},
+    Json out{{"kind", primitiveKindName(s.kind)},
              {"face_count", r.faces.size()},
              {"area_mm2", r.areaMm2},
              {"rms_mm", r.rmsMm},
@@ -57,6 +45,8 @@ Json regionJson(const SegmentRegion& r) {
     case PrimitiveKind::Sphere:
         out["center"] = toJson(s.point);
         out["radius_mm"] = s.radiusMm;
+        break;
+    case PrimitiveKind::Cone: // segmentation finds no cones
         break;
     }
     return out;
@@ -133,7 +123,7 @@ void addSegmentCommands(std::vector<Command>& out) {
             std::array<std::size_t, 3> counts{};
             for (const SegmentRegion& r : result->regions) {
                 const auto k = static_cast<std::size_t>(r.primitive.kind);
-                std::string name = kindName(r.primitive.kind);
+                std::string name = primitiveKindName(r.primitive.kind);
                 name[0] = static_cast<char>(name[0] - 'a' + 'A');
                 M2C_TRY(id,
                         addSelection(
