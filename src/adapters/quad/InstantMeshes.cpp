@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
+#include <expected>
 #include <iostream>
 #include <memory>
 #include <set>
@@ -20,6 +21,7 @@
 #include "m2c/adapters/quad/QuadRemesh.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/QuadLayout.h"
+#include "m2c/core/SpatialIndex.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -75,6 +77,70 @@ public:
 private:
     MultiResolutionHierarchy& hierarchy_;
 };
+
+/// Holds the field to the guides, as Instant Meshes' own edge strokes do: each guide is sampled
+/// at half the finest edge length, and the corners of the triangle under each sample get the
+/// guide's direction and the sample as a point the lattice passes through.
+Result<void> constrainToGuides(MultiResolutionHierarchy& hierarchy,
+                               const std::vector<std::vector<Vec3d>>& guides,
+                               const double maxOffset) {
+    const MatrixXf& V = hierarchy.V();
+    const MatrixXu& F = hierarchy.F();
+    std::vector<Vec3d> positions(static_cast<std::size_t>(V.cols()));
+    for (Eigen::Index v = 0; v < V.cols(); ++v) {
+        positions[static_cast<std::size_t>(v)] = {.x = V(0, v), .y = V(1, v), .z = V(2, v)};
+    }
+    std::vector<std::uint32_t> indices(F.data(), F.data() + F.size());
+    double edgeSum = 0.0;
+    for (Eigen::Index f = 0; f < F.cols(); ++f) {
+        for (Eigen::Index k = 0; k < 3; ++k) {
+            edgeSum += length(positions[F(k, f)] - positions[F((k + 1) % 3, f)]);
+        }
+    }
+    const double step = edgeSum / static_cast<double>(F.size()) / 2.0;
+    auto surface = TriMesh::create(std::move(positions), std::move(indices));
+    if (!surface) return std::unexpected(surface.error());
+    const SpatialIndex& index = surface->spatialIndex();
+    const MatrixXf& N = hierarchy.N();
+    hierarchy.clearConstraints();
+    for (std::size_t g = 0; g < guides.size(); ++g) {
+        const std::vector<Vec3d>& guide = guides[g];
+        if (guide.size() < 2) {
+            return fail(ErrorCode::InvalidArgument,
+                        "guide " + std::to_string(g) + " needs at least two points");
+        }
+        for (std::size_t i = 0; i + 1 < guide.size(); ++i) {
+            const Vec3d along = guide[i + 1] - guide[i];
+            const double span = length(along);
+            if (!(span > 0.0)) continue;
+            const Vector3f tangent(static_cast<Float>(along.x / span),
+                                   static_cast<Float>(along.y / span),
+                                   static_cast<Float>(along.z / span));
+            const auto samples = static_cast<int>(std::ceil(span / step));
+            for (int k = 0; k <= samples; ++k) {
+                const Vec3d q = guide[i] + along * (static_cast<double>(k) / samples);
+                const ClosestPoint nearest = index.closestPoint(q);
+                if (nearest.distance > maxOffset) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "guide " + std::to_string(g) + " leaves the mesh");
+                }
+                const Vector3f point(static_cast<Float>(nearest.point.x),
+                                     static_cast<Float>(nearest.point.y),
+                                     static_cast<Float>(nearest.point.z));
+                for (Eigen::Index j = 0; j < 3; ++j) {
+                    const std::uint32_t v = F(j, nearest.face);
+                    Vector3f local = tangent - tangent.dot(N.col(v)) * N.col(v);
+                    if (local.squaredNorm() <= 0) continue;
+                    hierarchy.CQ().col(v) = local.normalized();
+                    hierarchy.CQw()[v] = 1.0f;
+                    hierarchy.CO().col(v) = point;
+                    hierarchy.COw()[v] = 1.0f;
+                }
+            }
+        }
+    }
+    return {};
+}
 
 Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     constexpr int rosy = 4;
@@ -153,6 +219,12 @@ Result<QuadLayout> run(const TriMesh& mesh, const QuadRemeshParams& params) {
     mRes.setScale(scale);
     mRes.build(deterministic);
     mRes.resetSolution();
+    if (!params.guides.empty()) {
+        if (auto held = constrainToGuides(mRes, params.guides, static_cast<double>(scale)); !held) {
+            return std::unexpected(held.error());
+        }
+        mRes.propagateConstraints(rosy, posy);
+    }
 
     std::unique_ptr<BVH> bvh;
     if (params.smoothIterations > 0) {

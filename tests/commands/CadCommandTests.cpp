@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <fstream>
 #include <miniz.h>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -99,6 +100,32 @@ TEST_CASE("quad.remesh adds a closed cage and undoes as one step", "[commands][q
     CHECK(s.document.undoHistory().back().label == "quad.remesh");
     REQUIRE(s.document.undo());
     CHECK_FALSE(s.document.find(cage));
+}
+
+TEST_CASE("quad.remesh lays out cage edges along guides", "[commands][quad]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeSphere(20.0, 4), "ball");
+    // Half the equator, as drawn on the surface.
+    Json half = Json::array();
+    for (int i = 0; i <= 16; ++i) {
+        const double a = std::numbers::pi * i / 16;
+        half.push_back({20.0 * std::cos(a), 20.0 * std::sin(a), 0.0});
+    }
+    const Json guided = s.run(
+        "quad.remesh", {{"id", mesh}, {"target_faces", 400}, {"guides", Json::array({half})}});
+    CHECK(guided["stats"]["closed"] == true);
+    CHECK(guided["stats"]["euler_characteristic"] == 2);
+    // Not a list of polylines; a polyline of one point; a point that is not three numbers; a
+    // guide off the surface.
+    const auto rejects = [&](const Json& lines) {
+        return !s.tryRun("quad.remesh", {{"id", mesh}, {"guides", lines}});
+    };
+    const auto point = [](double x, double y, double z) { return Json::array({x, y, z}); };
+    CHECK(rejects(half));
+    CHECK(rejects(Json::array({Json::array({point(20, 0, 0)})})));
+    CHECK(rejects(Json::array({Json::array({Json::array({20.0, 0.0}), point(0, 20, 0)})})));
+    CHECK(rejects(Json::array({Json::array({point(0, 0, 0), point(1, 0, 0)})})));
 }
 
 TEST_CASE("quad.remesh validates its input", "[commands][quad]") {
