@@ -304,6 +304,18 @@ Fit an exact, unbounded plane, cylinder, sphere or cone to the faces of a select
 | `max_residual_mm` | number |  | Largest P95 distance from the region's vertices to the surface. Default `0.1`. |
 | `selection_id` | integer | yes |  |
 
+### `primitive.trim`
+
+Make a solid with sharp edges from fitted primitives (primitive.fit): each is bounded by the mesh's box, grown by a tenth of its diagonal, and all are split against each other (Open CASCADE General Fuse). A split face is kept when min_coverage of its area lies within max_distance_mm of the mesh; the kept faces are sewn into a solid and faces of one primitive merged. The faces are the primitives' exact planes, cylinders, spheres and cones. Adds a solid object; fails, adding nothing, naming where the faces leave the solid open (a primitive there is missing or does not fit), or unless the result is one valid closed solid of positive volume. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `max_distance_mm` | number |  | A point of a split face lies on the mesh when it is this close. Default `0.5`. |
+| `mesh_id` | integer | yes | The mesh they were fitted to. |
+| `min_coverage` | number |  | Share of a split face's area that must lie on the mesh for it to be kept. Default `0.9`. |
+| `name` | string |  |  |
+| `primitive_ids` | array | yes | The primitives to trim. |
+
 ## project
 
 ### `project.new`

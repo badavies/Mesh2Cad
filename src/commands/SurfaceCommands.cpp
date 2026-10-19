@@ -14,11 +14,13 @@
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Step.h"
 #include "m2c/pipeline/Surface.h"
+#include "m2c/pipeline/Trim.h"
 
 #include "detail/Params.h"
 #include "detail/Register.h"
@@ -158,6 +160,60 @@ void addSurfaceCommands(std::vector<Command>& out) {
                                      {"p95_before_refinement_mm", built->p95BeforeRefinementMm}};
             }
             return result;
+        }));
+
+    out.push_back(makeCommand(
+        "primitive.trim",
+        "Make a solid with sharp edges from fitted primitives (primitive.fit): each is bounded by "
+        "the mesh's box, grown by a tenth of its diagonal, and all are split against each other "
+        "(Open CASCADE General Fuse). A split face is kept when min_coverage of its area lies "
+        "within max_distance_mm of the mesh; the kept faces are sewn into a solid and faces of "
+        "one primitive merged. The faces are the primitives' exact planes, cylinders, spheres "
+        "and cones. Adds a solid object; fails, adding nothing, naming where the faces leave the "
+        "solid open (a primitive there is missing or does not fit), or unless the result is one "
+        "valid closed solid of positive volume.",
+        R"({
+            "type":"object",
+            "properties":{
+                "primitive_ids":{"type":"array","items":{"type":"integer","minimum":0},"minItems":1,"description":"The primitives to trim."},
+                "mesh_id":{"type":"integer","minimum":0,"description":"The mesh they were fitted to."},
+                "max_distance_mm":{"type":"number","exclusiveMinimum":0,"default":0.5,"description":"A point of a split face lies on the mesh when it is this close."},
+                "min_coverage":{"type":"number","exclusiveMinimum":0,"maximum":1,"default":0.9,"description":"Share of a split face's area that must lie on the mesh for it to be kept."},
+                "name":{"type":"string"}
+            },
+            "required":["primitive_ids","mesh_id"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(mesh, requireMesh(context, params, "mesh_id"));
+            if (!params.contains("primitive_ids") || !params["primitive_ids"].is_array() ||
+                params["primitive_ids"].empty()) {
+                return fail(ErrorCode::InvalidArgument, "primitive_ids must list primitives");
+            }
+            std::vector<FittedPrimitive> primitives;
+            std::vector<ObjectId> inputs;
+            for (const Json& id : params["primitive_ids"]) {
+                M2C_TRY(object, requireObject(context, Json{{"id", id}}, "id", "primitive"));
+                primitives.push_back(object->primitive()->fit);
+                inputs.push_back(object->id);
+            }
+            inputs.push_back(mesh->id);
+            TrimParams p;
+            M2C_TRY(distance, optionalNumber(params, "max_distance_mm", 0.5, 1e-9, 1e6));
+            M2C_TRY(coverage, optionalNumber(params, "min_coverage", 0.9, 1e-9, 1.0));
+            M2C_TRY(name, optionalString(params, "name"));
+            p.maxDistanceMm = *distance;
+            p.minCoverage = *coverage;
+            M2C_TRY(trimmed, trimPrimitives(primitives, *mesh->mesh, p));
+            const SolidSummary summary = trimmed->solid.summary();
+            M2C_TRY(id,
+                    context.document.add(name->value_or(mesh->name + " (trimmed solid)"),
+                                         SolidData{std::move(trimmed->solid)},
+                                         context.provenance(std::move(inputs))));
+            return Json{{"id", *id},
+                        {"summary", toJson(summary)},
+                        {"split_faces", trimmed->splitFaces},
+                        {"kept_faces", trimmed->keptFaces},
+                        {"max_gap_mm", summary.maxToleranceMm}};
         }));
 
     out.push_back(makeCommand(

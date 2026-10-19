@@ -280,6 +280,13 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             auto brep = occt::writeBrep(*solid);
             if (!brep) return std::unexpected(brep.error());
             if (auto ok = addEntry(archive, base + ".brep", *brep, MZ_BEST_SPEED); !ok) return ok;
+            j["kind"] = "solid";
+            j["brep_file"] = base + ".brep";
+            j["brep_format"] = "binary";
+            if (solid->faces().empty()) { // trimmed primitives: the kernel's faces only
+                objects.push_back(std::move(j));
+                continue;
+            }
             const std::string faces = encode(solid->faces());
             if (auto ok = addEntry(archive, base + ".faces", faces, MZ_BEST_SPEED); !ok) return ok;
             // The display mesh is tessellate(faces, n), with 2 n^2 triangles per cage quad, so n
@@ -288,9 +295,6 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             for (const SurfacePatch& f : solid->faces()) quads += std::size_t{f.cellsU} * f.cellsV;
             const double perQuad = static_cast<double>(solid->display().faceCount()) /
                                    static_cast<double>(std::max<std::size_t>(quads, 1));
-            j["kind"] = "solid";
-            j["brep_file"] = base + ".brep";
-            j["brep_format"] = "binary";
             j["faces_file"] = base + ".faces";
             j["display_grid"] = std::lround(std::sqrt(perQuad / 2.0));
         } else if (const auto* primitive = std::get_if<FittedPrimitive>(&data)) {
@@ -435,6 +439,13 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
             } else if (version >= 2 && kind == "solid") {
                 auto brep = readEntry(archive, j.at("brep_file").get<std::string>());
                 if (!brep) return std::unexpected(brep.error());
+                if (version >= 5 && !j.contains("faces_file")) {
+                    auto solid = occt::readBrep(*brep, occt::BrepFormat::Binary, {}, nullptr);
+                    if (!solid) return std::unexpected(solid.error());
+                    o.data = std::move(*solid);
+                    project.objects.push_back(std::move(o));
+                    continue;
+                }
                 auto raw = readEntry(archive, j.at("faces_file").get<std::string>());
                 if (!raw) return std::unexpected(raw.error());
                 auto faces = decodeFaces(*raw, version);
