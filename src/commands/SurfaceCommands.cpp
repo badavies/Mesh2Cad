@@ -268,13 +268,15 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "Make a fitted cylinder or sphere (primitive.fit) a solid of its exact surface, to fuse "
         "to or cut from another solid with solid.boolean, such as a true-cylinder hole through "
         "an organic body. A sphere is whole; a cylinder runs along its axis, centred on the "
-        "fitted region, length_mm long (0 = as long as the region). Adds a solid object; fails "
-        "for a plane or cone.",
+        "fitted region, length_mm long (0 = as long as the region). radius_mm replaces the "
+        "fitted radius, for example to drill a fuzzy scanned hole clean. Adds a solid object; "
+        "fails for a plane or cone.",
         R"({
             "type":"object",
             "properties":{
                 "id":{"type":"integer","minimum":0,"description":"The cylinder or sphere primitive."},
                 "length_mm":{"type":"number","minimum":0,"default":0,"description":"A cylinder's length; 0 = the length of the region it was fitted to."},
+                "radius_mm":{"type":"number","minimum":0,"default":0,"description":"The solid's radius; 0 = the fitted radius."},
                 "name":{"type":"string"}
             },
             "required":["id"],"additionalProperties":false})",
@@ -282,8 +284,11 @@ void addSurfaceCommands(std::vector<Command>& out) {
         [](CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireObject(context, params, "id", "primitive"));
             M2C_TRY(length, optionalNumber(params, "length_mm", 0.0, 0.0, 1e6));
+            M2C_TRY(radius, optionalNumber(params, "radius_mm", 0.0, 0.0, 1e6));
             M2C_TRY(name, optionalString(params, "name"));
-            M2C_TRY(solid, primitiveSolid(object->primitive()->fit, *length));
+            FittedPrimitive fit = object->primitive()->fit;
+            if (*radius > 0.0) fit.surface.radiusMm = *radius;
+            M2C_TRY(solid, primitiveSolid(fit, *length));
             const SolidSummary summary = solid->summary();
             M2C_TRY(id,
                     context.document.add(name->value_or(object->name + " (solid)"),

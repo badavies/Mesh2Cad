@@ -306,13 +306,14 @@ Fit an exact, unbounded plane, cylinder, sphere or cone to the faces of a select
 
 ### `primitive.solid`
 
-Make a fitted cylinder or sphere (primitive.fit) a solid of its exact surface, to fuse to or cut from another solid with solid.boolean, such as a true-cylinder hole through an organic body. A sphere is whole; a cylinder runs along its axis, centred on the fitted region, length_mm long (0 = as long as the region). Adds a solid object; fails for a plane or cone. *(changes the document)*
+Make a fitted cylinder or sphere (primitive.fit) a solid of its exact surface, to fuse to or cut from another solid with solid.boolean, such as a true-cylinder hole through an organic body. A sphere is whole; a cylinder runs along its axis, centred on the fitted region, length_mm long (0 = as long as the region). radius_mm replaces the fitted radius, for example to drill a fuzzy scanned hole clean. Adds a solid object; fails for a plane or cone. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes | The cylinder or sphere primitive. |
 | `length_mm` | number |  | A cylinder's length; 0 = the length of the region it was fitted to. Default `0`. |
 | `name` | string |  |  |
+| `radius_mm` | number |  | The solid's radius; 0 = the fitted radius. Default `0`. |
 
 ### `primitive.trim`
 

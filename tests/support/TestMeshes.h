@@ -145,6 +145,19 @@ inline TriMesh makeTorus(double R = 3.0, double r = 1.0, int n = 48, int m = 24)
     return makeMesh(std::move(p), std::move(idx));
 }
 
+/// Rounded cube |x|^p + |y|^p + |z|^p = h^p around c: an icosphere subdivided `levels` times with
+/// each vertex moved along its ray onto the surface. p = 2 is a sphere; larger p is squarer.
+inline TriMesh makeRoundedCube(double h, double p, int levels = 5, Vec3d c = {}) {
+    std::vector<Vec3d> q = makeSphere(1.0, levels).positions();
+    for (Vec3d& v : q) {
+        const double s = std::pow(std::pow(std::abs(v.x), p) + std::pow(std::abs(v.y), p) +
+                                      std::pow(std::abs(v.z), p),
+                                  1.0 / p);
+        v = c + v * (h / s);
+    }
+    return makeMesh(std::move(q), makeSphere(1.0, levels).indices());
+}
+
 /// Moves every vertex along a random direction by up to `amount` (seeded, reproducible).
 inline TriMesh addNoise(const TriMesh& mesh, double amount, unsigned seed = 7) {
     std::mt19937 rng(seed);

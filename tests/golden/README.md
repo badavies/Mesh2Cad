@@ -18,7 +18,6 @@ tests/golden/dji_controller_3/
 | `siemens_coffee_lid` | `D:\Revopoint\Siemens Coffe Machine Lid.obj` | A single-sided sheet: closed with the shrink-wrap fallback, not hole filling |
 | `tyranid_v2` | `D:\Revopoint\tyranid v2.obj` | Quad faces, non-manifold edges, inconsistent orientation |
 | `dji_controller_3_surface` | the `dji_controller_3` copy | The M2 gate: the M1 session, then quad layout, surface build, deviation, STEP export and the deviation report |
-| `dji_controller_3_holes` | the `dji_controller_3` copy | The M4 hole gate (#50): the surface solid, then a cylinder fitted to the left top-corner socket and cut from it, so the socket wall is a true cylinder; deviation of the remeshed scan and STEP export |
 
 ## Getting the scans
 

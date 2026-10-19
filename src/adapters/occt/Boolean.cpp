@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include <BOPAlgo_ArgumentAnalyzer.hxx>
 #include <BRepAlgoAPI_BooleanOperation.hxx>
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
@@ -61,6 +62,24 @@ std::unique_ptr<BRepAlgoAPI_BooleanOperation> algorithm(const BooleanOp op) {
     return nullptr;
 }
 
+/// When a boolean goes wrong, the usual cause is an input whose faces cross each other (a fitted
+/// surface folded over an edge); the kernel's checker accepts such a solid. Says which one, or
+/// nothing. Only run on failure: it intersects every pair of faces.
+std::string crossingFaces(const Solid& a, const Solid& b) {
+    for (const auto& [solid, name] : {std::pair{&a, "the first solid"}, {&b, "the tool"}}) {
+        BOPAlgo_ArgumentAnalyzer check;
+        check.SetShape1(solid->shape().shape);
+        check.SelfInterMode() = true;
+        check.SmallEdgeMode() = false;
+        check.Perform();
+        if (check.HasFaulty()) {
+            return std::string(" (") + name +
+                   "'s faces cross each other, so its inside is not well defined)";
+        }
+    }
+    return "";
+}
+
 } // namespace
 
 Result<Solid>
@@ -95,14 +114,17 @@ booleanSolids(const Solid& a, const Solid& b, const BooleanOp op, const double f
         if (solids == 0) {
             return fail(ErrorCode::InvalidState,
                         std::string("nothing is left after the ") + verb(op) +
-                            ": the solids do not overlap where it needs them to");
+                            ": the solids do not overlap where it needs them to" +
+                            crossingFaces(a, b));
         }
         if (solids > 1) {
             return fail(ErrorCode::InvalidState,
                         std::string("the ") + verb(op) + " leaves " + std::to_string(solids) +
-                            " separate solids instead of one");
+                            " separate solids instead of one" + crossingFaces(a, b));
         }
-        return kernelSolid(solid, std::string("the solids after the ") + verb(op) + " are");
+        auto made = kernelSolid(solid, std::string("the solids after the ") + verb(op) + " are");
+        if (!made) return fail(made.error().code, made.error().message + crossingFaces(a, b));
+        return made;
     });
 }
 
