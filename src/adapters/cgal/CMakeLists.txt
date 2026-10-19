@@ -6,6 +6,7 @@ m2c_add_library(cgal
         HoleFilling.cpp
         Remesh.cpp
         Repair.cpp
+        RegionGrowing.cpp
         Simplify.cpp
         Wrap.cpp
     DEPS
