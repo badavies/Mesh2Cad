@@ -619,14 +619,14 @@ TEST_CASE("A fuzzy rounded cube is drilled true for a scanned dowel", "[commands
     // roughened by up to 0.15 mm as a printer's fuzzy skin does: no plane or cylinder fits them
     // within 0.1 mm.
     const ObjectId cube =
-        s.import(dir, addNoise(makeRoundedCube(15, 4, 5, {15, 15, 15}), 0.15), "cube");
+        s.import(dir, addNoise(makeRoundedCube(15, 4, 4, {15, 15, 15}), 0.15), "cube");
     std::vector<Vec3d> rod = makeCylinder(4.5, 40, 96, 40).positions();
     for (Vec3d& v : rod) v = v + Vec3d{15, 15, -5};
     const ObjectId dowel = s.import(
         dir,
         addNoise(makeMesh(std::move(rod), makeCylinder(4.5, 40, 96, 40).indices()), 0.15, 11),
         "dowel");
-    const Json cage = s.run("quad.remesh", {{"id", cube}, {"target_faces", 800}});
+    const Json cage = s.run("quad.remesh", {{"id", cube}, {"target_faces", 400}});
     const Json body = s.run("surface.build", {{"id", cage["id"]}, {"mesh_id", cube}});
     REQUIRE(body["summary"]["valid"] == true);
     REQUIRE(body["summary"]["solid_count"] == 1);
