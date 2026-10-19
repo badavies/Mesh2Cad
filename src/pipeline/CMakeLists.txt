@@ -7,6 +7,7 @@ m2c_add_library(pipeline
         PatchMerge.cpp
         PrimitiveFit.cpp
         QuadRemesh.cpp
+        Segment.cpp
         Select.cpp
         Shells.cpp
         Smooth.cpp
