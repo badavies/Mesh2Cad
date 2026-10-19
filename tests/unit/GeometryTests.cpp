@@ -7,6 +7,7 @@
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshStats.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/core/Transform.h"
 
@@ -156,4 +157,47 @@ TEST_CASE("Ray casts and closest points cope with -0.0 and flat triangles", "[co
     // A triangle with two equal corners is the segment between its two distinct corners.
     CHECK(closestPointOnTriangle({2, 1, 0}, {0, 0, 0}, {0, 0, 0}, {2, 0, 0}) == Vec3d{2, 0, 0});
     CHECK(closestPointOnTriangle({1, 1, 0}, {0, 0, 0}, {2, 0, 0}, {2, 0, 0}) == Vec3d{1, 0, 0});
+}
+
+TEST_CASE("A primitive is drawn clipped to its region's box", "[core][primitive]") {
+    // A plane z = 5 over a 10 x 20 region: the box grown by 1% of its diagonal, all of it.
+    const FittedPrimitive plane{
+        .surface = {.kind = PrimitiveKind::Plane, .point = {3, 4, 5}, .direction = {0, 0, 1}},
+        .extent = {.min = {0, 0, 5}, .max = {10, 20, 5}}};
+    const auto flat = primitiveDisplay(plane);
+    REQUIRE(flat.has_value());
+    const double m = 0.01 * std::sqrt(500.0);
+    CHECK_THAT(computeStats(*flat).surfaceArea, WithinAbs((10 + 2 * m) * (20 + 2 * m), 1e-6));
+    for (std::size_t f = 0; f < flat->faceCount(); ++f) {
+        const auto [a, b, c] = flat->face(f);
+        const auto& p = flat->positions();
+        CHECK(cross(p[b] - p[a], p[c] - p[a]).z > 0.0); // facing the plane's normal
+    }
+
+    // A cylinder of radius 4 along x through a 30 mm long region: all the way round, on it.
+    const FittedPrimitive cylinder{.surface = {.kind = PrimitiveKind::Cylinder,
+                                               .point = {0, 0, 0},
+                                               .direction = {1, 0, 0},
+                                               .radiusMm = 4.0},
+                                   .extent = {.min = {0, -4, -4}, .max = {30, 4, 4}}};
+    const auto round = primitiveDisplay(cylinder, 32);
+    REQUIRE(round.has_value());
+    const Aabb& box = round->bounds();
+    const double grown = 0.01 * std::sqrt(30.0 * 30.0 + 8.0 * 8.0 + 8.0 * 8.0);
+    CHECK_THAT(box.min.x, WithinAbs(-grown, 1e-6));
+    CHECK_THAT(box.max.x, WithinAbs(30.0 + grown, 1e-6));
+    CHECK_THAT(box.max.y - box.min.y, WithinAbs(8.0, 1e-9));
+    for (std::size_t f = 0; f < round->faceCount(); ++f) {
+        const auto [a, b, c] = round->face(f);
+        const auto& p = round->positions();
+        CHECK(distanceTo(cylinder.surface, p[a]) < 1e-9);
+        const Vec3d centre = (p[a] + p[b] + p[c]) * (1.0 / 3.0);
+        CHECK(dot(cross(p[b] - p[a], p[c] - p[a]), normalAt(cylinder.surface, centre)) > 0.0);
+    }
+
+    // A sphere entirely outside its box draws nothing.
+    const FittedPrimitive away{
+        .surface = {.kind = PrimitiveKind::Sphere, .point = {100, 0, 0}, .radiusMm = 1.0},
+        .extent = {.min = {0, 0, 0}, .max = {1, 1, 1}}};
+    CHECK_FALSE(primitiveDisplay(away).has_value());
 }

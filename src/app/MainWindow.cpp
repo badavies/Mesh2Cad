@@ -86,6 +86,7 @@ QString groupTitle(const std::string& prefix) {
         {"faces", QObject::tr("Faces")},
         {"align", QObject::tr("Align")},
         {"plane", QObject::tr("Fit")},
+        {"primitive", QObject::tr("Primitive")},
         {"measure", QObject::tr("Measure")},
         {"quad", QObject::tr("Quad layout")},
         {"surface", QObject::tr("Surface")},
@@ -518,6 +519,8 @@ void MainWindow::refreshTree() {
             tree_->addTopLevelItem(makeItem(o, tr("%L1 quads").arg(q->cage.faceCount())));
         } else if (const SolidData* d = o.solid()) {
             tree_->addTopLevelItem(makeItem(o, tr("%L1 faces").arg(d->solid.summary().faceCount)));
+        } else if (const PrimitiveData* p = o.primitive()) {
+            tree_->addTopLevelItem(makeItem(o, tr("P95 %1 mm").arg(p->fit.p95Mm, 0, 'f', 3)));
         }
     }
     for (const DocumentObject& o : snapshot_->objects) {

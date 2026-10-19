@@ -66,6 +66,7 @@ struct DeviationData {
 /// a quad layout it stays when its inputs change; its provenance names them.
 struct PrimitiveData {
     FittedPrimitive fit;
+    std::shared_ptr<const TriMesh> display; ///< primitiveDisplay(fit); null if it failed.
 };
 
 using ObjectData = std::variant<MeshData,

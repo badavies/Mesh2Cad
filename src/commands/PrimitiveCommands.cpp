@@ -72,7 +72,7 @@ void addPrimitiveCommands(std::vector<Command>& out) {
             name[0] = static_cast<char>(name[0] - 'a' + 'A');
             M2C_TRY(id,
                     context.document.add(name + " fit",
-                                         PrimitiveData{fitted},
+                                         primitiveData(fitted),
                                          context.provenance({sel->id, mesh->id})));
             Json report = toJson(fitted.surface);
             report["id"] = *id;

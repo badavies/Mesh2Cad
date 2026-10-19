@@ -6,6 +6,7 @@
 #include <optional>
 #include <string_view>
 
+#include "m2c/core/Error.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -51,5 +52,11 @@ struct FittedPrimitive {
 /// Unit normal of the surface at its point nearest p: a plane's normal, or away from a
 /// cylinder's or cone's axis or a sphere's centre (zero on the axis or at the centre).
 [[nodiscard]] Vec3d normalAt(const Primitive& s, const Vec3d& p) noexcept;
+
+/// The surface clipped to the fit's extent (grown by 1% of its diagonal), for drawing: a grid of
+/// `cells` x `cells` quads over the part of the surface across the box (all the way round a
+/// cylinder, cone or sphere), keeping the triangles inside it, each facing the way normalAt
+/// does. Fails if no triangle is inside.
+[[nodiscard]] Result<TriMesh> primitiveDisplay(const FittedPrimitive& fit, int cells = 64);
 
 } // namespace m2c
