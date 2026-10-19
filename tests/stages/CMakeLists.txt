@@ -4,6 +4,7 @@ add_executable(m2c_stage_tests
     PatchMergeStageTests.cpp
     PrimitiveFitStageTests.cpp
     QuadRemeshStageTests.cpp
+    SegmentStageTests.cpp
     SelectMeasureStageTests.cpp
     SurfaceStageTests.cpp)
 target_link_libraries(m2c_stage_tests PRIVATE Mesh2Cad::pipeline Mesh2Cad::core m2c_test_support)
