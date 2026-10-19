@@ -13,6 +13,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "m2c/adapters/occt/Surface.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/pipeline/PrimitiveFit.h"
@@ -210,4 +211,40 @@ TEST_CASE("Distances and normals of a cone", "[stages][fit]") {
     CHECK_THAT(n.y, WithinAbs(std::sqrt(0.5), 1e-12));
     CHECK_THAT(n.z, WithinAbs(-std::sqrt(0.5), 1e-12));
     CHECK(std::string(primitiveKindName(PrimitiveKind::Cone)) == "cone");
+}
+
+TEST_CASE("Each primitive's Open CASCADE surface is the same surface", "[stages][fit]") {
+    std::mt19937 rng(11);
+    std::uniform_real_distribution<double> coord(-20.0, 20.0);
+    const std::vector<Primitive> primitives{
+        {.kind = PrimitiveKind::Plane, .point = {1, 2, 3}, .direction = kNormal},
+        {.kind = PrimitiveKind::Cylinder, .point = {1, 2, 3}, .direction = kAxis, .radiusMm = 8},
+        {.kind = PrimitiveKind::Sphere, .point = {-4, 0, 7}, .radiusMm = 12},
+        {.kind = PrimitiveKind::Cone,
+         .point = {2, -1, 4},
+         .direction = kAxis,
+         .halfAngleRad = 25 * kDeg}};
+    for (const Primitive& s : primitives) {
+        INFO(primitiveKindName(s.kind));
+        std::vector<Vec3d> points;
+        while (points.size() < 200) {
+            const Vec3d p = s.point + Vec3d{coord(rng), coord(rng), coord(rng)};
+            // Away from an axis or centre, and for a cone well inside the half beyond the apex.
+            const Vec3d v = p - s.point;
+            const double h = dot(v, s.direction);
+            if (s.kind != PrimitiveKind::Plane && length(v - s.direction * h) < 1.0) continue;
+            if (s.kind == PrimitiveKind::Cone && h < 5.0) continue;
+            if (s.kind == PrimitiveKind::Sphere && length(v) < 1.0) continue;
+            points.push_back(p);
+        }
+        const auto distances = occt::surfaceDistances(s, points);
+        REQUIRE(distances.has_value());
+        for (std::size_t i = 0; i < points.size(); ++i) {
+            CHECK_THAT((*distances)[i], WithinAbs(distanceTo(s, points[i]), 1e-9));
+        }
+    }
+    const Primitive flat{.kind = PrimitiveKind::Cone, .direction = {0, 0, 1}, .halfAngleRad = 0};
+    CHECK(occt::surfaceDistances(flat, {}).error().code == ErrorCode::InvalidArgument);
+    const Primitive empty{.kind = PrimitiveKind::Cylinder, .direction = {0, 0, 1}};
+    CHECK(occt::surfaceDistances(empty, {}).error().code == ErrorCode::InvalidArgument);
 }

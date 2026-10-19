@@ -63,40 +63,12 @@
 #include "m2c/core/SurfacePatch.h"
 #include "m2c/core/Vec3.h"
 
+#include "Guard.h"
 #include "Shape.h"
 
 namespace m2c::occt {
 
 namespace {
-
-const char* message(const Standard_Failure& e) {
-#if OCC_VERSION_HEX >= 0x080000
-    return e.what(); // Standard_Failure is a std::exception from OCCT 8
-#else
-    return e.GetMessageString();
-#endif
-}
-
-/// Open CASCADE reports progress through its default messenger, which prints to standard output;
-/// the CLI and the JSON channel use standard output for results, so it is silenced once.
-void silenceKernel() {
-    static std::once_flag once;
-    std::call_once(once, [] { Message::DefaultMessenger()->ChangePrinters().Clear(); });
-}
-
-/// Runs f, turning kernel exceptions into errors.
-template <class F>
-auto guarded(const char* what, F&& f) -> decltype(f()) {
-    silenceKernel();
-    try {
-        return f();
-    } catch (const Standard_Failure& e) {
-        return fail(ErrorCode::Internal,
-                    std::string(what) + " failed in Open CASCADE: " + message(e));
-    } catch (const std::exception& e) {
-        return fail(ErrorCode::Internal, std::string(what) + " failed: " + e.what());
-    }
-}
 
 std::string utf8(const std::filesystem::path& path) {
     const std::u8string s = path.u8string();

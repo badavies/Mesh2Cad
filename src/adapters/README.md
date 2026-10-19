@@ -15,6 +15,11 @@ target.
   - `simplify` with `SimplifyParams`: Garland-Heckbert edge collapse to a target face count.
   - `remesh` with `RemeshParams`: isotropic remeshing that keeps sharp edges.
   - `shrinkWrap` with `WrapParams`: 3D alpha wrapping to a watertight, manifold mesh.
+- `m2c/adapters/cgal/RegionGrowing.h` (namespace `m2c::cgal`):
+  - `growRegions` with `GrowParams` and `GrownRegion`: Shape_detection region growing of planes,
+    cylinders or spheres over the free faces of a mesh, for segmentation.
+  - `estimatePrimitive`: CGAL's least-squares cylinder or sphere through a set of faces, the
+    start for a primitive fit.
 
 - `m2c/adapters/quad/QuadRemesh.h` (namespace `m2c::quad`):
   - `remesh` with `QuadRemeshParams`: Instant Meshes' field optimisation and pure-quad extraction
@@ -35,10 +40,16 @@ target.
     the result is one valid closed solid.
   - `writeStep` (AP242, millimetres, checks the solid first) and `readStep`, which summarises
     a STEP file as a `SolidSummary`.
+- `m2c/adapters/occt/Surface.h` (namespace `m2c::occt`):
+  - `surfaceDistances`: distances from points to a fitted primitive made as an unbounded Open
+    CASCADE surface (`Geom_Plane`, `Geom_CylindricalSurface`, `Geom_SphericalSurface`,
+    `Geom_ConicalSurface`).
 
 Private to the adapters: `osd/Limit.h` (the OpenSubdiv refiner, patch table and stencils),
 `osd/Tessellation.h` (limit surface sampling shared by the fit and the display mesh) and
-`occt/Shape.h` (the definition of the opaque `SolidShape`). Private to the adapter: `CgalMesh.h` (`toSurfaceMesh`, `fromSurfaceMesh`, `guarded`). Do not
+`occt/Shape.h` (the definition of the opaque `SolidShape`), `occt/PrimitiveSurface.h`
+(`toGeomSurface`, a primitive as a `Geom_Surface`) and `occt/Guard.h` (kernel exceptions as
+errors). Private to the adapter: `CgalMesh.h` (`toSurfaceMesh`, `fromSurfaceMesh`, `guarded`). Do not
 include it from outside `src/adapters/cgal`.
 
 ## Dependencies

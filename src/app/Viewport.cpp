@@ -118,9 +118,16 @@ bool isMesh(const DocumentObject& o) {
     return o.mesh() != nullptr;
 }
 
-/// Meshes, solids (their display mesh) and quad layouts (their edges) are drawn.
+/// The display mesh of a primitive, clipped to its region's box; null for other objects.
+const TriMesh* primitiveDisplay(const DocumentObject& o) {
+    const PrimitiveData* p = o.primitive();
+    return p != nullptr ? p->display.get() : nullptr;
+}
+
+/// Meshes, solids and primitives (their display meshes) and quad layouts (their edges) are drawn.
 bool isDrawn(const DocumentObject& o) {
-    return o.mesh() != nullptr || o.solid() != nullptr || o.quadLayout() != nullptr;
+    return o.mesh() != nullptr || o.solid() != nullptr || o.quadLayout() != nullptr ||
+           primitiveDisplay(o) != nullptr;
 }
 
 /// Identity of what an object draws, shared by every snapshot copy of it.
@@ -128,12 +135,13 @@ const void* drawSource(const DocumentObject& o) {
     if (const MeshData* m = o.mesh()) return m->mesh.get();
     if (const SolidData* s = o.solid()) return &s->solid.display();
     if (const QuadLayoutData* q = o.quadLayout()) return &q->cage.positions();
-    return nullptr;
+    return primitiveDisplay(o);
 }
 
 Aabb drawnBounds(const DocumentObject& o) {
     if (const MeshData* m = o.mesh()) return m->mesh->bounds();
     if (const SolidData* s = o.solid()) return s->solid.display().bounds();
+    if (const TriMesh* p = primitiveDisplay(o)) return p->bounds();
     return o.quadLayout()->cage.bounds();
 }
 
@@ -430,11 +438,22 @@ void Viewport::syncGpu() {
     for (const DocumentObject& o : snapshot_->objects) {
         if (!isDrawn(o)) continue;
         GpuMesh& gpu = gpu_[o.id];
-        if (o.solid() != nullptr || o.quadLayout() != nullptr) {
+        if (o.solid() != nullptr || o.quadLayout() != nullptr || o.primitive() != nullptr) {
             if (gpu.source == drawSource(o)) continue;
             if (gpu.vao != 0) release(gpu);
             gpu.source = drawSource(o);
-            if (const SolidData* s = o.solid()) {
+            if (const PrimitiveData* p = o.primitive()) {
+                const std::shared_ptr<const TriMesh>& display = p->display;
+                gpu.offset = (display->bounds().min + display->bounds().max) * 0.5;
+                upload(gpu,
+                       display->positions(),
+                       display->indices(),
+                       gpu.vao,
+                       gpu.vbo,
+                       gpu.ebo,
+                       gpu.indexCount);
+                gpu.keepAlive = display;
+            } else if (const SolidData* s = o.solid()) {
                 auto solid = std::make_shared<const Solid>(s->solid);
                 const TriMesh& display = solid->display();
                 gpu.offset = (display.bounds().min + display.bounds().max) * 0.5;
@@ -546,9 +565,10 @@ void Viewport::paintGL() {
             }
             const bool current = o.id == currentMesh_;
             program_.setUniformValue("baseColor",
-                                     o.solid() != nullptr ? QVector3D(0.55f, 0.66f, 0.82f)
-                                     : current            ? QVector3D(0.80f, 0.82f, 0.86f)
-                                                          : QVector3D(0.66f, 0.68f, 0.70f));
+                                     o.solid() != nullptr       ? QVector3D(0.55f, 0.66f, 0.82f)
+                                     : o.primitive() != nullptr ? QVector3D(0.56f, 0.78f, 0.60f)
+                                     : current                  ? QVector3D(0.80f, 0.82f, 0.86f)
+                                                                : QVector3D(0.66f, 0.68f, 0.70f));
             program_.setUniformValue("backColor", QVector3D(0.72f, 0.30f, 0.30f));
             program_.setUniformValue("lineColor", QVector3D(0.08f, 0.09f, 0.10f));
             const bool proxy = interacting_ && gpu.proxyIndexCount > 0;

@@ -94,7 +94,7 @@ void addProjectCommands(std::vector<Command>& out) {
                 } else if (auto* solid = std::get_if<Solid>(&data)) {
                     o.data = SolidData{std::move(*solid)};
                 } else if (const auto* primitive = std::get_if<FittedPrimitive>(&data)) {
-                    o.data = PrimitiveData{*primitive};
+                    o.data = primitiveData(*primitive);
                 } else {
                     auto& [meshId, referenceId, field] = std::get<ProjectDeviation>(data);
                     o.data = DeviationData{

@@ -344,6 +344,50 @@ TEST_CASE("The viewport draws solids, cages and deviation colours", "[app][surfa
     screenshot(view, "cage");
 }
 
+TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto can = dir.path() / "can.stl";
+    REQUIRE(writeMesh(makeCylinder(10.0, 30.0, 96, 30), can).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(can.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    const auto run = [&](const char* command, const Json& params) {
+        Json out;
+        bool done = false;
+        engine.run(command, params, [&](const Result<Json>& r) {
+            if (r) out = *r;
+            done = true;
+        });
+        REQUIRE(waitFor([&] { return done && !engine.busy(); }, 120000));
+        return out;
+    };
+    const Json regions = run("mesh.segment", {{"id", mesh}})["regions"];
+    REQUIRE(regions.size() == 3);
+    const Json fit = run("primitive.fit", {{"selection_id", regions[2]["selection_id"]}});
+    REQUIRE(fit["kind"] == "cylinder");
+    CHECK(countKind(*engine.snapshot(), "primitive") == 1);
+
+    // With the scan hidden the cylinder, clipped to its region, shows in the primitives' green.
+    run("object.show", {{"id", mesh}, {"visible", false}});
+    Viewport* view = window.viewport();
+    view->fitAll();
+    QApplication::processEvents();
+    const QImage frame = view->grabFramebuffer();
+    const QColor c = frame.pixelColor(frame.width() / 2, frame.height() / 2);
+    CHECK(c.green() > c.red() + 20);
+    CHECK(c.green() > c.blue() + 20);
+    screenshot(view, "primitive");
+}
+
 TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     application();
     CommandRegistry registry;

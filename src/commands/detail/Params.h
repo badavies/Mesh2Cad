@@ -13,6 +13,7 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/Primitive.h"
 
 /// Evaluates a Result-returning expression and returns its error from the enclosing handler.
 #define M2C_TRY(var, expr)                                                                         \
@@ -60,6 +61,9 @@ struct SelectionRef {
     ObjectId meshId{0};
     std::shared_ptr<const MeshSelection> faces;
 };
+
+/// A primitive object's data, with its display mesh.
+[[nodiscard]] PrimitiveData primitiveData(const FittedPrimitive& fit);
 
 /// The selection object named by params[key]. With `meshId`, it must belong to that mesh.
 [[nodiscard]] Result<SelectionRef> requireSelection(const CommandContext& context,

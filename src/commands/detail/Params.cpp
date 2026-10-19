@@ -205,6 +205,12 @@ Result<void> commitMesh(CommandContext& context,
                                         context.provenance(std::move(inputs)));
 }
 
+PrimitiveData primitiveData(const FittedPrimitive& fit) {
+    auto display = primitiveDisplay(fit);
+    return {.fit = fit,
+            .display = display ? std::make_shared<const TriMesh>(std::move(*display)) : nullptr};
+}
+
 Json describe(const DocumentObject& object) {
     Json j{{"id", object.id},
            {"name", object.name},
