@@ -21,6 +21,8 @@ struct CageFitParams {
     /// Samples farther than this from the surface are left out (parts of the scan the cage does
     /// not cover); 0 = the mean cage edge length.
     double maxSampleDistanceMm{0.0};
+    /// Accept an open cage (a sheet with a boundary) as well as a closed one.
+    bool open{false};
 };
 
 struct CageFitResult {
@@ -37,12 +39,13 @@ struct CageFitResult {
 /// closest point of the current limit surface, then the vertices solve one sparse least-squares
 /// problem (distance to the sample's tangent plane, plus a little of the distance to the sample),
 /// with a smoothing term on how far neighbouring vertices move apart. The best round is kept.
-/// The cage must be closed. Deterministic.
+/// The cage must be closed, or open with params.open. Deterministic.
 [[nodiscard]] Result<CageFitResult>
 fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params);
 
 struct PatchParams {
     int isolationLevel{2}; ///< As in CageFitParams; caps get smaller with each level.
+    bool open{false};      ///< As in CageFitParams.
 };
 
 struct PatchResult {
@@ -58,12 +61,13 @@ struct PatchResult {
 /// converted exactly where the surface is regular; each irregular patch (Gregory basis) becomes a
 /// cap with the same boundary curves and a least-squares interior. Coarser patches are split so
 /// each face is a uniform grid of pieces. Neighbouring faces can have different numbers of spans
-/// but meet along the same limit curves. The cage must be closed.
+/// but meet along the same limit curves. The cage must be closed, or open with params.open.
 [[nodiscard]] Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& params);
 
 /// One uniform Catmull-Clark step: every n-sided face becomes n quads. The limit surface is the
 /// same and so are the irregular vertices, so a fit of the result starts where the coarse fit
-/// ended, with four times the control. The cage must be closed.
+/// ended, with four times the control. The cage must be a consistently oriented manifold
+/// (closed, or open with a boundary).
 [[nodiscard]] Result<QuadLayout> subdivideCage(const QuadLayout& cage);
 
 /// Points of the limit surface on a grid of n x n per patch (two triangles per grid cell), with

@@ -86,8 +86,10 @@ void addQuadCommands(std::vector<Command>& out) {
         "non-manifold edges are dropped, open loops filled and faces pointed outward. Loose parts "
         "(such as the head of a thin post whose stem the remesher missed) are joined to the main "
         "part with a tube of quads, or left out and counted when they cannot be. Guides, polylines "
-        "drawn on the mesh, lay out the patches by hand: cage edges run along them. Adds a "
-        "quad_layout object; the mesh is unchanged.",
+        "drawn on the mesh, lay out the patches by hand: cage edges run along them. With "
+        "keep_outline, an open mesh (a scanned sheet such as a lid) gives an open cage: its "
+        "longest boundary loop stays open, cage edges follow it, and the faces point the way the "
+        "mesh does. Adds a quad_layout object; the mesh is unchanged.",
         R"({
             "type":"object",
             "properties":{
@@ -96,6 +98,7 @@ void addQuadCommands(std::vector<Command>& out) {
                 "crease_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":0,"description":"Align the quads to edges sharper than this; 0 = treat the surface as smooth."},
                 "smooth_iterations":{"type":"integer","minimum":0,"maximum":10,"default":2,"description":"Rounds of smoothing that pull the cage vertices back onto the mesh."},
                 "join_parts":{"type":"boolean","default":true,"description":"Join loose closed parts to the main one instead of leaving them out."},
+                "keep_outline":{"type":"boolean","default":false,"description":"Leave the longest boundary loop open, for a sheet that surface.build thickens."},
                 "guides":{"type":"array","default":[],"description":"Polylines on the mesh, in mm, that cage edges should follow (manual patch layout); each needs two or more points within a cage edge length of the surface.","items":{"type":"array","minItems":2,"items":{"type":"array","minItems":3,"maxItems":3,"items":{"type":"number"}}}},
                 "name":{"type":"string"}
             },
@@ -107,6 +110,7 @@ void addQuadCommands(std::vector<Command>& out) {
             M2C_TRY(crease, optionalNumber(params, "crease_angle_deg", 0.0, 0.0, 180.0));
             M2C_TRY(smooth, optionalInteger(params, "smooth_iterations", 2, 0, 10));
             M2C_TRY(join, optionalBool(params, "join_parts", true));
+            M2C_TRY(outline, optionalBool(params, "keep_outline", false));
             M2C_TRY(name, optionalString(params, "name"));
             M2C_TRY(lines, guides(params));
             QuadRemeshParams p;
@@ -116,6 +120,7 @@ void addQuadCommands(std::vector<Command>& out) {
             p.smoothIterations = static_cast<unsigned>(*smooth);
             CageCloseParams close;
             close.joinParts = *join;
+            close.keepOutline = *outline;
             M2C_TRY(result, quadRemesh(*object->mesh, p, close));
             M2C_TRY(id,
                     context.document.add(name->value_or(object->name + " (quads)"),

@@ -40,8 +40,10 @@ struct Point {
 } // namespace
 
 Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
-    if (!cageStats(cage).closed())
-        return fail(ErrorCode::InvalidArgument, "the cage must be closed");
+    if (!cageStats(cage).orientedManifold()) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the cage must be a consistently oriented manifold");
+    }
     std::vector<int> sizes(cage.faceCount());
     for (std::size_t f = 0; f < cage.faceCount(); ++f) {
         sizes[f] = static_cast<int>(cage.face(f).size());
@@ -53,7 +55,7 @@ Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
     desc.numVertsPerFace = sizes.data();
     desc.vertIndicesPerFace = indices.data();
     Sdc::Options sdc;
-    sdc.SetVtxBoundaryInterpolation(Sdc::Options::VTX_BOUNDARY_EDGE_ONLY);
+    sdc.SetVtxBoundaryInterpolation(Sdc::Options::VTX_BOUNDARY_EDGE_AND_CORNER);
     try {
         const std::unique_ptr<Far::TopologyRefiner> refiner(
             Far::TopologyRefinerFactory<Far::TopologyDescriptor>::Create(

@@ -72,7 +72,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         return fail(ErrorCode::InvalidArgument,
                     "smoothing and distance must be at least 0; samples and iterations at least 1");
     }
-    auto limit = Limit::create(cage, params.isolationLevel);
+    auto limit = Limit::create(cage, params.isolationLevel, params.open);
     if (!limit) return std::unexpected(limit.error());
 
     const std::size_t stride = (scan.vertexCount() + params.maxSamples - 1) / params.maxSamples;

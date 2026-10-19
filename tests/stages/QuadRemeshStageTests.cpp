@@ -14,6 +14,7 @@
 
 #include "m2c/core/Error.h"
 #include "m2c/core/QuadLayout.h"
+#include "m2c/pipeline/MeshTools.h"
 #include "m2c/pipeline/QuadRemesh.h"
 
 #include "TestMeshes.h"
@@ -310,6 +311,51 @@ TEST_CASE("Cage edges follow a guide drawn across the field", "[stages][quad]") 
     CHECK(quadRemesh(sphere, q).error().code == ErrorCode::InvalidArgument);
     q.guides = {{Vec3d{0, 0, 0}, Vec3d{1, 0, 0}}}; // inside the sphere, off its surface
     CHECK(quadRemesh(sphere, q).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("An open sheet keeps its outline and faces the way the mesh does", "[stages][quad]") {
+    const TriMesh cap = makeCap(20.0, std::numbers::pi / 3.0, 24);
+    QuadRemeshParams q;
+    q.targetFaces = 300;
+    CageCloseParams close;
+    close.keepOutline = true;
+    // Area-weighted share of faces pointing away from the sphere's centre.
+    const auto outward = [](const QuadLayout& cage) {
+        double out = 0.0;
+        double all = 0.0;
+        for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+            const auto face = cage.face(f);
+            Vec3d n{};
+            Vec3d c{};
+            for (std::size_t i = 0; i < face.size(); ++i) {
+                const Vec3d& a = cage.positions()[face[i]];
+                n = n + cross(a, cage.positions()[face[(i + 1) % face.size()]]);
+                c = c + a;
+            }
+            all += length(n);
+            if (dot(n, c) > 0.0) out += length(n);
+        }
+        return out / all;
+    };
+    const auto sheet = quadRemesh(cap, q, close);
+    REQUIRE(sheet);
+    CHECK(sheet->stats.orientedManifold());
+    CHECK(sheet->stats.boundaryEdges > 0);
+    CHECK(sheet->stats.components == 1);
+    CHECK(sheet->cleanup.filledLoops == 0);
+    CHECK(outward(sheet->cage) == 1.0);
+    // The outline is the cap's rim at z = 10.
+    for (const Vec3d& p : sheet->cage.positions()) CHECK(p.z > 9.9);
+
+    const auto flipped = quadRemesh(*flipFaces(cap), q, close);
+    REQUIRE(flipped);
+    CHECK(outward(flipped->cage) == 0.0);
+
+    // Without keepOutline the rim is filled and the cage closed.
+    const auto closed = quadRemesh(cap, q);
+    REQUIRE(closed);
+    CHECK(closed->stats.closed());
+    CHECK(closed->cleanup.filledLoops == 1);
 }
 
 TEST_CASE("Remeshing is deterministic", "[stages][quad]") {

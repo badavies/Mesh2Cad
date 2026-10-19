@@ -180,6 +180,38 @@ TEST_CASE("Fitting rejects open cages and bad parameters", "[stages][surface]") 
     CHECK_FALSE(extractPatches(open, PatchParams{}));
 }
 
+TEST_CASE("An open cage fits a scanned sheet and gives open patches", "[stages][surface]") {
+    const TriMesh cap = makeCap(20.0, std::numbers::pi / 3.0, 24);
+    QuadRemeshParams q;
+    q.targetFaces = 300;
+    CageCloseParams close;
+    close.keepOutline = true;
+    const auto sheet = quadRemesh(cap, q, close);
+    REQUIRE(sheet);
+    CageFitParams p;
+    CHECK(fitCage(sheet->cage, cap, p).error().code == ErrorCode::InvalidArgument);
+    p.open = true;
+    const auto fit = fitCage(sheet->cage, cap, p);
+    REQUIRE(fit);
+    CHECK(fit->p95DistanceMm < 0.05);
+    CHECK(fit->ignoredSamples == 0);
+    const auto patches = extractPatches(fit->cage, PatchParams{2, true});
+    REQUIRE(patches);
+    const auto seams = measureSeams(patches->faces, 8, 1e-2, patches->caps);
+    REQUIRE(seams);
+    CHECK(seams->maxNormalAngleDeg < 10.0);
+    CHECK(seams->unmatchedSamples > 0); // the outline
+    // The edge of the surface is the cap's rim, z = 10.
+    double lowest = 1e300;
+    for (const SurfacePatch& face : patches->faces) {
+        for (int i = 0; i <= 8; ++i) lowest = std::min(lowest, evaluate(face, i / 8.0, 0.0).z);
+    }
+    CHECK(std::abs(lowest - 10.0) < 0.1);
+    const auto finer = subdivideCage(fit->cage);
+    REQUIRE(finer);
+    CHECK(cageStats(*finer).boundaryEdges == 2 * cageStats(fit->cage).boundaryEdges);
+}
+
 TEST_CASE("A sphere scan becomes a valid closed solid of the right volume", "[stages][surface]") {
     const double r = 20.0;
     const TriMesh sphere = makeSphere(r, 5);

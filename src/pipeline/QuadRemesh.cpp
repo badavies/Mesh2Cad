@@ -201,8 +201,9 @@ std::size_t splitNonManifoldVertices(std::vector<Vec3d>& positions, std::vector<
     return split;
 }
 
-/// Closes each loop of boundary edges with one polygon running the other way.
-void fillLoops(std::vector<Face>& faces, CageCleanup& report) {
+/// Closes each loop of boundary edges with one polygon running the other way, apart from the
+/// longest when keepLongest is set.
+void fillLoops(std::vector<Face>& faces, CageCleanup& report, const bool keepLongest) {
     std::unordered_map<std::uint64_t, bool> halfEdges;
     for (const Face& face : faces) {
         for (std::size_t i = 0; i < face.size(); ++i) {
@@ -223,6 +224,7 @@ void fillLoops(std::vector<Face>& faces, CageCleanup& report) {
         }
     }
     std::unordered_map<std::uint32_t, bool> used;
+    std::vector<Face> loops;
     for (std::uint32_t start : starts) {
         if (used[start]) continue;
         Face loop;
@@ -230,12 +232,32 @@ void fillLoops(std::vector<Face>& faces, CageCleanup& report) {
             used[v] = true;
             loop.push_back(v);
         }
-        if (loop.size() < 3) continue;
+        if (loop.size() >= 3) loops.push_back(std::move(loop));
+    }
+    if (keepLongest && !loops.empty()) {
+        // The first longest, so the choice does not depend on anything but the loop order.
+        const auto longest = std::ranges::max_element(
+            loops, [](const Face& a, const Face& b) { return a.size() < b.size(); });
+        loops.erase(longest);
+    }
+    for (Face& loop : loops) {
         std::ranges::reverse(loop);
         report.largestLoop = std::max(report.largestLoop, loop.size());
         ++report.filledLoops;
         faces.push_back(std::move(loop));
     }
+}
+
+/// Whether v, shared by faces a and b only, lies on an open edge: inside a cage the two faces
+/// share both of v's edges, so v has the same two neighbours in each.
+bool onOutline(const Face& a, const Face& b, const std::uint32_t v) {
+    const auto neighbours = [v](const Face& f) {
+        const auto at = static_cast<std::size_t>(std::ranges::find(f, v) - f.begin());
+        const std::uint32_t p = f[(at + f.size() - 1) % f.size()];
+        const std::uint32_t q = f[(at + 1) % f.size()];
+        return std::pair{std::min(p, q), std::max(p, q)};
+    };
+    return neighbours(a) != neighbours(b);
 }
 
 /// Removes vertices that only two faces share (repeatedly, as removing one can make another).
@@ -253,6 +275,7 @@ std::size_t dissolveValenceTwo(const std::size_t vertexCount, std::vector<Face>&
             if (around[v].size() != 2) continue;
             const std::uint32_t f1 = around[v][0];
             const std::uint32_t f2 = around[v][1];
+            if (onOutline(faces[f1], faces[f2], v)) continue;
             if (touched[f1] || touched[f2]) continue; // one change per face per pass
             const bool small1 = faces[f1].size() == 3;
             // Two triangles on the same three vertices.
@@ -302,14 +325,18 @@ double volumeOf(const std::vector<Vec3d>& p, const std::vector<Face>& faces) {
     return volume / 6.0;
 }
 
-/// Orients a part, splits its non-manifold vertices, fills its open loops, dissolves its
-/// valence-2 vertices and points it outward. False if it cannot be oriented.
-bool closePart(std::vector<Vec3d>& positions, std::vector<Face>& faces, CageCleanup& report) {
+/// Orients a part, splits its non-manifold vertices, fills its open loops (all but the longest
+/// with keepOutline), dissolves its valence-2 vertices and points it outward (closed parts only).
+/// False if it cannot be oriented.
+bool closePart(std::vector<Vec3d>& positions,
+               std::vector<Face>& faces,
+               CageCleanup& report,
+               const bool keepOutline = false) {
     if (!orientConsistently(faces)) return false;
     report.splitVertices += splitNonManifoldVertices(positions, faces);
-    fillLoops(faces, report);
+    fillLoops(faces, report, keepOutline);
     report.dissolvedVertices += dissolveValenceTwo(positions.size(), faces);
-    if (volumeOf(positions, faces) < 0.0) {
+    if (!keepOutline && volumeOf(positions, faces) < 0.0) {
         for (Face& face : faces) std::ranges::reverse(face);
         report.flipped = true;
     }
@@ -426,6 +453,40 @@ bool bridge(std::vector<Vec3d>& positions,
     return true;
 }
 
+/// An open cage has no inside, so it faces the way the scan faces: each face votes, weighted by
+/// its area, with the normal of the closest scan triangle. Reverses all faces if the vote is
+/// against.
+Result<QuadLayout> faceLikeScan(const QuadLayout& cage, const TriMesh& scan, bool& flipped) {
+    const SpatialIndex& index = scan.spatialIndex();
+    const std::vector<Vec3d>& p = cage.positions();
+    double vote = 0.0;
+    for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+        const auto face = cage.face(f);
+        Vec3d normal{};
+        Vec3d centre{};
+        for (std::size_t i = 0; i < face.size(); ++i) {
+            normal = normal + cross(p[face[i]], p[face[(i + 1) % face.size()]]);
+            centre = centre + p[face[i]];
+        }
+        const auto tri =
+            scan.face(index.closestPoint(centre * (1.0 / static_cast<double>(face.size()))).face);
+        const Vec3d& a = scan.positions()[tri[0]];
+        const Vec3d scanNormal = cross(scan.positions()[tri[1]] - a, scan.positions()[tri[2]] - a);
+        if (const double size = length(scanNormal); size > 0.0) {
+            vote += dot(normal, scanNormal) / size;
+        }
+    }
+    flipped = vote < 0.0;
+    if (!flipped) return cage;
+    std::vector<std::uint32_t> vertices;
+    vertices.reserve(cage.faceVertices().size());
+    for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+        const auto face = cage.face(f);
+        vertices.insert(vertices.end(), face.rbegin(), face.rend());
+    }
+    return QuadLayout::create(p, cage.faceStarts(), std::move(vertices));
+}
+
 } // namespace
 
 Result<QuadLayout>
@@ -443,7 +504,7 @@ closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& par
     if (faces.empty()) return fail(ErrorCode::InvalidState, "no manifold faces in the cage");
     auto parts = splitComponents(std::move(faces));
     std::vector<Face> body = std::move(parts.front());
-    if (!closePart(positions, body, report)) {
+    if (!closePart(positions, body, report, params.keepOutline)) {
         return fail(ErrorCode::InvalidState, "the quad layout cannot be oriented consistently");
     }
     const double edge = meanEdgeLength(positions, body);
@@ -464,7 +525,9 @@ closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& par
     }
     auto cage = assemble(positions, body);
     if (!cage) return cage;
-    if (const CageStats stats = cageStats(*cage); !stats.closed() || stats.components != 1) {
+    if (const CageStats stats = cageStats(*cage);
+        !(params.keepOutline ? stats.orientedManifold() : stats.closed()) ||
+        stats.components != 1) {
         return fail(ErrorCode::InvalidState,
                     "the quad layout could not be closed: " + std::to_string(stats.boundaryEdges) +
                         " open, " + std::to_string(stats.nonManifoldEdges) + " non-manifold and " +
@@ -482,6 +545,10 @@ quadRemesh(const TriMesh& scan, const QuadRemeshParams& params, const CageCloseP
     CageCleanup cleanup;
     auto cage = closeCage(*raw, cleanup, close);
     if (!cage) return std::unexpected(cage.error());
+    if (close.keepOutline) {
+        cage = faceLikeScan(*cage, scan, cleanup.flipped);
+        if (!cage) return std::unexpected(cage.error());
+    }
 
     const SpatialIndex& index = scan.spatialIndex();
     double maxDistance = 0.0;

@@ -39,12 +39,16 @@ struct Point {
 
 } // namespace
 
-Result<std::unique_ptr<Limit>> Limit::create(const QuadLayout& cage, const int isolationLevel) {
+Result<std::unique_ptr<Limit>>
+Limit::create(const QuadLayout& cage, const int isolationLevel, const bool open) {
     if (isolationLevel < 1 || isolationLevel > 4) {
         return fail(ErrorCode::InvalidArgument, "isolation level must be 1 to 4");
     }
-    if (!cageStats(cage).closed()) {
-        return fail(ErrorCode::InvalidArgument, "the cage must be closed");
+    if (const CageStats stats = cageStats(cage);
+        open ? !stats.orientedManifold() : !stats.closed()) {
+        return fail(ErrorCode::InvalidArgument,
+                    open ? "the cage must be a consistently oriented manifold"
+                         : "the cage must be closed");
     }
     std::vector<int> sizes(cage.faceCount());
     for (std::size_t f = 0; f < cage.faceCount(); ++f) {
@@ -57,8 +61,10 @@ Result<std::unique_ptr<Limit>> Limit::create(const QuadLayout& cage, const int i
     desc.numVertsPerFace = sizes.data();
     desc.vertIndicesPerFace = indices.data();
 
+    // Corners too: OpenSubdiv's patches round a one-face boundary vertex differently from its
+    // own limit rules (and from a neighbouring surface that has the vertex on a smooth curve).
     Sdc::Options sdc;
-    sdc.SetVtxBoundaryInterpolation(Sdc::Options::VTX_BOUNDARY_EDGE_ONLY);
+    sdc.SetVtxBoundaryInterpolation(Sdc::Options::VTX_BOUNDARY_EDGE_AND_CORNER);
     std::unique_ptr<Limit> limit(new Limit());
     try {
         limit->refiner_.reset(Far::TopologyRefinerFactory<Far::TopologyDescriptor>::Create(

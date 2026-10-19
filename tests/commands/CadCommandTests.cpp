@@ -128,6 +128,22 @@ TEST_CASE("quad.remesh lays out cage edges along guides", "[commands][quad]") {
     CHECK(rejects(Json::array({Json::array({point(0, 0, 0), point(1, 0, 0)})})));
 }
 
+TEST_CASE("quad.remesh keeps the outline of a scanned sheet", "[commands][quad]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeCap(20.0, std::numbers::pi / 3.0, 24), "lid");
+    const Json sheet =
+        s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}, {"keep_outline", true}});
+    CHECK(sheet["stats"]["closed"] == false);
+    CHECK(sheet["stats"]["euler_characteristic"] == 1); // a disc
+    CHECK(sheet["cleanup"]["filled_loops"] == 0);
+    // Without it the rim is filled.
+    const Json closed = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}});
+    CHECK(closed["stats"]["closed"] == true);
+    // A surface needs a closed cage.
+    CHECK_FALSE(s.tryRun("surface.build", {{"id", sheet["id"]}, {"mesh_id", mesh}}));
+}
+
 TEST_CASE("quad.remesh validates its input", "[commands][quad]") {
     Session s;
     const TempDir dir;

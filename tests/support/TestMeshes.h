@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <numbers>
 #include <random>
 #include <string>
 #include <vector>
@@ -151,6 +152,44 @@ inline TriMesh addNoise(const TriMesh& mesh, double amount, unsigned seed = 7) {
     std::vector<Vec3d> p = mesh.positions();
     for (Vec3d& v : p) v = v + Vec3d{d(rng), d(rng), d(rng)};
     return makeMesh(std::move(p), mesh.indices());
+}
+
+/// Spherical cap of radius r around the +z axis, open along a circle at polar angle `angle`
+/// (radians), facing outward: a pole and `rings` rings of 6, 12, ... vertices.
+inline TriMesh makeCap(double r, double angle, int rings) {
+    std::vector<Vec3d> p{{0.0, 0.0, r}};
+    std::vector<std::uint32_t> idx;
+    std::uint32_t inner = 0; // first vertex of the previous ring
+    for (int k = 1; k <= rings; ++k) {
+        const double polar = angle * k / rings;
+        const auto outer = static_cast<std::uint32_t>(p.size());
+        const int n = 6 * k;
+        for (int i = 0; i < n; ++i) {
+            const double a = 2.0 * std::numbers::pi * i / n;
+            p.push_back(Vec3d{std::sin(polar) * std::cos(a),
+                              std::sin(polar) * std::sin(a),
+                              std::cos(polar)} *
+                        r);
+        }
+        // Walk both rings by angle, adding the triangle whose new vertex comes first.
+        const int m = k == 1 ? 1 : 6 * (k - 1);
+        int i = 0;
+        int j = k == 1 ? 1 : 0; // the pole is one vertex: a fan
+        while (i < n || j < m) {
+            const auto at = [](std::uint32_t base, int x, int count) {
+                return base + static_cast<std::uint32_t>(x % count);
+            };
+            if (j >= m || (i < n && (i + 1.0) / n <= (j + 1.0) / m)) {
+                idx.insert(idx.end(), {at(inner, j, m), at(outer, i, n), at(outer, i + 1, n)});
+                ++i;
+            } else {
+                idx.insert(idx.end(), {at(inner, j, m), at(outer, i, n), at(inner, j + 1, m)});
+                ++j;
+            }
+        }
+        inner = outer;
+    }
+    return makeMesh(std::move(p), std::move(idx));
 }
 
 /// Concatenates meshes into one (separate shells).

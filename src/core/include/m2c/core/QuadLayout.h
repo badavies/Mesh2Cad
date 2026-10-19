@@ -90,10 +90,12 @@ struct CageStats {
         return static_cast<long long>(vertexCount) - static_cast<long long>(edgeCount) +
                static_cast<long long>(faceCount);
     }
-    [[nodiscard]] bool closed() const noexcept {
-        return boundaryEdges == 0 && nonManifoldEdges == 0 && nonManifoldVertices == 0 &&
-               misorientedEdges == 0;
+    /// Every edge has one or two faces, every vertex one fan, and faces agree in direction:
+    /// a closed cage, or an open sheet whose boundary is the only place edges have one face.
+    [[nodiscard]] bool orientedManifold() const noexcept {
+        return nonManifoldEdges == 0 && nonManifoldVertices == 0 && misorientedEdges == 0;
     }
+    [[nodiscard]] bool closed() const noexcept { return boundaryEdges == 0 && orientedManifold(); }
 };
 
 [[nodiscard]] CageStats cageStats(const QuadLayout& cage);
