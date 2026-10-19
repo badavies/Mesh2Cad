@@ -290,7 +290,8 @@ SurfacePatch merge(const QuadRectangle& rect, const std::vector<const SurfacePat
 
 } // namespace
 
-QuadPartition partitionQuads(const QuadLayout& cage) {
+QuadPartition partitionQuads(const QuadLayout& cage,
+                             const std::vector<std::array<std::uint32_t, 2>>& fences) {
     const Topology topo(cage);
     std::unordered_set<EdgeKey> cut;
     for (std::uint32_t f = 0; f < cage.faceCount(); ++f) {
@@ -320,7 +321,8 @@ QuadPartition partitionQuads(const QuadLayout& cage) {
             }
         }
     }
-    // Regions: quads joined across edges that are not partition lines.
+    for (const auto& [a, b] : fences) cut.insert(key(a, b));
+    // Regions: quads joined across edges that are not partition lines or fences.
     std::vector region(cage.faceCount(), UINT32_MAX);
     for (std::uint32_t seed = 0; seed < cage.faceCount(); ++seed) {
         if (cage.face(seed).size() != 4 || region[seed] != UINT32_MAX) continue;
@@ -350,7 +352,9 @@ QuadPartition partitionQuads(const QuadLayout& cage) {
     return out;
 }
 
-Result<MergeResult> mergeFaces(const QuadLayout& cage, const std::vector<SurfacePatch>& faces) {
+Result<MergeResult> mergeFaces(const QuadLayout& cage,
+                               const std::vector<SurfacePatch>& faces,
+                               const std::vector<std::array<std::uint32_t, 2>>& fences) {
     std::vector faceOf(cage.faceCount(), UINT32_MAX);
     for (std::uint32_t k = 0; k < faces.size(); ++k) {
         const std::uint32_t c = faces[k].cageFace;
@@ -366,7 +370,7 @@ Result<MergeResult> mergeFaces(const QuadLayout& cage, const std::vector<Surface
         }
     }
     MergeResult out;
-    out.partition = partitionQuads(cage);
+    out.partition = partitionQuads(cage, fences);
     // Faces in the order of their first cage face: a rectangle comes where its first face was.
     std::vector rectOf(cage.faceCount(), SIZE_MAX);
     for (std::size_t r = 0; r < out.partition.rectangles.size(); ++r) {

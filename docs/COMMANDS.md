@@ -482,7 +482,7 @@ Describe a solid: face, edge and shell counts, whether it is closed and valid, i
 
 ### `surface.build`
 
-Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds the surface (faces meeting at more than 10 degrees) is made again with twice the smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced from the irregular vertices, are merged into one face each. With refine_to_mm, a fit farther from the mesh than that (95th percentile) has its cage subdivided once and is fitted again, up to max_refinements times. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid of positive volume whose faces, after the last fit, meet at no more than 90 degrees. *(changes the document)*
+Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds the surface (faces meeting at more than 10 degrees) is made again with twice the smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced from the irregular vertices, are merged into one face each. With refine_to_mm, a fit farther from the mesh than that (95th percentile) has its cage subdivided once and is fitted again, up to max_refinements times. An open cage (from quad.remesh keep_outline) needs thickness_mm: its fitted sheet becomes a wall that thick, behind the faces' side, with a sharp-edged rim. Adds a solid object; the quad layout and mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid of positive volume whose faces, after the last fit, meet at no more than 90 degrees. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -498,3 +498,4 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 | `name` | string |  |  |
 | `refine_to_mm` | number |  | While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off. Default `0`. |
 | `smoothing` | number |  | How strongly the cage keeps its own shape while fitting. Default `0.05`. |
+| `thickness_mm` | number |  | For an open cage: thicken the fitted sheet by this much, against its faces' direction; required for an open cage and only for one. Default `0`. |

@@ -65,7 +65,9 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced "
         "from the irregular vertices, are merged into one face each. With refine_to_mm, a fit "
         "farther from the mesh than that (95th percentile) has its cage subdivided once and is "
-        "fitted again, up to max_refinements times. Adds a solid object; the quad layout and "
+        "fitted again, up to max_refinements times. An open cage (from quad.remesh "
+        "keep_outline) needs thickness_mm: its fitted sheet becomes a wall that thick, behind "
+        "the faces' side, with a sharp-edged rim. Adds a solid object; the quad layout and "
         "mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid "
         "of positive volume whose faces, after the last fit, meet at no more than 90 degrees.",
         R"({
@@ -82,6 +84,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "merge":{"type":"boolean","default":true,"description":"Merge rectangles of cage quads into one face each (fewer faces, same surface)."},
                 "refine_to_mm":{"type":"number","minimum":0,"default":0,"description":"While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off."},
                 "max_refinements":{"type":"integer","minimum":0,"maximum":3,"default":2,"description":"Most subdivisions refine_to_mm may make."},
+                "thickness_mm":{"type":"number","minimum":0,"default":0,"description":"For an open cage: thicken the fitted sheet by this much, against its faces' direction; required for an open cage and only for one."},
                 "name":{"type":"string"}
             },
             "required":["id"],"additionalProperties":false})",
@@ -103,6 +106,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(maxRefinements, optionalInteger(params, "max_refinements", 2, 0, 3));
             p.refineToMm = *refineTo;
             p.maxRefinements = static_cast<unsigned>(*maxRefinements);
+            M2C_TRY(thickness, optionalNumber(params, "thickness_mm", 0.0, 0.0, 1e6));
+            p.thicknessMm = *thickness;
             p.fit = *fit;
             p.fitting.iterations = static_cast<unsigned>(*iterations);
             p.fitting.smoothing = *smoothing;
