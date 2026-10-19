@@ -206,6 +206,18 @@ Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces
 | `id` | integer | yes |  |
 | `remove_self_intersections` | boolean |  | Also remove self-intersections: locally within a shell, and by uniting closed shells that pass through each other (slow on large scans). Default `false`. |
 
+### `mesh.segment`
+
+Split a mesh into spheres, cylinders and planes (CGAL region growing, in that order, each region refit by least squares) and the organic rest. Each region becomes a selection; the result lists each region's kind, area, fit and primitive. A region is kept only when its area reaches min_area_mm2 and its RMS distance to the primitive is within max_distance_mm. Run it on an even mesh at working density (mesh.remesh): the normals of a raw scan's small triangles are too noisy for the angle limit. The mesh is unchanged; it must be manifold (mesh.repair). *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes |  |
+| `kinds` | array |  | The primitives to look for. Default `["plane", "cylinder"]`. |
+| `max_angle_deg` | number |  | Largest angle between a face normal and the primitive's normal there. Default `10`. |
+| `max_distance_mm` | number |  | Largest distance from a face to its region's primitive. Default `0.1`. |
+| `min_area_mm2` | number |  | Smaller regions are left organic; 0 = 1% of the mesh's area. Default `0`. |
+
 ### `mesh.simplify`
 
 Reduce the triangle count (quadric edge collapse), keeping open boundaries in place. Stops at the target count or the maximum error, whichever comes first. *(changes the document)*

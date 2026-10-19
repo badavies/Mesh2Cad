@@ -198,6 +198,7 @@ Result<void> registerBuiltinCommands(CommandRegistry& registry) {
     cmd::addMeshToolCommands(commands);
     cmd::addShellCommands(commands);
     cmd::addSelectionCommands(commands);
+    cmd::addSegmentCommands(commands);
     cmd::addAlignMeasureCommands(commands);
     cmd::addProjectCommands(commands);
     cmd::addQuadCommands(commands);

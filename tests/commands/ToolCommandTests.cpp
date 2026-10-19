@@ -135,6 +135,37 @@ TEST_CASE("Shell commands find, split and clean fragments", "[commands][shells]"
     CHECK(s.run("shells.keep", {{"id", id}})["deleted_shells"] == 1);
 }
 
+TEST_CASE("mesh.segment stores each primitive region as a selection", "[commands][segment]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId id = s.import(dir, makeCylinder(10.0, 30.0, 96, 30), "can");
+
+    const Json result = s.run("mesh.segment", {{"id", id}});
+    const Json& regions = result["regions"];
+    REQUIRE(regions.size() == 3);
+    CHECK(regions[0]["kind"] == "plane");
+    CHECK(regions[1]["kind"] == "plane");
+    CHECK(regions[2]["kind"] == "cylinder");
+    CHECK_THAT(regions[2]["radius_mm"].get<double>(), WithinAbs(10.0, 1e-3));
+    CHECK(result["organic_face_count"] == 0);
+    CHECK_FALSE(result.contains("organic_selection_id"));
+    std::size_t faces = 0;
+    for (const Json& r : regions) {
+        const auto selection = s.document.find(r["selection_id"].get<ObjectId>());
+        REQUIRE(selection.has_value());
+        faces += r["face_count"].get<std::size_t>();
+    }
+    CHECK(faces == 96 * 30 * 2 + 2 * 96);
+    CHECK(s.document.undoHistory().back().label == "mesh.segment");
+
+    // Only cylinders: the ends are organic.
+    const Json side = s.run("mesh.segment", {{"id", id}, {"kinds", {"cylinder"}}});
+    CHECK(side["regions"].size() == 1);
+    CHECK(side["organic_face_count"] == 2 * 96);
+    CHECK(side.contains("organic_selection_id"));
+    CHECK_FALSE(s.tryRun("mesh.segment", {{"id", id}, {"kinds", {"cone"}}}).has_value());
+}
+
 TEST_CASE("Selections, face deletion and datum alignment through commands", "[commands][align]") {
     Session s;
     const TempDir dir;

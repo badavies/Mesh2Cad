@@ -192,6 +192,34 @@ inline TriMesh makeCap(double r, double angle, int rings) {
     return makeMesh(std::move(p), std::move(idx));
 }
 
+/// Closed cylinder of radius r around the z axis from z = 0 to z = h, outward: n vertices around,
+/// `rings` bands of quads along the side, and each end a fan from its centre.
+inline TriMesh makeCylinder(double r, double h, int n = 64, int rings = 16) {
+    std::vector<Vec3d> p;
+    std::vector<std::uint32_t> idx;
+    for (int k = 0; k <= rings; ++k) {
+        for (int i = 0; i < n; ++i) {
+            const double a = 2.0 * std::numbers::pi * i / n;
+            p.push_back({r * std::cos(a), r * std::sin(a), h * k / rings});
+        }
+    }
+    const auto at = [n](int k, int i) { return static_cast<std::uint32_t>(k * n + i % n); };
+    for (int k = 0; k < rings; ++k) {
+        for (int i = 0; i < n; ++i) {
+            idx.insert(idx.end(), {at(k, i), at(k, i + 1), at(k + 1, i + 1)});
+            idx.insert(idx.end(), {at(k, i), at(k + 1, i + 1), at(k + 1, i)});
+        }
+    }
+    const auto bottom = static_cast<std::uint32_t>(p.size());
+    p.push_back({0.0, 0.0, 0.0});
+    p.push_back({0.0, 0.0, h});
+    for (int i = 0; i < n; ++i) {
+        idx.insert(idx.end(), {bottom, at(0, i + 1), at(0, i)});
+        idx.insert(idx.end(), {bottom + 1, at(rings, i), at(rings, i + 1)});
+    }
+    return makeMesh(std::move(p), std::move(idx));
+}
+
 /// Concatenates meshes into one (separate shells).
 inline TriMesh combine(const std::vector<TriMesh>& parts) {
     std::vector<Vec3d> p;
