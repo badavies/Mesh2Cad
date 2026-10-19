@@ -245,14 +245,16 @@ inline TriMesh combine(const std::vector<TriMesh>& parts) {
     return makeMesh(std::move(p), std::move(idx));
 }
 
-/// Temporary directory removed when the object goes out of scope.
+/// Temporary directory removed when the object goes out of scope. Its name is random per process,
+/// so tests that ctest runs in parallel never share one.
 class TempDir {
 public:
     TempDir() {
         static std::atomic<unsigned> counter{0};
+        static const unsigned process = std::random_device{}();
         path_ = std::filesystem::temp_directory_path() /
-                ("mesh2cad-test-" + std::to_string(counter++) + "-" +
-                 std::to_string(reinterpret_cast<std::uintptr_t>(this)));
+                ("mesh2cad-test-" + std::to_string(process) + "-" + std::to_string(counter++) +
+                 "-" + std::to_string(reinterpret_cast<std::uintptr_t>(this)));
         std::filesystem::create_directories(path_);
     }
     ~TempDir() {
