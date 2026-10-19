@@ -29,6 +29,7 @@
 #include <Geom_ElementarySurface.hxx>
 #include <Geom_Surface.hxx>
 #include <NCollection_IndexedMap.hxx>
+#include <NCollection_List.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Precision.hxx>
 #include <ShapeFix_Solid.hxx>
@@ -40,7 +41,6 @@
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopLoc_Location.hxx>
-#include <TopTools_ListOfShape.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
@@ -210,7 +210,7 @@ Result<TrimResult> trimPrimitives(const std::vector<FittedPrimitive>& primitives
                    (k & 4) ? bounds.max.z + margin : bounds.min.z - margin);
     }
     return guarded("trimming", [&]() -> Result<TrimResult> {
-        TopTools_ListOfShape faces;
+        NCollection_List<TopoDS_Shape> faces;
         for (const FittedPrimitive& fit : primitives) {
             auto face = boundedFace(fit, box);
             if (!face) return std::unexpected(face.error());
