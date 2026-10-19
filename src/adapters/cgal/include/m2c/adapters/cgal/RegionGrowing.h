@@ -4,6 +4,7 @@
 // for segmentation (ARCHITECTURE.md section 6, "Segment").
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "m2c/core/Error.h"
@@ -31,5 +32,11 @@ struct GrownRegion {
 /// manifold triangle mesh (as mesh.repair leaves it).
 [[nodiscard]] Result<std::vector<GrownRegion>>
 growRegions(const TriMesh& mesh, const std::vector<char>& free, const GrowParams& params);
+
+/// CGAL's least-squares estimate of a cylinder or sphere through the given faces, from their
+/// centroids and normals (the start that region growing would refine). Fails when the faces are
+/// too few (six) or no such primitive fits them, for example parallel normals for a cylinder.
+[[nodiscard]] Result<Primitive>
+estimatePrimitive(const TriMesh& mesh, std::span<const std::uint32_t> faces, PrimitiveKind kind);
 
 } // namespace m2c::cgal

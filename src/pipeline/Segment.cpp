@@ -79,18 +79,7 @@ public:
 
 private:
     [[nodiscard]] std::vector<Vec3d> pointsOf(const std::vector<std::uint32_t>& faces) const {
-        std::vector<std::uint32_t> vertices;
-        for (const std::uint32_t f : faces) {
-            const auto [a, b, c] = mesh_.face(f);
-            vertices.insert(vertices.end(), {a, b, c});
-        }
-        std::ranges::sort(vertices);
-        const auto [first, last] = std::ranges::unique(vertices);
-        vertices.erase(first, last);
-        std::vector<Vec3d> points;
-        points.reserve(vertices.size());
-        for (const std::uint32_t v : vertices) points.push_back(mesh_.positions()[v]);
-        return points;
+        return regionPoints(mesh_, faces);
     }
 
     /// The face lies within the distance limit of the primitive, facing within the angle limit.

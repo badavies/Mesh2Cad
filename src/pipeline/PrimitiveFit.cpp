@@ -4,13 +4,18 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <span>
+#include <string>
 #include <vector>
 
 #include <Eigen/Dense>
 
+#include "m2c/adapters/cgal/RegionGrowing.h"
+#include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
 namespace m2c {
@@ -54,8 +59,9 @@ Primitive fitPlane(const Primitive& start, std::span<const Vec3d> points) {
     return {.kind = PrimitiveKind::Plane, .point = c, .direction = n};
 }
 
-/// The primitive moved by a step of its parameters: a sphere's centre and radius, or a move of
-/// a cylinder's axis point across the axis, a tilt of the axis and the radius.
+/// The primitive moved by a step of its parameters: a sphere's centre and radius, a cone's apex,
+/// a tilt of its axis and its half-angle, or a move of a cylinder's axis point across the axis,
+/// a tilt of the axis and the radius.
 Primitive moved(const Primitive& s, const Eigen::VectorXd& step) {
     Primitive t = s;
     if (s.kind == PrimitiveKind::Sphere) {
@@ -64,6 +70,12 @@ Primitive moved(const Primitive& s, const Eigen::VectorXd& step) {
         return t;
     }
     const auto [u, w] = across(s.direction);
+    if (s.kind == PrimitiveKind::Cone) {
+        t.point = s.point + Vec3d{step(0), step(1), step(2)};
+        t.direction = unit(s.direction + u * step(3) + w * step(4));
+        t.halfAngleRad = std::clamp(s.halfAngleRad + step(5), 1e-6, std::numbers::pi / 2 - 1e-6);
+        return t;
+    }
     t.point = s.point + u * step(0) + w * step(1);
     t.direction = unit(s.direction + u * step(2) + w * step(3));
     t.radiusMm = s.radiusMm + step(4);
@@ -72,6 +84,92 @@ Primitive moved(const Primitive& s, const Eigen::VectorXd& step) {
 
 constexpr int kMaxSteps = 20;
 
+struct FaceSamples {
+    std::vector<Vec3d> centroids;
+    std::vector<Vec3d> normals; ///< Unit.
+    std::vector<double> areas;
+    Vec3d normalSum; ///< Area-weighted.
+};
+
+FaceSamples faceSamples(const TriMesh& mesh, std::span<const std::uint32_t> faces) {
+    FaceSamples out;
+    const auto& p = mesh.positions();
+    for (const std::uint32_t f : faces) {
+        const auto [a, b, c] = mesh.face(f);
+        const Vec3d n = cross(p[b] - p[a], p[c] - p[a]);
+        if (!(length(n) > 0.0)) continue;
+        out.centroids.push_back((p[a] + p[b] + p[c]) * (1.0 / 3.0));
+        out.normals.push_back(unit(n));
+        out.areas.push_back(0.5 * length(n));
+        out.normalSum = out.normalSum + n * 0.5;
+    }
+    return out;
+}
+
+Eigen::Vector3d eigen(const Vec3d& v) {
+    return {v.x, v.y, v.z};
+}
+
+/// Every tangent plane of a cone passes through its apex, and its normals make one angle with
+/// the axis, so they lie in a plane across it.
+Result<Primitive> estimateCone(const FaceSamples& s) {
+    const auto none = [] { return fail(ErrorCode::InvalidState, "no cone fits these faces"); };
+    if (s.normals.size() < 6) return none();
+    Vec3d mean;
+    for (std::size_t i = 0; i < s.normals.size(); ++i) mean = mean + s.normals[i] * s.areas[i];
+    double total = 0.0;
+    for (const double a : s.areas) total += a;
+    mean = mean * (1.0 / total);
+    Eigen::Matrix3d spread = Eigen::Matrix3d::Zero();
+    Eigen::Matrix3d planes = Eigen::Matrix3d::Zero();
+    Eigen::Vector3d rhs = Eigen::Vector3d::Zero();
+    for (std::size_t i = 0; i < s.normals.size(); ++i) {
+        const Eigen::Vector3d n = eigen(s.normals[i]);
+        const Eigen::Vector3d d = n - eigen(mean);
+        spread += s.areas[i] * d * d.transpose();
+        planes += s.areas[i] * n * n.transpose();
+        rhs += s.areas[i] * n * dot(s.normals[i], s.centroids[i]);
+    }
+    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> planeSolver(planes);
+    // Normals nearly in a plane through the origin: a cylinder or plane, with no apex.
+    if (!(planeSolver.eigenvalues()(0) > 1e-6 * planeSolver.eigenvalues()(2))) return none();
+    const Eigen::Vector3d x = planes.ldlt().solve(rhs);
+    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> spreadSolver(spread);
+    const Eigen::Vector3d e = spreadSolver.eigenvectors().col(0);
+    Primitive cone{.kind = PrimitiveKind::Cone,
+                   .point = Vec3d{x.x(), x.y(), x.z()},
+                   .direction = unit(Vec3d{e.x(), e.y(), e.z()})};
+    double height = 0.0;
+    for (const Vec3d& c : s.centroids) height += dot(c - cone.point, cone.direction);
+    if (height < 0.0) cone.direction = cone.direction * -1.0;
+    double angle = 0.0;
+    for (std::size_t i = 0; i < s.centroids.size(); ++i) {
+        const Vec3d v = s.centroids[i] - cone.point;
+        const double h = dot(v, cone.direction);
+        angle += s.areas[i] * std::atan2(length(v - cone.direction * h), h);
+    }
+    cone.halfAngleRad = angle / total;
+    if (!x.allFinite() || !(cone.halfAngleRad > 0.0 && cone.halfAngleRad < std::numbers::pi / 2)) {
+        return none();
+    }
+    return cone;
+}
+
+Result<PrimitiveFit> fitKind(const TriMesh& mesh,
+                             std::span<const std::uint32_t> faces,
+                             const FaceSamples& samples,
+                             std::span<const Vec3d> points,
+                             const PrimitiveKind kind) {
+    Result<Primitive> start = Primitive{.kind = kind, .direction = samples.normalSum};
+    if (kind == PrimitiveKind::Cone) {
+        start = estimateCone(samples);
+    } else if (kind != PrimitiveKind::Plane) {
+        start = cgal::estimatePrimitive(mesh, faces, kind);
+    }
+    if (!start) return std::unexpected(start.error());
+    return fitPrimitive(*start, points);
+}
+
 } // namespace
 
 PrimitiveFit fitPrimitive(const Primitive& start, std::span<const Vec3d> points) {
@@ -79,7 +177,9 @@ PrimitiveFit fitPrimitive(const Primitive& start, std::span<const Vec3d> points)
     if (start.kind == PrimitiveKind::Plane) {
         best = fitPlane(start, points);
     } else {
-        const Eigen::Index n = start.kind == PrimitiveKind::Sphere ? 4 : 5;
+        const Eigen::Index n = start.kind == PrimitiveKind::Sphere     ? 4
+                               : start.kind == PrimitiveKind::Cylinder ? 5
+                                                                       : 6;
         const auto m = static_cast<Eigen::Index>(points.size());
         const auto residuals = [&](const Primitive& s) {
             Eigen::VectorXd f(m);
@@ -116,7 +216,17 @@ PrimitiveFit fitPrimitive(const Primitive& start, std::span<const Vec3d> points)
         }
     }
     PrimitiveFit out{.primitive = best, .rmsMm = rms(best, points)};
-    for (const Vec3d& p : points) out.maxMm = std::max(out.maxMm, distanceTo(best, p));
+    std::vector<double> distances;
+    distances.reserve(points.size());
+    for (const Vec3d& p : points) distances.push_back(distanceTo(best, p));
+    if (!distances.empty()) {
+        out.maxMm = std::ranges::max(distances);
+        const auto at =
+            distances.begin() + static_cast<std::ptrdiff_t>(
+                                    std::ceil(0.95 * static_cast<double>(distances.size())) - 1.0);
+        std::ranges::nth_element(distances, at);
+        out.p95Mm = *at;
+    }
     return out;
 }
 
@@ -143,6 +253,64 @@ double turnAngle(const Primitive& s, std::span<const Vec3d> points) {
     double gap = angles.front() + 2.0 * std::numbers::pi - angles.back();
     for (std::size_t i = 1; i < angles.size(); ++i) gap = std::max(gap, angles[i] - angles[i - 1]);
     return 2.0 * std::numbers::pi - gap;
+}
+
+std::vector<Vec3d> regionPoints(const TriMesh& mesh, std::span<const std::uint32_t> faces) {
+    std::vector<std::uint32_t> vertices;
+    for (const std::uint32_t f : faces) {
+        const auto [a, b, c] = mesh.face(f);
+        vertices.insert(vertices.end(), {a, b, c});
+    }
+    std::ranges::sort(vertices);
+    const auto [first, last] = std::ranges::unique(vertices);
+    vertices.erase(first, last);
+    std::vector<Vec3d> points;
+    points.reserve(vertices.size());
+    for (const std::uint32_t v : vertices) points.push_back(mesh.positions()[v]);
+    return points;
+}
+
+Result<PrimitiveFit> fitRegion(const TriMesh& mesh,
+                               std::span<const std::uint32_t> faces,
+                               const RegionFitParams& params) {
+    if (!(params.maxResidualMm > 0.0)) {
+        return fail(ErrorCode::InvalidArgument, "the residual limit must be positive");
+    }
+    if (std::ranges::any_of(faces, [&](std::uint32_t f) { return f >= mesh.faceCount(); })) {
+        return fail(ErrorCode::InvalidArgument, "face index out of range");
+    }
+    const FaceSamples samples = faceSamples(mesh, faces);
+    const std::vector<Vec3d> points = regionPoints(mesh, faces);
+    if (samples.normals.size() < 3) {
+        return fail(ErrorCode::InvalidArgument, "the region needs at least three faces");
+    }
+    Result<PrimitiveFit> best = fail(ErrorCode::InvalidState, "no primitive fits the region");
+    if (params.kind) {
+        best = fitKind(mesh, faces, samples, points, *params.kind);
+    } else {
+        std::vector<PrimitiveFit> fits;
+        for (const PrimitiveKind kind : {PrimitiveKind::Plane,
+                                         PrimitiveKind::Sphere,
+                                         PrimitiveKind::Cylinder,
+                                         PrimitiveKind::Cone}) {
+            if (Result<PrimitiveFit> fit = fitKind(mesh, faces, samples, points, kind)) {
+                fits.push_back(*fit);
+            }
+        }
+        if (!fits.empty()) {
+            const double lowest = std::ranges::min(fits, {}, &PrimitiveFit::rmsMm).rmsMm;
+            best = *std::ranges::find_if(
+                fits, [&](const PrimitiveFit& f) { return f.rmsMm <= 1.2 * lowest + 1e-9; });
+        }
+    }
+    if (!best) return best;
+    if (!(best->p95Mm <= params.maxResidualMm)) {
+        return fail(ErrorCode::InvalidState,
+                    std::string("the ") + primitiveKindName(best->primitive.kind) +
+                        " fits with a P95 residual of " + std::to_string(best->p95Mm) +
+                        " mm, above the limit of " + std::to_string(params.maxResidualMm) + " mm");
+    }
+    return best;
 }
 
 } // namespace m2c
