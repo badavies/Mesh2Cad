@@ -131,7 +131,9 @@
       "inherits": "linux-base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "MESH2CAD_SANITIZE": "ON"
+        "MESH2CAD_SANITIZE": "ON",
+        "CMAKE_JOB_POOLS": "link=1",
+        "CMAKE_JOB_POOL_LINK": "link"
       }
     }
   ],
