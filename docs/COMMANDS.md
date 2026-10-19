@@ -292,6 +292,18 @@ Fit a least-squares plane to the faces of a selection. *(read-only)*
 | --- | --- | --- | --- |
 | `selection_id` | integer | yes |  |
 
+## primitive
+
+### `primitive.fit`
+
+Fit an exact, unbounded plane, cylinder, sphere or cone to the faces of a selection by least squares, starting from CGAL's estimate, and add it as a primitive. With kind "auto" it takes the simplest kind that fits about as well as any. Fails, adding nothing, when 95% of the region's vertices are not within max_residual_mm of the surface. The result gives the primitive, its RMS, largest and P95 distance, and the region's bounding box. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `kind` | `auto` \| `plane` \| `cylinder` \| `sphere` \| `cone` |  | Default `"auto"`. |
+| `max_residual_mm` | number |  | Largest P95 distance from the region's vertices to the surface. Default `0.1`. |
+| `selection_id` | integer | yes |  |
+
 ## project
 
 ### `project.new`
@@ -308,7 +320,7 @@ Open a project file, replacing the current document. Clears the undo history. *(
 
 ### `project.save`
 
-Save every object (meshes, selections, measurements, alignments, quad layouts, solids and deviations) to a project file (.m2c). *(read-only)*
+Save every object (meshes, selections, measurements, alignments, quad layouts, solids, deviations and primitives) to a project file (.m2c). *(read-only)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |

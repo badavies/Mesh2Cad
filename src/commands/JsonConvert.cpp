@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "m2c/commands/JsonConvert.h"
 
+#include <numbers>
 #include <string>
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshStats.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/Transform.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -33,6 +35,31 @@ Json toJson(const Measurement& m) {
                 {"b", toJson(m.b)},
                 {"distance_mm", m.distance()},
                 {"delta_mm", toJson(m.delta())}};
+}
+
+Json toJson(const Primitive& s) {
+    Json out{{"kind", primitiveKindName(s.kind)}};
+    switch (s.kind) {
+    case PrimitiveKind::Plane:
+        out["point"] = toJson(s.point);
+        out["normal"] = toJson(s.direction);
+        break;
+    case PrimitiveKind::Cylinder:
+        out["axis_point"] = toJson(s.point);
+        out["axis_direction"] = toJson(s.direction);
+        out["radius_mm"] = s.radiusMm;
+        break;
+    case PrimitiveKind::Sphere:
+        out["center"] = toJson(s.point);
+        out["radius_mm"] = s.radiusMm;
+        break;
+    case PrimitiveKind::Cone:
+        out["apex"] = toJson(s.point);
+        out["axis_direction"] = toJson(s.direction);
+        out["half_angle_deg"] = s.halfAngleRad * 180.0 / std::numbers::pi;
+        break;
+    }
+    return out;
 }
 
 Json toJson(const Error& error) {

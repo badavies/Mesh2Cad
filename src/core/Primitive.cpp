@@ -2,6 +2,8 @@
 #include "m2c/core/Primitive.h"
 
 #include <cmath>
+#include <optional>
+#include <string_view>
 
 #include "m2c/core/Vec3.h"
 
@@ -31,6 +33,16 @@ const char* primitiveKindName(const PrimitiveKind kind) noexcept {
         return "cone";
     }
     return "";
+}
+
+std::optional<PrimitiveKind> primitiveKindFromName(const std::string_view name) noexcept {
+    for (const PrimitiveKind kind : {PrimitiveKind::Plane,
+                                     PrimitiveKind::Cylinder,
+                                     PrimitiveKind::Sphere,
+                                     PrimitiveKind::Cone}) {
+        if (name == primitiveKindName(kind)) return kind;
+    }
+    return std::nullopt;
 }
 
 double distanceTo(const Primitive& s, const Vec3d& p) noexcept {

@@ -26,6 +26,7 @@ const char* DocumentObject::kind() const noexcept {
     if (quadLayout() != nullptr) return "quad_layout";
     if (solid() != nullptr) return "solid";
     if (deviation() != nullptr) return "deviation";
+    if (primitive() != nullptr) return "primitive";
     return "measurement";
 }
 

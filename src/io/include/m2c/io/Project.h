@@ -12,6 +12,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/Transform.h"
@@ -41,7 +42,13 @@ struct ProjectObject {
     std::uint64_t id{0};
     std::string name;
     bool visible{true};
-    std::variant<ProjectMesh, ProjectSelection, Measurement, QuadLayout, Solid, ProjectDeviation>
+    std::variant<ProjectMesh,
+                 ProjectSelection,
+                 Measurement,
+                 QuadLayout,
+                 Solid,
+                 ProjectDeviation,
+                 FittedPrimitive>
         data;
     std::string madeBy;   ///< Provenance: command name.
     std::string madeWith; ///< Provenance: parameters as JSON text.
@@ -57,11 +64,13 @@ struct ProjectData {
 /// refused with ErrorCode::Unsupported.
 /// Version 2 added quad layouts, solids and deviations; version 1 files hold a subset of it.
 /// Version 3 lets a solid's face cover several cage quads (merged faces with their own breaks).
-inline constexpr int kProjectFormatVersion = 3;
+/// Version 4 added fitted primitives.
+inline constexpr int kProjectFormatVersion = 4;
 
 /// Writes a project file: a zip holding manifest.json, meshes as binary PLY (double precision),
-/// selections as bitsets, quad layouts and deviations as little-endian arrays, and solids as
-/// Open CASCADE binary BREP with their B-spline faces (ARCHITECTURE.md section 5). The file is
+/// selections as bitsets, quad layouts and deviations as little-endian arrays, solids as
+/// Open CASCADE binary BREP with their B-spline faces, and primitives in the manifest
+/// (ARCHITECTURE.md section 5). The file is
 /// replaced atomically: it is written next to the target and renamed into place.
 [[nodiscard]] Result<void> writeProject(const ProjectData& project,
                                         const std::filesystem::path& path);
