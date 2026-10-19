@@ -166,6 +166,59 @@ TEST_CASE("mesh.segment stores each primitive region as a selection", "[commands
     CHECK_FALSE(s.tryRun("mesh.segment", {{"id", id}, {"kinds", {"cone"}}}).has_value());
 }
 
+TEST_CASE("primitive.fit adds an exact primitive fitted to a selection", "[commands][fit]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId id = s.import(dir, makeCylinder(10.0, 30.0, 96, 30), "can");
+    const Json regions = s.run("mesh.segment", {{"id", id}})["regions"];
+    REQUIRE(regions.size() == 3);
+    const Json& side = regions[2];
+    REQUIRE(side["kind"] == "cylinder");
+
+    const std::size_t before = s.document.objects().size();
+    const Json fit = s.run("primitive.fit", {{"selection_id", side["selection_id"]}});
+    CHECK(fit["kind"] == "cylinder");
+    CHECK_THAT(fit["radius_mm"].get<double>(), WithinAbs(10.0, 1e-3));
+    CHECK(fit["p95_mm"].get<double>() < 1e-3);
+    CHECK_THAT(fit["extent"]["max"][2].get<double>() - fit["extent"]["min"][2].get<double>(),
+               WithinAbs(30.0, 1e-9));
+    const auto object = s.document.find(fit["id"].get<ObjectId>());
+    REQUIRE(object.has_value());
+    REQUIRE(object->primitive() != nullptr);
+    CHECK(std::string(object->kind()) == "primitive");
+    CHECK(object->name == "Cylinder fit");
+    CHECK(object->provenance.inputs.front() == side["selection_id"].get<ObjectId>());
+    CHECK(s.document.objects().size() == before + 1);
+
+    // An end cap is a plane; a sphere does not fit the side within 0.1 mm and adds nothing.
+    const Json cap = s.run("primitive.fit", {{"selection_id", regions[0]["selection_id"]}});
+    CHECK(cap["kind"] == "plane");
+    CHECK_THAT(std::abs(cap["normal"][2].get<double>()), WithinAbs(1.0, 1e-9));
+    const auto sphere =
+        s.tryRun("primitive.fit", {{"selection_id", side["selection_id"]}, {"kind", "sphere"}});
+    REQUIRE_FALSE(sphere.has_value());
+    CHECK(sphere.error().code == ErrorCode::InvalidState);
+    CHECK(s.document.objects().size() == before + 2);
+    CHECK_FALSE(
+        s.tryRun("primitive.fit", {{"selection_id", side["selection_id"]}, {"kind", "torus"}})
+            .has_value());
+    CHECK_FALSE(s.tryRun("primitive.fit", {{"selection_id", id}}).has_value()); // a mesh
+
+    // The primitive is saved in the project and read back.
+    const auto path = (dir.path() / "fit.m2c").string();
+    s.run("project.save", {{"path", path}});
+    Session t;
+    t.run("project.open", {{"path", path}});
+    const auto back = t.document.find(fit["id"].get<ObjectId>());
+    REQUIRE(back.has_value());
+    REQUIRE(back->primitive() != nullptr);
+    CHECK(back->primitive()->fit.surface.radiusMm == object->primitive()->fit.surface.radiusMm);
+    CHECK(t.run("doc.list")["objects"].back()["primitive"]["kind"] == "plane");
+
+    s.run("doc.undo");
+    CHECK(s.document.objects().size() == before + 1);
+}
+
 TEST_CASE("Selections, face deletion and datum alignment through commands", "[commands][align]") {
     Session s;
     const TempDir dir;

@@ -6,6 +6,7 @@ m2c_add_library(commands
         DocumentCommands.cpp
         JsonConvert.cpp
         MeshToolCommands.cpp
+        PrimitiveCommands.cpp
         ProjectCommands.cpp
         QuadCommands.cpp
         SegmentCommands.cpp

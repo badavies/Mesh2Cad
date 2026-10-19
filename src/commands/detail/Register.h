@@ -13,6 +13,7 @@ void addMeshToolCommands(std::vector<Command>& out);
 void addShellCommands(std::vector<Command>& out);
 void addSelectionCommands(std::vector<Command>& out);
 void addSegmentCommands(std::vector<Command>& out);
+void addPrimitiveCommands(std::vector<Command>& out);
 void addAlignMeasureCommands(std::vector<Command>& out);
 void addProjectCommands(std::vector<Command>& out);
 void addQuadCommands(std::vector<Command>& out);

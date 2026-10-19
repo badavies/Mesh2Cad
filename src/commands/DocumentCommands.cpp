@@ -199,6 +199,7 @@ Result<void> registerBuiltinCommands(CommandRegistry& registry) {
     cmd::addShellCommands(commands);
     cmd::addSelectionCommands(commands);
     cmd::addSegmentCommands(commands);
+    cmd::addPrimitiveCommands(commands);
     cmd::addAlignMeasureCommands(commands);
     cmd::addProjectCommands(commands);
     cmd::addQuadCommands(commands);

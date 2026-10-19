@@ -25,6 +25,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SurfacePatch.h"
@@ -292,6 +293,19 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             j["brep_format"] = "binary";
             j["faces_file"] = base + ".faces";
             j["display_grid"] = std::lround(std::sqrt(perQuad / 2.0));
+        } else if (const auto* primitive = std::get_if<FittedPrimitive>(&data)) {
+            const Primitive& surface = primitive->surface;
+            j["kind"] = "primitive";
+            j["surface"] = Json{{"type", primitiveKindName(surface.kind)},
+                                {"point", vec(surface.point)},
+                                {"direction", vec(surface.direction)},
+                                {"radius_mm", surface.radiusMm},
+                                {"half_angle_rad", surface.halfAngleRad}};
+            j["extent"] =
+                Json{{"min", vec(primitive->extent.min)}, {"max", vec(primitive->extent.max)}};
+            j["rms_mm"] = primitive->rmsMm;
+            j["max_mm"] = primitive->maxMm;
+            j["p95_mm"] = primitive->p95Mm;
         } else {
             const auto& [meshId, referenceId, field] = std::get<ProjectDeviation>(data);
             const std::string file = "deviations/" + std::to_string(id) + ".bin";
@@ -447,6 +461,21 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                 o.data = ProjectDeviation{.meshId = j.at("mesh_id").get<std::uint64_t>(),
                                           .referenceId = j.at("reference_id").get<std::uint64_t>(),
                                           .field = std::move(*field)};
+            } else if (version >= 4 && kind == "primitive") {
+                const Json& s = j.at("surface");
+                const auto type = primitiveKindFromName(s.at("type").get<std::string>());
+                if (!type) return fail(ErrorCode::Parse, "unknown primitive type in project");
+                o.data = FittedPrimitive{
+                    .surface = {.kind = *type,
+                                .point = vec(s.at("point")),
+                                .direction = vec(s.at("direction")),
+                                .radiusMm = s.at("radius_mm").get<double>(),
+                                .halfAngleRad = s.at("half_angle_rad").get<double>()},
+                    .extent = {.min = vec(j.at("extent").at("min")),
+                               .max = vec(j.at("extent").at("max"))},
+                    .rmsMm = j.at("rms_mm").get<double>(),
+                    .maxMm = j.at("max_mm").get<double>(),
+                    .p95Mm = j.at("p95_mm").get<double>()};
             } else {
                 return fail(ErrorCode::Parse, "unknown object kind '" + kind + "' in project");
             }

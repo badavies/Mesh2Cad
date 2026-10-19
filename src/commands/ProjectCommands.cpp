@@ -11,6 +11,7 @@
 #include "m2c/commands/Command.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/document/Document.h"
@@ -24,8 +25,8 @@ namespace m2c::cmd {
 void addProjectCommands(std::vector<Command>& out) {
     out.push_back(makeCommand(
         "project.save",
-        "Save every object (meshes, selections, measurements, alignments, quad layouts, solids "
-        "and deviations) to a project file (.m2c).",
+        "Save every object (meshes, selections, measurements, alignments, quad layouts, solids, "
+        "deviations and primitives) to a project file (.m2c).",
         R"({"type":"object","properties":{"path":{"type":"string"}},
             "required":["path"],"additionalProperties":false})",
         false,
@@ -51,6 +52,8 @@ void addProjectCommands(std::vector<Command>& out) {
                     p.data = q->cage;
                 } else if (const SolidData* solid = o.solid()) {
                     p.data = solid->solid;
+                } else if (const PrimitiveData* primitive = o.primitive()) {
+                    p.data = primitive->fit;
                 } else {
                     const auto& [meshId, referenceId, field] = *o.deviation();
                     p.data = ProjectDeviation{
@@ -90,6 +93,8 @@ void addProjectCommands(std::vector<Command>& out) {
                     o.data = QuadLayoutData{std::move(*q)};
                 } else if (auto* solid = std::get_if<Solid>(&data)) {
                     o.data = SolidData{std::move(*solid)};
+                } else if (const auto* primitive = std::get_if<FittedPrimitive>(&data)) {
+                    o.data = PrimitiveData{*primitive};
                 } else {
                     auto& [meshId, referenceId, field] = std::get<ProjectDeviation>(data);
                     o.data = DeviationData{

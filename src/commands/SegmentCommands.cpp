@@ -26,29 +26,11 @@ namespace m2c::cmd {
 namespace {
 
 Json regionJson(const SegmentRegion& r) {
-    const Primitive& s = r.primitive;
-    Json out{{"kind", primitiveKindName(s.kind)},
-             {"face_count", r.faces.size()},
-             {"area_mm2", r.areaMm2},
-             {"rms_mm", r.rmsMm},
-             {"max_mm", r.maxMm}};
-    switch (s.kind) {
-    case PrimitiveKind::Plane:
-        out["point"] = toJson(s.point);
-        out["normal"] = toJson(s.direction);
-        break;
-    case PrimitiveKind::Cylinder:
-        out["axis_point"] = toJson(s.point);
-        out["axis_direction"] = toJson(s.direction);
-        out["radius_mm"] = s.radiusMm;
-        break;
-    case PrimitiveKind::Sphere:
-        out["center"] = toJson(s.point);
-        out["radius_mm"] = s.radiusMm;
-        break;
-    case PrimitiveKind::Cone: // segmentation finds no cones
-        break;
-    }
+    Json out = toJson(r.primitive);
+    out["face_count"] = r.faces.size();
+    out["area_mm2"] = r.areaMm2;
+    out["rms_mm"] = r.rmsMm;
+    out["max_mm"] = r.maxMm;
     return out;
 }
 

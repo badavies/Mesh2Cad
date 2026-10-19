@@ -15,6 +15,7 @@
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshStats.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -229,6 +230,9 @@ Json describe(const DocumentObject& object) {
         j["mesh_id"] = dev->meshId;
         j["reference_id"] = dev->referenceId;
         j["rms_mm"] = dev->field.stats().rmsMm;
+    } else if (const PrimitiveData* p = object.primitive()) {
+        j["primitive"] = toJson(p->fit.surface);
+        j["p95_mm"] = p->fit.p95Mm;
     }
     if (!object.provenance.command.empty()) {
         j["made_by"] = object.provenance.command;

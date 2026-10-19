@@ -121,6 +121,37 @@ void writeVersion1(const std::filesystem::path& path, const std::string& objects
 
 } // namespace
 
+TEST_CASE("Project files keep fitted primitives", "[io][project]") {
+    const TempDir dir;
+    ProjectData project;
+    project.nextId = 3;
+    const FittedPrimitive cone{.surface = {.kind = PrimitiveKind::Cone,
+                                           .point = {1, 2, 3},
+                                           .direction = {0, 0.6, 0.8},
+                                           .halfAngleRad = 0.4},
+                               .extent = {.min = {-1, -2, -3}, .max = {4, 5, 6}},
+                               .rmsMm = 0.01,
+                               .maxMm = 0.05,
+                               .p95Mm = 0.02};
+    project.objects.push_back({2, "Cone fit", true, cone, "primitive.fit", "{}", {1}});
+    const auto path = dir.path() / "primitive.m2c";
+    REQUIRE(writeProject(project, path).has_value());
+    const auto back = readProject(path);
+    REQUIRE(back.has_value());
+    REQUIRE(back->objects.size() == 1);
+    const auto& p = std::get<FittedPrimitive>(back->objects[0].data);
+    CHECK(p.surface.kind == PrimitiveKind::Cone);
+    CHECK(p.surface.point == cone.surface.point);
+    CHECK(p.surface.direction == cone.surface.direction);
+    CHECK(p.surface.radiusMm == 0.0);
+    CHECK(p.surface.halfAngleRad == 0.4);
+    CHECK(p.extent.min == cone.extent.min);
+    CHECK(p.extent.max == cone.extent.max);
+    CHECK(p.rmsMm == 0.01);
+    CHECK(p.maxMm == 0.05);
+    CHECK(p.p95Mm == 0.02);
+}
+
 TEST_CASE("Version 1 project files still open", "[io][project]") {
     const TempDir dir;
     const auto path = dir.path() / "v1.m2c";

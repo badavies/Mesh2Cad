@@ -13,6 +13,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/Transform.h"
@@ -61,8 +62,19 @@ struct DeviationData {
     DeviationField field;
 };
 
-using ObjectData = std::
-    variant<MeshData, SelectionData, MeasurementData, QuadLayoutData, SolidData, DeviationData>;
+/// An exact surface fitted to a mesh region (ARCHITECTURE.md section 7, Primitive fitting). Like
+/// a quad layout it stays when its inputs change; its provenance names them.
+struct PrimitiveData {
+    FittedPrimitive fit;
+};
+
+using ObjectData = std::variant<MeshData,
+                                SelectionData,
+                                MeasurementData,
+                                QuadLayoutData,
+                                SolidData,
+                                DeviationData,
+                                PrimitiveData>;
 
 /// Which command made an object, with what parameters (a JSON text, so this module needs no JSON
 /// library) and from which inputs. A stage can be re-run from this record.
@@ -93,7 +105,10 @@ struct DocumentObject {
     [[nodiscard]] const DeviationData* deviation() const noexcept {
         return std::get_if<DeviationData>(&data);
     }
-    /// "mesh", "selection", "measurement", "quad_layout", "solid" or "deviation".
+    [[nodiscard]] const PrimitiveData* primitive() const noexcept {
+        return std::get_if<PrimitiveData>(&data);
+    }
+    /// "mesh", "selection", "measurement", "quad_layout", "solid", "deviation" or "primitive".
     [[nodiscard]] const char* kind() const noexcept;
 };
 
