@@ -1,0 +1,23 @@
+Round every NCollection_IncAllocator allocation up to 8 bytes.
+
+OCCT 8.0.1 bump-allocates the requested size unrounded, so after an allocation of 4 bytes (for
+example the edge orientations of a wire with one edge) every later object in the block, such as
+BRepMesh's faces, sits at an address that is not 8-byte aligned. 7.6 rounded the size.
+UndefinedBehaviorSanitizer stops on the first such object. Mesh2Cad ADR-027.
+
+diff --git a/src/FoundationClasses/TKernel/NCollection/NCollection_IncAllocator.cxx b/src/FoundationClasses/TKernel/NCollection/NCollection_IncAllocator.cxx
+index 5f1e524c..22da0bd5 100644
+--- a/src/FoundationClasses/TKernel/NCollection/NCollection_IncAllocator.cxx
++++ b/src/FoundationClasses/TKernel/NCollection/NCollection_IncAllocator.cxx
+@@ -89,8 +89,10 @@ NCollection_IncAllocator::~NCollection_IncAllocator()
+ 
+ //=================================================================================================
+ 
+-void* NCollection_IncAllocator::AllocateOptimal(const size_t theSize)
++void* NCollection_IncAllocator::AllocateOptimal(const size_t theRequestedSize)
+ {
++  // Keep every allocation aligned to 8 bytes, as the class documentation promises.
++  const size_t theSize = (theRequestedSize + 7) & ~static_cast<size_t>(7);
+   if (myMutex)
+   {
+     // Fast path: shared lock allows multiple threads to bump-allocate

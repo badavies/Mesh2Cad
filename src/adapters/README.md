@@ -44,10 +44,15 @@ target.
   - `surfaceDistances`: distances from points to a fitted primitive made as an unbounded Open
     CASCADE surface (`Geom_Plane`, `Geom_CylindricalSurface`, `Geom_SphericalSurface`,
     `Geom_ConicalSurface`).
+- `m2c/adapters/occt/Trim.h` (namespace `m2c::occt`):
+  - `trimPrimitives` with `TrimParams`: fitted primitives bounded by the scan's box and split
+    against each other (General Fuse, `BRepAlgoAPI_BuilderAlgo`); the split faces on the scan are
+    sewn into an outward solid and faces of one surface merged (`ShapeUpgrade_UnifySameDomain`).
+    The solid's display mesh is the kernel's triangulation (`BRepMesh_IncrementalMesh`).
 
 Private to the adapters: `osd/Limit.h` (the OpenSubdiv refiner, patch table and stencils),
 `osd/Tessellation.h` (limit surface sampling shared by the fit and the display mesh) and
-`occt/Shape.h` (the definition of the opaque `SolidShape`), `occt/PrimitiveSurface.h`
+`occt/Shape.h` (the definition of the opaque `SolidShape`, and `summarise`), `occt/PrimitiveSurface.h`
 (`toGeomSurface`, a primitive as a `Geom_Surface`) and `occt/Guard.h` (kernel exceptions as
 errors). Private to the adapter: `CgalMesh.h` (`toSurfaceMesh`, `fromSurfaceMesh`, `guarded`). Do not
 include it from outside `src/adapters/cgal`.

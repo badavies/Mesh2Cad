@@ -131,6 +131,8 @@ opencascade::handle<Geom_BSplineSurface> toSurface(const SurfacePatch& patch) {
     return surface;
 }
 
+} // namespace
+
 SolidSummary summarise(const TopoDS_Shape& shape) {
     SolidSummary s;
     NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faces, edges, vertices;
@@ -179,8 +181,6 @@ SolidSummary summarise(const TopoDS_Shape& shape) {
     s.areaMm2 = area.Mass();
     return s;
 }
-
-} // namespace
 
 Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
                         std::shared_ptr<const FaceTessellation> display,
