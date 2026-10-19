@@ -34,6 +34,12 @@ target.
     `SurfacePatch` per ptex face, exact bicubics where the cage is regular and caps fitted to
     OpenSubdiv's Gregory patches (positions and tangent planes along their edges) elsewhere.
   - `tessellateLimit`: the limit surface as triangles, for tests and checks.
+- `m2c/adapters/occt/Boolean.h` (namespace `m2c::occt`):
+  - `booleanSolids` with `BooleanOp`: fuse, cut or common of two solids with fuzzy booleans
+    (`BRepAlgoAPI_Fuse`, `BRepAlgoAPI_Cut`, `BRepAlgoAPI_Common`), faces of one surface merged and
+    the shape fixed (`ShapeFix_Shape`); fails unless the result is one valid closed solid.
+  - `primitiveSolid`: a fitted cylinder (bounded along its axis) or sphere as a solid
+    (`BRepPrimAPI_MakeCylinder`, `BRepPrimAPI_MakeSphere`).
 - `m2c/adapters/occt/Brep.h` (namespace `m2c::occt`):
   - `makeSolid` with `SewParams`: B-spline faces (knots where pieces join with C2 continuity
     removed), sewing, an outward solid (`ShapeFix_Solid`) and the kernel's checker; fails unless
@@ -52,7 +58,7 @@ target.
 
 Private to the adapters: `osd/Limit.h` (the OpenSubdiv refiner, patch table and stencils),
 `osd/Tessellation.h` (limit surface sampling shared by the fit and the display mesh) and
-`occt/Shape.h` (the definition of the opaque `SolidShape`, and `summarise`), `occt/PrimitiveSurface.h`
+`occt/Shape.h` (the definition of the opaque `SolidShape`, `summarise`, `triangulate` and `kernelSolid`), `occt/PrimitiveSurface.h`
 (`toGeomSurface`, a primitive as a `Geom_Surface`) and `occt/Guard.h` (kernel exceptions as
 errors). Private to the adapter: `CgalMesh.h` (`toSurfaceMesh`, `fromSurfaceMesh`, `guarded`). Do not
 include it from outside `src/adapters/cgal`.

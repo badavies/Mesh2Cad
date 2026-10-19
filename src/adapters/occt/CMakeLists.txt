@@ -2,6 +2,7 @@
 # kernel shape is the opaque SolidShape, defined in Shape.h.
 m2c_add_library(occt
     SOURCES
+        Boolean.cpp
         Brep.cpp
         Surface.cpp
         Trim.cpp

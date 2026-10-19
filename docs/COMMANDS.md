@@ -304,6 +304,16 @@ Fit an exact, unbounded plane, cylinder, sphere or cone to the faces of a select
 | `max_residual_mm` | number |  | Largest P95 distance from the region's vertices to the surface. Default `0.1`. |
 | `selection_id` | integer | yes |  |
 
+### `primitive.solid`
+
+Make a fitted cylinder or sphere (primitive.fit) a solid of its exact surface, to fuse to or cut from another solid with solid.boolean, such as a true-cylinder hole through an organic body. A sphere is whole; a cylinder runs along its axis, centred on the fitted region, length_mm long (0 = as long as the region). Adds a solid object; fails for a plane or cone. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The cylinder or sphere primitive. |
+| `length_mm` | number |  | A cylinder's length; 0 = the length of the region it was fitted to. Default `0`. |
+| `name` | string |  |  |
+
 ### `primitive.trim`
 
 Make a solid with sharp edges from fitted primitives (primitive.fit): each is bounded by the mesh's box, grown by a tenth of its diagonal, and all are split against each other (Open CASCADE General Fuse). A split face is kept when min_coverage of its area lies within max_distance_mm of the mesh; the kept faces are sewn into a solid and faces of one primitive merged. The faces are the primitives' exact planes, cylinders, spheres and cones. Adds a solid object; fails, adding nothing, naming where the faces leave the solid open (a primitive there is missing or does not fit), or unless the result is one valid closed solid of positive volume. *(changes the document)*
@@ -495,6 +505,18 @@ Split every shell except the main part into its own mesh object. *(changes the d
 | `id` | integer | yes |  |
 
 ## solid
+
+### `solid.boolean`
+
+Combine two solids into a new one: fuse joins them, cut removes tool_id from id, common keeps what they share. Boundaries closer than fuzzy_mm count as touching. Faces of one surface are merged, so a cylinder cut from a body leaves one exact cylindrical face. Adds a solid object; both inputs are unchanged. Fails, adding nothing, when nothing is left, when the result is more than one solid (for example fusing solids that do not touch), or unless it is one valid closed solid of positive volume. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `fuzzy_mm` | number |  | Boundaries this close are treated as touching. Default `0.001`. |
+| `id` | integer | yes | The solid to fuse to, cut from or intersect. |
+| `name` | string |  |  |
+| `operation` | `fuse` \| `cut` \| `common` | yes |  |
+| `tool_id` | integer | yes | The other solid. |
 
 ### `solid.export`
 
