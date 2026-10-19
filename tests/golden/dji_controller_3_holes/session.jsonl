@@ -1,0 +1,14 @@
+{"command":"mesh.import","params":{"path":"../dji_controller_3/scan.obj"}}
+{"command":"shells.clean","params":{"id":1,"min_faces":1000}}
+{"command":"mesh.repair","params":{"id":1}}
+{"command":"holes.fill","params":{"id":1}}
+{"command":"align.principal","params":{"id":1,"origin":"bounds_bottom_center"}}
+{"command":"quad.remesh","params":{"id":1,"target_faces":8000}}
+{"command":"surface.build","params":{"id":2,"mesh_id":1,"smoothing":0.04,"max_samples":200000,"iterations":4}}
+{"command":"mesh.remesh","params":{"id":1,"target_edge_mm":0.8}}
+{"command":"mesh.segment","params":{"id":1,"kinds":["cylinder"],"min_area_mm2":20,"max_distance_mm":0.1}}
+{"command":"primitive.fit","params":{"selection_id":67,"kind":"cylinder"}}
+{"command":"primitive.solid","params":{"id":389}}
+{"command":"solid.boolean","params":{"id":3,"tool_id":390,"operation":"cut"}}
+{"command":"deviation.compute","params":{"id":1,"reference_id":391}}
+{"command":"solid.export","params":{"id":391,"path":"scan.step"}}
