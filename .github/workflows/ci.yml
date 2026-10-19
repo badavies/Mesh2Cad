@@ -121,6 +121,8 @@ jobs:
       - name: Long fuzzing run (nightly)
         id: fuzz
         if: matrix.preset == 'linux-gcc-sanitize' && github.event_name != 'push' && github.event_name != 'pull_request'
+        env:
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1 # alignment reports recover (ADR-028)
         run: >-
           build/linux-gcc-sanitize/tests/fuzz/m2c_fuzz_mesh_parsers
           --iterations ${{ inputs.fuzz_iterations || '1000000' }} --seed ${{ github.run_number }}

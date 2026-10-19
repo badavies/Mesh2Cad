@@ -1,6 +1,6 @@
 # 0027. vcpkg's Open CASCADE 8.0.1 carries a patch that aligns NCollection_IncAllocator
 
-- Status: Proposed (refines ADR-026)
+- Status: Superseded by 0028
 - Date: 2026-10-19
 
 ## Context
