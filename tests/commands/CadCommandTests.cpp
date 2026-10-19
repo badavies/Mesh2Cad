@@ -440,3 +440,71 @@ TEST_CASE("Project files of format 2 open", "[commands][project]") {
     CHECK(old->solid()->solid.faces().back().uBreaks == before.faces().back().uBreaks);
     CHECK(old->solid()->solid.faces().back().poles == before.faces().back().poles);
 }
+
+TEST_CASE("primitive.trim trims fitted planes into a box", "[commands][trim]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeBox(30, 20, 10, 8), "block");
+    const Json regions = s.run("mesh.segment", {{"id", mesh}})["regions"];
+    REQUIRE(regions.size() == 6);
+    Json primitives = Json::array();
+    for (const Json& r : regions) {
+        primitives.push_back(s.run("primitive.fit", {{"selection_id", r["selection_id"]}})["id"]);
+    }
+
+    // One plane short, the faces leave the box open and nothing is added.
+    const std::size_t before = s.document.objects().size();
+    Json five = primitives;
+    five.erase(five.size() - 1);
+    const auto open = s.tryRun("primitive.trim", {{"primitive_ids", five}, {"mesh_id", mesh}});
+    REQUIRE_FALSE(open.has_value());
+    CHECK(open.error().code == ErrorCode::InvalidState);
+    CHECK(open.error().message.find("open between") != std::string::npos);
+    CHECK(s.document.objects().size() == before);
+    CHECK_FALSE(s.tryRun("primitive.trim", {{"primitive_ids", {mesh}}, {"mesh_id", mesh}}));
+    CHECK_FALSE(s.tryRun("primitive.trim", {{"mesh_id", mesh}}));
+
+    const Json trimmed =
+        s.run("primitive.trim", {{"primitive_ids", primitives}, {"mesh_id", mesh}});
+    CHECK(trimmed["summary"]["face_count"] == 6);
+    CHECK(trimmed["summary"]["edge_count"] == 12);
+    CHECK(trimmed["summary"]["valid"] == true);
+    CHECK(trimmed["summary"]["pole_count"] == 0);
+    CHECK_THAT(trimmed["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(6000.0, 1e-9));
+    CHECK(trimmed["kept_faces"] == 6);
+    CHECK(trimmed["max_gap_mm"].get<double>() < 1e-3);
+    const auto solid = trimmed["id"].get<ObjectId>();
+    const auto object = s.document.find(solid);
+    REQUIRE(object);
+    CHECK(object->name == "block (trimmed solid)");
+    CHECK(object->provenance.inputs.size() == 7);
+
+    // The scan lies on the solid's faces.
+    const Json deviation = s.run("deviation.compute", {{"id", mesh}, {"reference_id", solid}});
+    CHECK(deviation["stats"]["max_mm"].get<double>() < 1e-6);
+    CHECK(deviation["stats"]["min_mm"].get<double>() > -1e-6);
+    std::vector<Vec3d> bigger = makeBox(32, 22, 12, 8).positions(); // 1 mm all round
+    for (Vec3d& v : bigger) v = v - Vec3d{1, 1, 1};
+    const ObjectId around =
+        s.import(dir, makeMesh(std::move(bigger), makeBox(32, 22, 12, 8).indices()), "around");
+    const Json outside = s.run("deviation.compute", {{"id", around}, {"reference_id", solid}});
+    CHECK_THAT(outside["stats"]["min_mm"].get<double>(), Catch::Matchers::WithinAbs(1.0, 1e-9));
+
+    const auto step = (dir.path() / "block.step").string();
+    CHECK(s.run("solid.export", {{"id", solid}, {"path", step}})["check"]["passed"] == true);
+
+    // A project keeps the trimmed solid as its kernel shape alone.
+    const auto path = (dir.path() / "block.m2c").string();
+    s.run("project.save", {{"path", path}});
+    Session t;
+    t.run("project.open", {{"path", path}});
+    const auto opened = t.document.find(solid);
+    REQUIRE(opened);
+    REQUIRE(opened->solid() != nullptr);
+    const Solid& after = opened->solid()->solid;
+    CHECK(after.summary().faceCount == 6);
+    CHECK(after.summary().volumeMm3 == object->solid()->solid.summary().volumeMm3);
+    CHECK(after.faces().empty());
+    CHECK(after.display().positions() == object->solid()->solid.display().positions());
+}

@@ -46,12 +46,14 @@
 #include <Standard_Failure.hxx>
 #include <Standard_Handle.hxx>
 #include <Standard_Version.hxx>
+#include <TopAbs_Orientation.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
 #include <TopoDS_Edge.hxx>
+#include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
 #include <gp_Pnt2d.hxx>
@@ -280,7 +282,9 @@ Result<Solid> readBrep(const std::string& brep,
                        const BrepFormat format,
                        std::vector<SurfacePatch> faces,
                        std::shared_ptr<const FaceTessellation> display) {
-    if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
+    if (!display && !faces.empty()) {
+        return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
+    }
     return guarded("BREP import", [&]() -> Result<Solid> {
         std::istringstream in(brep, std::ios::binary);
         TopoDS_Shape shape;
@@ -294,12 +298,17 @@ Result<Solid> readBrep(const std::string& brep,
         if (summary.solidCount != 1 || !summary.closed || !summary.valid) {
             return fail(ErrorCode::Parse, "the BREP data is not one valid closed solid");
         }
-        if (summary.faceCount != faces.size()) {
+        if (!faces.empty() && summary.faceCount != faces.size()) {
             return fail(ErrorCode::Parse, "the BREP data does not match the solid's faces");
         }
         auto stored = std::make_shared<SolidShape>();
         for (TopExp_Explorer it(shape, TopAbs_SOLID); it.More(); it.Next()) {
             stored->shape = it.Current();
+        }
+        if (faces.empty()) {
+            auto kernel = triangulate(stored->shape);
+            if (!kernel) return std::unexpected(kernel.error());
+            display = std::make_shared<const FaceTessellation>(std::move(*kernel));
         }
         return Solid(std::move(stored),
                      std::make_shared<const std::vector<SurfacePatch>>(std::move(faces)),
@@ -311,10 +320,14 @@ Result<Solid> readBrep(const std::string& brep,
 Result<std::vector<double>> signedDistances(const Solid& solid, const std::vector<Vec3d>& points) {
     const std::vector<SurfacePatch>& faces = solid.faces();
     const auto& [display, triangleFaces, vertexUvs] = solid.displayMap();
-    if (faces.empty() || triangleFaces.size() != display.faceCount() ||
+    // A solid with no B-spline faces is measured against its kernel faces.
+    NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> kernelFaces;
+    if (faces.empty()) TopExp::MapShapes(solid.shape().shape, TopAbs_FACE, kernelFaces);
+    const std::size_t faceCount =
+        faces.empty() ? static_cast<std::size_t>(kernelFaces.Extent()) : faces.size();
+    if (faceCount == 0 || triangleFaces.size() != display.faceCount() ||
         vertexUvs.size() != display.vertexCount() ||
-        std::ranges::any_of(triangleFaces,
-                            [&](const std::uint32_t f) { return f >= faces.size(); })) {
+        std::ranges::any_of(triangleFaces, [&](const std::uint32_t f) { return f >= faceCount; })) {
         return fail(ErrorCode::InvalidState, "the solid's display mesh does not match its faces");
     }
     const auto corners = [&](const std::size_t t) {
@@ -330,7 +343,21 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
     }
     const double outward = volume6 >= 0.0 ? 1.0 : -1.0;
     return guarded("distance to the solid", [&]() -> Result<std::vector<double>> {
-        std::vector<opencascade::handle<ShapeAnalysis_Surface>> surfaces(faces.size());
+        std::vector<opencascade::handle<ShapeAnalysis_Surface>> surfaces(faceCount);
+        std::vector<std::array<double, 4>> ranges(faceCount, {0.0, 1.0, 0.0, 1.0});
+        std::vector<double> turn(faceCount, 1.0); // -1 where a kernel face is reversed
+        const auto surfaceOf = [&](const std::size_t f) {
+            if (!surfaces[f].IsNull()) return;
+            if (!faces.empty()) {
+                surfaces[f] = new ShapeAnalysis_Surface(toSurface(faces[f]));
+                return;
+            }
+            const TopoDS_Face& face = TopoDS::Face(kernelFaces(static_cast<int>(f) + 1));
+            surfaces[f] = new ShapeAnalysis_Surface(BRep_Tool::Surface(face));
+            auto& [u0, u1, v0, v1] = ranges[f];
+            BRepTools::UVBounds(face, u0, u1, v0, v1);
+            if (face.Orientation() == TopAbs_REVERSED) turn[f] = -1.0;
+        };
         const SpatialIndex& index = display.spatialIndex();
         std::vector<double> out;
         out.reserve(points.size());
@@ -351,14 +378,15 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
             const auto& uc = vertexUvs[v[2]];
             const double u0 = ua[0] + wb * (ub[0] - ua[0]) + wc * (uc[0] - ua[0]);
             const double v0 = ua[1] + wb * (ub[1] - ua[1]) + wc * (uc[1] - ua[1]);
-            if (surfaces[f].IsNull()) surfaces[f] = new ShapeAnalysis_Surface(toSurface(faces[f]));
+            surfaceOf(f);
             const gp_Pnt target(p.x, p.y, p.z);
             const gp_Pnt2d at = surfaces[f]->NextValueOfUV(gp_Pnt2d(u0, v0), target, 1e-7);
             gp_Pnt q;
             gp_Vec du, dv;
+            const auto& [uMin, uMax, vMin, vMax] = ranges[f];
             surfaces[f]->Surface()->D1(
-                std::clamp(at.X(), 0.0, 1.0), std::clamp(at.Y(), 0.0, 1.0), q, du, dv);
-            const gp_Vec normal = du.Crossed(dv);
+                std::clamp(at.X(), uMin, uMax), std::clamp(at.Y(), vMin, vMax), q, du, dv);
+            const gp_Vec normal = du.Crossed(dv) * turn[f];
             const gp_Vec offset(q, target);
             const double side = offset.Dot(normal) * outward >= 0.0 ? 1.0 : -1.0;
             out.push_back(side * offset.Magnitude());

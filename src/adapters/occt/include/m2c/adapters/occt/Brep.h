@@ -42,8 +42,9 @@ enum class BrepFormat {
 [[nodiscard]] Result<std::string> writeBrep(const Solid& solid,
                                             BrepFormat format = BrepFormat::Binary);
 
-/// A solid from BREP data and the faces and display mesh saved with it. Fails unless the data
-/// holds one valid closed solid.
+/// A solid from BREP data and the faces and display mesh saved with it. A solid with no B-spline
+/// faces (trimPrimitives()) is given none and no display mesh: its display is the kernel's
+/// triangulation again. Fails unless the data holds one valid closed solid.
 [[nodiscard]] Result<Solid> readBrep(const std::string& brep,
                                      BrepFormat format,
                                      std::vector<SurfacePatch> faces,
@@ -51,7 +52,8 @@ enum class BrepFormat {
 
 /// Signed distance from each point to the solid's faces, positive outside: the closest display
 /// triangle gives the face and, through the display map, a start point on it; Open CASCADE then
-/// projects onto that face's surface.
+/// projects onto that face's surface (the B-spline face, or for a solid with none the kernel
+/// face's own surface), staying within the face's parameter range.
 [[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,
                                                           const std::vector<Vec3d>& points);
 

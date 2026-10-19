@@ -64,8 +64,9 @@ struct ProjectData {
 /// refused with ErrorCode::Unsupported.
 /// Version 2 added quad layouts, solids and deviations; version 1 files hold a subset of it.
 /// Version 3 lets a solid's face cover several cage quads (merged faces with their own breaks).
-/// Version 4 added fitted primitives.
-inline constexpr int kProjectFormatVersion = 4;
+/// Version 4 added fitted primitives. Version 5 added solids with no B-spline faces (trimmed
+/// primitives), stored as BREP alone.
+inline constexpr int kProjectFormatVersion = 5;
 
 /// Writes a project file: a zip holding manifest.json, meshes as binary PLY (double precision),
 /// selections as bitsets, quad layouts and deviations as little-endian arrays, solids as
