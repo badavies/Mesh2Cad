@@ -494,6 +494,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-024 | Lasso selection by CPU projection, reproducible from the command | Accepted | Same result from UI, CLI and agents; see `docs/adr/0024-lasso-by-projection.md` |
 | ADR-025 | Golden scans are local, gitignored copies checked by SHA-256, not Git LFS files | Accepted | Scans stay out of the repository; the hash proves which file the limits were set on; see `docs/adr/0025-golden-scans-as-local-copies.md` |
 | ADR-026 | Open CASCADE and OpenSubdiv from vcpkg or the system, else built from source at configure time | Accepted | Builds without vcpkg, as ADR-020 requires; see `docs/adr/0026-occt-opensubdiv-source-fallback.md` |
+| ADR-027 | vcpkg's Open CASCADE 8.0.1 carries a patch that aligns `NCollection_IncAllocator` | Proposed | 8.0.1 misaligns BRepMesh's faces, which stops the sanitizer job; see `docs/adr/0027-occt-incallocator-alignment-patch.md` |
 
 ## 15. Review log
 
