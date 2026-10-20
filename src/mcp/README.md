@@ -13,6 +13,10 @@ Headers live in this folder (no `m2c/mcp/` prefix).
   `tools/list` (from `commands.list`) and `tools/call`.
   A result that names a picture it wrote (`{"image": {"path", "mime_type"}}`, as
   `view.render`'s does) also carries the picture as an image content block.
+  A tool call whose request carries `_meta.progressToken` gets a `notifications/progress` every
+  two seconds until it returns (through the optional `Notify` callback): the progress is the
+  seconds spent, since commands cannot yet say how far along they are. Tools whose command
+  writes a file are not marked read-only.
 
 The executable (`main.cpp`) chooses the engine:
 

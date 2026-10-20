@@ -2,6 +2,11 @@
 // The JSON-RPC channel and the MCP server, and the M1 gate rule that the CLI, JSON and MCP front
 // ends give the same results (ARCHITECTURE.md sections 8 and 12).
 
+#include <chrono>
+#include <cstddef>
+#include <thread>
+#include <vector>
+
 #include "m2c/io/MeshIO.h"
 #include "m2c/rpc/RpcServer.h"
 #include "m2c/rpc/Session.h"
@@ -156,6 +161,44 @@ TEST_CASE("MCP server lists commands as tools and calls them", "[mcp]") {
         *mcp.handle(request(4, "tools/call", {{"name", "mesh_info"}, {"arguments", {{"id", 99}}}}));
     CHECK(failed["result"]["isError"] == true);
     CHECK((*mcp.handle(request(5, "resources/list")))["error"]["code"] == -32601);
+}
+
+TEST_CASE("MCP server reports progress while a slow tool runs", "[mcp]") {
+    Engine e;
+    RpcServer rpc(e.registry, e.context);
+    int next = 1;
+    std::vector<Json> sent;
+    McpServer mcp(
+        [&](const std::string& method, const Json& params) -> Result<Json> {
+            // doc.list stands in for a long command.
+            if (method == "doc.list") std::this_thread::sleep_for(std::chrono::milliseconds(200));
+            return *rpc.handle(request(next++, method, params));
+        },
+        [&](const Json& notification) { sent.push_back(notification); },
+        std::chrono::milliseconds(20));
+
+    const Json called = *mcp.handle(
+        request(1, "tools/call", {{"name", "doc_list"}, {"_meta", {{"progressToken", "job-1"}}}}));
+    CHECK(called["result"]["isError"] == false);
+    const std::size_t count = sent.size();
+    REQUIRE(count >= 3);
+    double last = 0.0;
+    for (const Json& n : sent) {
+        CHECK(n["method"] == "notifications/progress");
+        CHECK(n["params"]["progressToken"] == "job-1");
+        CHECK(n["params"]["progress"].get<double>() > last); // must only grow
+        last = n["params"]["progress"].get<double>();
+        CHECK(n["params"]["message"].get<std::string>().starts_with("doc.list running"));
+    }
+    // Nothing follows the response, and a call without a token gets no progress.
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
+    CHECK(sent.size() == count);
+    (void)mcp.handle(request(2, "tools/call", {{"name", "doc_list"}}));
+    CHECK(sent.size() == count);
+    (void)mcp.handle(
+        request(3, "tools/call", {{"name", "doc_list"}, {"_meta", {{"progressToken", 7}}}}));
+    REQUIRE(sent.size() > count);
+    CHECK(sent.back()["params"]["progressToken"] == 7);
 }
 
 TEST_CASE("CLI, JSON-RPC and MCP give identical results", "[rpc][mcp][gate]") {
