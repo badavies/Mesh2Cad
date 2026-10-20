@@ -11,6 +11,8 @@ Headers live in this folder (no `m2c/mcp/` prefix).
 - `McpServer.h`: `McpServer` (`handle` for one MCP message, `toolName` to turn `mesh.import`
   into `mesh_import`) and its `EngineCall` callback type. It answers `initialize`, `ping`,
   `tools/list` (from `commands.list`) and `tools/call`.
+  A result that names a picture it wrote (`{"image": {"path", "mime_type"}}`, as
+  `view.render`'s does) also carries the picture as an image content block.
 
 The executable (`main.cpp`) chooses the engine:
 

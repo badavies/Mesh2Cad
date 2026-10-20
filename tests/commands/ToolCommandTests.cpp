@@ -3,8 +3,12 @@
 // server all do.
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <limits>
 #include <numbers>
+#include <string>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -328,6 +332,59 @@ TEST_CASE("primitive.align holds a cylinder's axis along a plane's normal", "[co
     const auto gone = s.tryRun("primitive.align", {{"ids", {can}}, {"axis", "z"}});
     REQUIRE_FALSE(gone.has_value());
     CHECK(gone.error().message.find("is gone") != std::string::npos);
+}
+
+TEST_CASE("view.render draws the visible objects to a PNG", "[commands][render]") {
+    Session s;
+    const TempDir dir;
+    const auto bytes = [](const std::filesystem::path& path) {
+        std::ifstream file(path, std::ios::binary);
+        return std::string{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    };
+    const auto path = dir.path() / "view.png";
+    CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}})); // nothing to draw
+
+    const ObjectId box = s.import(dir, makeBox(20, 10, 6, 4), "box");
+    const Json regions = s.run("mesh.segment", {{"id", box}})["regions"];
+    // The bottom is fitted (out of sight from iso); the +x side, in sight, is selected later.
+    Json bottom, side;
+    for (const Json& r : regions) {
+        if (r["normal"][2].get<double>() < -0.9) bottom = r["selection_id"];
+        if (r["normal"][0].get<double>() > 0.9) side = r["selection_id"];
+    }
+    REQUIRE(bottom.is_number());
+    REQUIRE(side.is_number());
+    const ObjectId plane = s.run("primitive.fit", {{"selection_id", bottom}})["id"];
+    const ObjectId sketch =
+        s.run("sketch.section", {{"id", box}, {"plane", "xy"}, {"offset_mm", 2.3}})["id"];
+    const Json view =
+        s.run("view.render", {{"path", path.string()}, {"width", 64}, {"height", 48}});
+    CHECK(view["drawn_ids"] == Json{box, plane, sketch});
+    CHECK(view["image"]["mime_type"] == "image/png");
+    const std::string first = bytes(path);
+    CHECK(first.starts_with("\x89PNG"));
+    CHECK(s.document.undoHistory().back().label != "view.render"); // changes nothing
+
+    // The same document gives the same picture; a selection, a highlight or a view changes it.
+    s.run("view.render", {{"path", path.string()}, {"width", 64}, {"height", 48}});
+    CHECK(bytes(path) == first);
+    const auto changes = [&](const Json& extra) {
+        Json params{{"path", path.string()}, {"width", 64}, {"height", 48}};
+        params.update(extra);
+        s.run("view.render", params);
+        return bytes(path) != first;
+    };
+    CHECK(changes({{"selection_id", side}}));
+    CHECK(changes({{"highlight_id", box}}));
+    CHECK(changes({{"view", "top"}}));
+    CHECK(changes({{"direction", {0, 0, -1}}}));
+    s.run("object.show", {{"id", sketch}, {"visible", false}});
+    CHECK(s.run("view.render", {{"path", path.string()}})["drawn_ids"] == Json{box, plane});
+
+    CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}, {"view", "sideways"}}));
+    CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}, {"direction", {0, 0, 0}}}));
+    CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}, {"width", 8}}));
+    CHECK_FALSE(s.tryRun("view.render", {{"path", (dir.path() / "no" / "x.png").string()}}));
 }
 
 TEST_CASE("Selections, face deletion and datum alignment through commands", "[commands][align]") {

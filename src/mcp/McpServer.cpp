@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "McpServer.h"
 
+#include <cstddef>
 #include <expected>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <string>
 #include <utility>
@@ -21,6 +24,41 @@ Json response(const Json& id, Json result) {
 
 Json errorResponse(const Json& id, int code, const std::string& message) {
     return Json{{"jsonrpc", "2.0"}, {"id", id}, {"error", {{"code", code}, {"message", message}}}};
+}
+
+std::string base64(const std::string& bytes) {
+    static constexpr char kDigits[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve((bytes.size() + 2) / 3 * 4);
+    for (std::size_t i = 0; i < bytes.size(); i += 3) {
+        const std::size_t left = bytes.size() - i;
+        const auto at = [&](std::size_t k) {
+            return k < left ? static_cast<unsigned>(static_cast<unsigned char>(bytes[i + k])) : 0u;
+        };
+        const unsigned triple = at(0) << 16 | at(1) << 8 | at(2);
+        out += kDigits[triple >> 18 & 63];
+        out += kDigits[triple >> 12 & 63];
+        out += left > 1 ? kDigits[triple >> 6 & 63] : '=';
+        out += left > 2 ? kDigits[triple & 63] : '=';
+    }
+    return out;
+}
+
+/// A result naming a picture it wrote ({"image": {"path", "mime_type"}}, as view.render's) also
+/// carries the picture, so the agent sees it. Nothing is added when the file cannot be read.
+void attachImage(const Json& result, Json& content) {
+    if (!result.is_object() || !result.contains("image") || !result["image"].is_object()) return;
+    const Json& image = result["image"];
+    if (!image.contains("path") || !image["path"].is_string() || !image.contains("mime_type") ||
+        !image["mime_type"].is_string()) {
+        return;
+    }
+    std::ifstream file(image["path"].get<std::string>(), std::ios::binary);
+    if (!file) return;
+    const std::string bytes{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    content.push_back(
+        Json{{"type", "image"}, {"data", base64(bytes)}, {"mimeType", image["mime_type"]}});
 }
 
 } // namespace
@@ -89,6 +127,7 @@ Json McpServer::callTool(const Json& params) {
     }
     const Json& result = (*reply)["result"];
     Json out{{"content", {{{"type", "text"}, {"text", result.dump()}}}}, {"isError", false}};
+    attachImage(result, out["content"]);
     if (result.is_object()) out["structuredContent"] = result;
     return out;
 }

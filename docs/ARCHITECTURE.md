@@ -281,7 +281,7 @@ The UI is a thin shell over the document: Qt 6 Widgets for panels, a custom Open
 - **Long jobs.** Long commands return a job id; progress and completion arrive as events; `job.cancel` stops them. Not built yet: commands run to completion, and the app shows a busy state meanwhile.
 - **Undo is cheap.** Pipeline data is immutable, so undo stores the previous object pointers rather than copies. Undo of a 5M-triangle repair costs almost no memory.
 - **JSON channel.** JSON-RPC 2.0 over stdio (when a script or the MCP server launches a headless engine) or over a local socket or named pipe (to drive the running desktop app). Events are JSON-RPC notifications. No network listener; local connections need a per-session token.
-- **MCP server.** A separate thin process that talks to the engine over the JSON channel and exposes each command as an MCP tool with its schema and description. Mutating tools are marked as such so MCP clients can ask the user before running them.
+- **MCP server.** A separate thin process that talks to the engine over the JSON channel and exposes each command as an MCP tool with its schema and description. Mutating tools are marked as such so MCP clients can ask the user before running them. `view.render` lets an agent see the document: it draws the visible objects to a PNG with a software rasteriser, and the MCP server returns the picture as an image.
 - **Session log and replay.** Every executed command is logged as one JSON line with its parameters. Replaying the log reproduces the result, which serves as bug reports, golden tests and simple macros.
 - **The command set is a public API.** Changes are additive. Renaming a command or breaking its schema needs a new version and a decision record.
 
@@ -497,6 +497,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-027 | vcpkg's Open CASCADE 8.0.1 carries a patch that aligns `NCollection_IncAllocator` | Superseded by ADR-028 | 8.0.1 misaligns BRepMesh's faces, which stops the sanitizer job; see `docs/adr/0027-occt-incallocator-alignment-patch.md` |
 | ADR-028 | The sanitizer build drops alignment reports inside Open CASCADE's headers | Accepted | OCCT 8.0.1 misaligns BRepMesh's shapes; every other report still fails; see `docs/adr/0028-occt-alignment-suppression.md` |
 | ADR-029 | Command schemas name the object kinds an id accepts (`x-object`) | Accepted | The app's object drop-downs and the command docs come from the schema; see `docs/adr/0029-object-kinds-in-schemas.md` |
+| ADR-030 | Agents see the document through a software-rendered PNG (`view.render`) | Accepted | A rasteriser in `core` and miniz PNG; the MCP server returns the picture as an image; see `docs/adr/0030-software-render-for-agents.md` |
 
 ## 15. Review log
 

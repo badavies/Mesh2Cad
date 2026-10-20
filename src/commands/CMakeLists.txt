@@ -14,6 +14,7 @@ m2c_add_library(commands
         SurfaceCommands.cpp
         SelectionCommands.cpp
         ShellCommands.cpp
+        ViewCommands.cpp
         detail/Params.cpp
     DEPS
         Mesh2Cad::core
