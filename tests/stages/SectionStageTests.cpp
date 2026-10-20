@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Section sketches: a mesh cut with a plane, and lines and circles fitted to the cut.
+// Section sketches: a mesh cut with a plane, and lines, arcs and splines fitted to the cut.
 
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <numbers>
+#include <random>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
@@ -37,6 +38,28 @@ std::size_t count(const SketchLoop& loop, CurveKind kind) {
     std::size_t n = 0;
     for (const SketchCurve& c : loop.curves) n += c.kind == kind ? 1 : 0;
     return n;
+}
+
+/// A rectangle 30 x 20 with corners rounded to radius 4, anticlockwise, a point every 0.25 mm.
+std::vector<Vec2d> roundedRectangle() {
+    std::vector<Vec2d> out;
+    const double r = 4.0;
+    const Vec2d centres[4] = {{26, 4}, {26, 16}, {4, 16}, {4, 4}};
+    for (int corner = 0; corner < 4; ++corner) {
+        const Vec2d c = centres[corner];
+        const Vec2d next = centres[(corner + 1) % 4];
+        const double a0 = (corner - 1) * kPi / 2;
+        for (int k = 0; k < 25; ++k) {
+            const double a = a0 + (kPi / 2) * k / 25;
+            out.push_back(c + Vec2d{std::cos(a), std::sin(a)} * r);
+        }
+        // The straight side from this corner's end to the next corner's start.
+        const Vec2d from = c + Vec2d{std::cos(a0 + kPi / 2), std::sin(a0 + kPi / 2)} * r;
+        const Vec2d to = next + Vec2d{std::cos(a0 + kPi / 2), std::sin(a0 + kPi / 2)} * r;
+        const int steps = static_cast<int>(std::lround(length(to - from) / 0.25));
+        for (int k = 0; k < steps; ++k) out.push_back(from + (to - from) * (double(k) / steps));
+    }
+    return out;
 }
 
 } // namespace
@@ -95,6 +118,56 @@ TEST_CASE("Sectioning a cylinder gives one circle", "[stages][section]") {
     REQUIRE(scanned->sketch.loops.size() == 1);
     REQUIRE(scanned->sketch.loops.front().curves.size() == 1);
     REQUIRE_THAT(scanned->sketch.loops.front().curves.front().radiusMm, WithinAbs(10.0, 0.01));
+}
+
+TEST_CASE("A rounded rectangle gives four lines and four arcs", "[stages][section]") {
+    const auto fit = fitLoop(roundedRectangle(), {});
+    REQUIRE(fit.has_value());
+    const SketchLoop& loop = fit->loop;
+    requireClosed(loop);
+    REQUIRE(loop.curves.size() == 8);
+    REQUIRE(count(loop, CurveKind::Line) == 4);
+    REQUIRE(count(loop, CurveKind::Arc) == 4);
+    for (const SketchCurve& c : loop.curves) {
+        if (c.kind != CurveKind::Arc) continue;
+        REQUIRE_THAT(c.radiusMm, WithinAbs(4.0, 0.01));
+        REQUIRE_THAT(c.sweepRad, WithinAbs(kPi / 2, 0.01));
+    }
+    REQUIRE(fit->maxErrorMm <= 0.05);
+
+    // Points up to 0.02 mm off still give the same eight curves.
+    std::vector<Vec2d> noisy = roundedRectangle();
+    std::mt19937 rng(5);
+    std::uniform_real_distribution<double> noise(-0.02, 0.02);
+    for (Vec2d& v : noisy) v = v + Vec2d{noise(rng), noise(rng)};
+    const auto rough = fitLoop(noisy, {});
+    REQUIRE(rough.has_value());
+    requireClosed(rough->loop);
+    REQUIRE(count(rough->loop, CurveKind::Line) == 4);
+    REQUIRE(count(rough->loop, CurveKind::Arc) == 4);
+    for (const SketchCurve& c : rough->loop.curves) {
+        if (c.kind == CurveKind::Arc) REQUIRE_THAT(c.radiusMm, WithinAbs(4.0, 0.05));
+    }
+}
+
+TEST_CASE("A freeform loop becomes a spline within the limit", "[stages][section]") {
+    // An ellipse 40 x 16: no circle fits it, and arcs within the limit cover fewer than 100 points.
+    std::vector<Vec2d> ellipse;
+    for (int k = 0; k < 2000; ++k) {
+        const double a = 2.0 * kPi * k / 2000;
+        ellipse.push_back({20.0 * std::cos(a), 8.0 * std::sin(a)});
+    }
+    SectionParams params;
+    params.maxErrorMm = 0.001;
+    params.minCurvePoints = 100;
+    const auto fit = fitLoop(ellipse, params);
+    REQUIRE(fit.has_value());
+    requireClosed(fit->loop);
+    REQUIRE(count(fit->loop, CurveKind::Spline) >= 1);
+    REQUIRE(fit->maxErrorMm <= 0.001);
+    for (const SketchCurve& c : fit->loop.curves) {
+        if (c.kind == CurveKind::Spline) REQUIRE(c.points.size() < 2000);
+    }
 }
 
 TEST_CASE("A plane that misses the mesh or cuts only open pieces fails", "[stages][section]") {
