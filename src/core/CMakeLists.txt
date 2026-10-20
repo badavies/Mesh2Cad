@@ -7,6 +7,7 @@ m2c_add_library(core
         MeshTopology.cpp
         Primitive.cpp
         QuadLayout.cpp
+        Raster.cpp
         Sketch.cpp
         Solid.cpp
         SpatialIndex.cpp

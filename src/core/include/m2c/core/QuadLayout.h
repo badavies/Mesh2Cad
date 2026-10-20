@@ -104,4 +104,8 @@ struct CageStats {
 /// outward.
 [[nodiscard]] double signedVolume(const QuadLayout& cage);
 
+/// Each edge of the faces once, as pairs of vertex indices (a closed cage has each edge in two
+/// faces, once in each direction; the lower-to-higher one is kept).
+[[nodiscard]] std::vector<std::uint32_t> cageEdges(const QuadLayout& cage);
+
 } // namespace m2c

@@ -4,6 +4,7 @@
 // sketches"): closed loops of lines, arcs and splines. Sketches are fitted, not constrained.
 
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string_view>
 #include <vector>
@@ -105,5 +106,15 @@ struct Sketch {
     SketchPlane plane;
     std::vector<SketchLoop> loops;
 };
+
+/// A sketch's curves as world-space line segments for drawing.
+struct SketchLines {
+    std::vector<Vec3d> points;
+    std::vector<std::uint32_t> segments; ///< Pairs of point indices.
+};
+
+/// The curves as polylines: lines and splines through their points, arcs in steps of at most
+/// 5 degrees.
+[[nodiscard]] SketchLines sketchLines(const Sketch& sketch);
 
 } // namespace m2c

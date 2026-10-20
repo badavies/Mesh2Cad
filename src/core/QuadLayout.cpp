@@ -212,4 +212,17 @@ double signedVolume(const QuadLayout& cage) {
     return volume / 6.0;
 }
 
+std::vector<std::uint32_t> cageEdges(const QuadLayout& cage) {
+    std::vector<std::uint32_t> edges;
+    for (std::size_t f = 0; f + 1 < cage.faceStarts().size(); ++f) {
+        const std::uint32_t begin = cage.faceStarts()[f], end = cage.faceStarts()[f + 1];
+        for (std::uint32_t k = begin; k < end; ++k) {
+            const std::uint32_t a = cage.faceVertices()[k];
+            if (const std::uint32_t b = cage.faceVertices()[k + 1 < end ? k + 1 : begin]; a < b)
+                edges.insert(edges.end(), {a, b});
+        }
+    }
+    return edges;
+}
+
 } // namespace m2c
