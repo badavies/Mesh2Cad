@@ -547,6 +547,18 @@ Write a solid to a STEP AP242 file in millimetres, then read the file back and c
 | `path` | string | yes | The .step or .stp file to write. |
 | `product_name` | string |  | Product name in the file; the object name if omitted. |
 
+### `solid.extrude`
+
+Extrude a sketch's profile (its largest loop less the loops inside it) along the sketch plane's normal into a solid. one_sided goes distance_mm along the normal (against it when negative), symmetric distance_mm in all, half each way, and two_sided distance_mm along the normal and back_distance_mm against it. Lines and arcs stay exact. Adds a solid object; fails for an open profile. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `back_distance_mm` | number |  | two_sided: the distance against the normal. Default `0`. |
+| `distance_mm` | number | yes |  |
+| `extent` | `one_sided` \| `symmetric` \| `two_sided` |  | Default `"one_sided"`. |
+| `id` | integer | yes | The sketch. |
+| `name` | string |  |  |
+
 ### `solid.info`
 
 Describe a solid: face, edge and shell counts, whether it is closed and valid, its volume, area and bounds. *(read-only)*
@@ -554,6 +566,19 @@ Describe a solid: face, edge and shell counts, whether it is closed and valid, i
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes | The solid. |
+
+### `solid.revolve`
+
+Revolve a sketch's profile (its largest loop less the loops inside it) by angle_deg about an axis in the sketch plane into a solid: the plane's u or v axis through its origin, or axis_point and axis_direction in sketch coordinates. Adds a solid object; fails for an open profile or one that crosses the axis. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `angle_deg` | number |  | Default `360`. |
+| `axis` | `u` \| `v` |  | The sketch plane's u or v axis. |
+| `axis_direction` | array |  |  |
+| `axis_point` | array |  |  |
+| `id` | integer | yes | The sketch. |
+| `name` | string |  |  |
 
 ## surface
 

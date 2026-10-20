@@ -773,3 +773,71 @@ TEST_CASE("sketch.section adds a sketch of a mesh cut by a plane", "[commands][s
     CHECK_FALSE(s.tryRun("sketch.section", {{"id", can}, {"plane_id", wall["id"]}}).has_value());
     CHECK(s.document.objects().size() == made + 1); // just the wall's fit
 }
+
+TEST_CASE("solid.extrude and solid.revolve make solids from a sketch", "[commands][sketch]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId box = s.import(dir, makeBox(20, 10, 6, 4), "box");
+    const Json level = s.run("sketch.section", {{"id", box}, {"plane", "xy"}, {"offset_mm", 2.3}});
+    const ObjectId sketch = level["id"].get<ObjectId>();
+
+    // The 20 x 10 cut extruded 5 mm up, 4 mm about the plane, and 3 mm up with 1 mm down.
+    const Json up = s.run("solid.extrude", {{"id", sketch}, {"distance_mm", 5}});
+    CHECK(up["summary"]["valid"] == true);
+    CHECK(up["summary"]["solid_count"] == 1);
+    CHECK_THAT(up["summary"]["volume_mm3"].get<double>(), Catch::Matchers::WithinRel(1000.0, 1e-9));
+    const auto solid = s.document.find(up["id"].get<ObjectId>());
+    REQUIRE(solid.has_value());
+    CHECK(std::string(solid->kind()) == "solid");
+    CHECK(solid->name == "Section extrusion");
+    CHECK(solid->provenance.inputs == std::vector<ObjectId>{sketch});
+    CHECK(s.document.undoHistory().back().label == "solid.extrude");
+    const Json down = s.run("solid.extrude", {{"id", sketch}, {"distance_mm", -5}});
+    CHECK_THAT(down["summary"]["bounds"]["min"][2].get<double>(),
+               Catch::Matchers::WithinAbs(-2.7, 1e-7));
+    const Json mid =
+        s.run("solid.extrude", {{"id", sketch}, {"distance_mm", 4}, {"extent", "symmetric"}});
+    CHECK_THAT(mid["summary"]["bounds"]["min"][2].get<double>(),
+               Catch::Matchers::WithinAbs(0.3, 1e-7));
+    CHECK_THAT(mid["summary"]["volume_mm3"].get<double>(), Catch::Matchers::WithinRel(800.0, 1e-9));
+    const Json both = s.run(
+        "solid.extrude",
+        {{"id", sketch}, {"distance_mm", 3}, {"extent", "two_sided"}, {"back_distance_mm", 1}});
+    CHECK_THAT(both["summary"]["bounds"]["max"][2].get<double>(),
+               Catch::Matchers::WithinAbs(5.3, 1e-7));
+    CHECK_THAT(both["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(800.0, 1e-9));
+
+    // The zx cut at y = 5 is z in [0, 6] by x in [0, 20]: about a line 5 mm below it, a tube.
+    const Json side = s.run("sketch.section", {{"id", box}, {"plane", "zx"}, {"offset_mm", 5}});
+    const ObjectId profile = side["id"].get<ObjectId>();
+    const Json tube = s.run(
+        "solid.revolve",
+        {{"id", profile}, {"axis_point", {0, -5}}, {"axis_direction", {1, 0}}, {"name", "Tube"}});
+    CHECK(tube["summary"]["valid"] == true);
+    CHECK_THAT(tube["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(std::numbers::pi * (625.0 - 25.0) * 6.0, 1e-9));
+    CHECK(s.document.find(tube["id"].get<ObjectId>())->name == "Tube");
+    const Json half = s.run(
+        "solid.revolve",
+        {{"id", profile}, {"axis_point", {0, -5}}, {"axis_direction", {1, 0}}, {"angle_deg", 180}});
+    CHECK_THAT(half["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(std::numbers::pi * (625.0 - 25.0) * 3.0, 1e-9));
+    // About the u axis, which runs along an edge of the profile: a full cylinder of radius 20.
+    const Json disc = s.run("solid.revolve", {{"id", profile}, {"axis", "u"}});
+    CHECK_THAT(disc["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(std::numbers::pi * 400.0 * 6.0, 1e-9));
+
+    // Each failure adds nothing.
+    const std::size_t made = s.document.objects().size();
+    CHECK_FALSE(s.tryRun("solid.extrude", {{"id", box}, {"distance_mm", 5}}).has_value());
+    CHECK_FALSE(s.tryRun("solid.extrude", {{"id", sketch}, {"distance_mm", 0}}).has_value());
+    CHECK_FALSE(s.tryRun("solid.extrude", {{"id", sketch}}).has_value());
+    CHECK_FALSE(s.tryRun("solid.revolve", {{"id", profile}, {"axis", "v"}, {"axis_point", {0, 0}}})
+                    .has_value());
+    CHECK_FALSE(s.tryRun("solid.revolve", {{"id", profile}}).has_value());
+    CHECK_FALSE(s.tryRun("solid.revolve",
+                         {{"id", profile}, {"axis_point", {0, 10}}, {"axis_direction", {1, 0}}})
+                    .has_value());
+    CHECK(s.document.objects().size() == made);
+}

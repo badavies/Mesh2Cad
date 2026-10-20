@@ -4,6 +4,7 @@ m2c_add_library(occt
     SOURCES
         Boolean.cpp
         Brep.cpp
+        Profile.cpp
         Surface.cpp
         Trim.cpp
     DEPS
