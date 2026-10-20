@@ -499,6 +499,16 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});
     CHECK(form.findChild<QComboBox*>("plane_id")->currentText() == "None");
     CHECK_FALSE(form.params()->contains("plane_id"));
+
+    // File choosers offer the types the command reads or writes.
+    const auto pathOf = [&](const char* name) {
+        return registry.find(name)->paramsSchema["properties"]["path"];
+    };
+    CHECK(fileFilter(pathOf("solid.export")) == "Supported files (*.step *.stp);;All files (*)");
+    CHECK(fileFilter(pathOf("mesh.import")) ==
+          "Supported files (*.stl *.obj *.ply);;All files (*)");
+    CHECK(fileFilter(pathOf("project.open")) == "Supported files (*.m2c);;All files (*)");
+    CHECK(fileFilter(Json{{"type", "string"}}) == "All files (*)");
 }
 
 // The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or

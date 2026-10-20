@@ -46,6 +46,10 @@ def main() -> int:
                     if "x-object" in p:
                         kinds = p["x-object"] if isinstance(p["x-object"], list) else [p["x-object"]]
                         ptype = " or ".join("object" if k == "any" else k for k in kinds) + " id"
+                    if "x-file" in p:
+                        f = p["x-file"]
+                        types = ", ".join(f"`.{t}`" for t in f.get("types", []))
+                        ptype = ("file to write" if f.get("save") else "file to read") + f" ({types})"
                     notes = p.get("description", "")
                     if "default" in p:
                         notes = (notes + " " if notes else "") + f"Default `{json.dumps(p['default'])}`."

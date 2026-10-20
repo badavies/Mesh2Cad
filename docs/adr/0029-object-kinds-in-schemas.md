@@ -17,3 +17,6 @@ Each parameter that names an object carries `"x-object"` in its schema: one kind
 - Agents see the same kinds in `commands.list` and the MCP tool schemas. `x-` keywords are ignored by JSON Schema validators.
 - A new object kind means updating the test's list of kinds.
 - Handlers still check the kind themselves. The annotation describes the parameter; it is not enforced by the dispatcher.
+
+## Addendum: file paths (2026-10-20)
+The same applies to files. A path parameter carries `"x-file": {"save": true|false, "types": [...]}`, and the app's file chooser takes its filter and whether it opens or saves from it, instead of guessing from the command name. Before this, the chooser offered meshes for every command except projects, so `solid.export` defaulted to `.stl` and was refused. A command test requires it on every `path` and `*_path` parameter.

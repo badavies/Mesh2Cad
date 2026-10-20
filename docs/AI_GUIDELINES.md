@@ -46,7 +46,7 @@ AI coding tools drift in predictable ways: they widen scope, add dependencies an
 ## Adding a command (checklist)
 
 1. Implement the logic in the right layer (`pipeline`, `io`, `core`), not in the command handler.
-2. Add the handler to `src/commands/` with a summary, a parameter schema and `mutatesDocument`.
+2. Add the handler to `src/commands/` with a summary, a parameter schema and `mutatesDocument`. In the schema, an object id names the kinds it accepts (`x-object`) and a file path its types and direction (`x-file`, `{"save": true, "types": ["step", "stp"]}`); a test fails on a path without it (ADR-029).
 3. Register it in `registerBuiltinCommands` (or the registration function of its module).
 4. Add a test in `tests/commands/` that runs it through the registry, plus unit or stage tests for the logic.
 5. Do not touch `app/`, `cli/`, `rpc/` or `mcp/`: they pick up the command from the registry.

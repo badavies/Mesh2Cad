@@ -496,7 +496,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-026 | Open CASCADE and OpenSubdiv from vcpkg or the system, else built from source at configure time | Accepted | Builds without vcpkg, as ADR-020 requires; see `docs/adr/0026-occt-opensubdiv-source-fallback.md` |
 | ADR-027 | vcpkg's Open CASCADE 8.0.1 carries a patch that aligns `NCollection_IncAllocator` | Superseded by ADR-028 | 8.0.1 misaligns BRepMesh's faces, which stops the sanitizer job; see `docs/adr/0027-occt-incallocator-alignment-patch.md` |
 | ADR-028 | The sanitizer build drops alignment reports inside Open CASCADE's headers | Accepted | OCCT 8.0.1 misaligns BRepMesh's shapes; every other report still fails; see `docs/adr/0028-occt-alignment-suppression.md` |
-| ADR-029 | Command schemas name the object kinds an id accepts (`x-object`) | Accepted | The app's object drop-downs and the command docs come from the schema; see `docs/adr/0029-object-kinds-in-schemas.md` |
+| ADR-029 | Command schemas name the object kinds an id accepts (`x-object`) and the file types a path takes (`x-file`) | Accepted | The app's object drop-downs, its file choosers' filters and the command docs come from the schema; see `docs/adr/0029-object-kinds-in-schemas.md` |
 | ADR-030 | Agents see the document through a software-rendered PNG (`view.render`) | Accepted | A rasteriser in `core` and miniz PNG; the MCP server returns the picture as an image; see `docs/adr/0030-software-render-for-agents.md` |
 
 ## 15. Review log

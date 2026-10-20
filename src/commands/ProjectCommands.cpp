@@ -28,7 +28,7 @@ void addProjectCommands(std::vector<Command>& out) {
         "project.save",
         "Save every object (meshes, selections, measurements, alignments, quad layouts, solids, "
         "deviations, primitives and sketches) to a project file (.m2c).",
-        R"({"type":"object","properties":{"path":{"type":"string"}},
+        R"({"type":"object","properties":{"path":{"type":"string","x-file":{"save":true,"types":["m2c"]}}},
             "required":["path"],"additionalProperties":false})",
         false,
         [](const CommandContext& context, const Json& params) -> Result<Json> {
@@ -71,7 +71,7 @@ void addProjectCommands(std::vector<Command>& out) {
     Command open = makeCommand(
         "project.open",
         "Open a project file, replacing the current document. Clears the undo history.",
-        R"({"type":"object","properties":{"path":{"type":"string"}},
+        R"({"type":"object","properties":{"path":{"type":"string","x-file":{"save":false,"types":["m2c"]}}},
             "required":["path"],"additionalProperties":false})",
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {

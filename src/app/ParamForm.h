@@ -17,12 +17,16 @@ class QPushButton;
 
 namespace m2c::app {
 
+/// The file chooser filter for a path parameter, from the file types its schema's "x-file"
+/// names: "Supported files (*.step *.stp);;All files (*)".
+[[nodiscard]] QString fileFilter(const Json& property);
+
 /// A form for one command, generated from its JSON schema, so every command gets a UI without
 /// hand-written dialogs and the UI can never offer something an agent cannot do.
 ///
 /// Empty fields are left out of the parameters, so the command's own defaults apply (shown as
 /// placeholder text). A parameter whose schema has "x-object" is a drop-down of the document's
-/// objects of those kinds.
+/// objects of those kinds, and one with "x-file" has a file chooser for those types.
 class ParamForm : public QWidget {
     Q_OBJECT
 

@@ -101,7 +101,7 @@ void addViewCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "path":{"type":"string","description":"PNG file to write."},
+                "path":{"type":"string","x-file":{"save":true,"types":["png"]},"description":"PNG file to write."},
                 "view":{"type":"string","enum":["iso","front","back","left","right","top","bottom"],"default":"iso"},
                 "direction":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,"description":"From the part towards the camera, instead of a standard view."},
                 "width":{"type":"integer","minimum":16,"maximum":4096,"default":800},

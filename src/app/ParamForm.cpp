@@ -29,6 +29,19 @@
 
 namespace m2c::app {
 
+QString fileFilter(const Json& property) {
+    QStringList patterns;
+    const Json file = property.value("x-file", Json::object());
+    for (const Json& type : file.value("types", Json::array())) {
+        if (type.is_string())
+            patterns << QStringLiteral("*.") + QString::fromStdString(type.get<std::string>());
+    }
+    const QString all = QObject::tr("All files (*)");
+    if (patterns.isEmpty()) return all;
+    return QObject::tr("Supported files (%1)").arg(patterns.join(QLatin1Char(' '))) +
+           QStringLiteral(";;") + all;
+}
+
 namespace {
 
 QString label(const std::string& key) {
@@ -169,12 +182,9 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
                 h->setContentsMargins(0, 0, 0, 0);
                 auto* browse = new QToolButton;
                 browse->setText(QStringLiteral("…"));
-                const bool saving = command->name.find("export") != std::string::npos ||
-                                    command->name.find("save") != std::string::npos;
-                const bool project = command->name.starts_with("project.");
-                connect(browse, &QToolButton::clicked, this, [this, edit, saving, project] {
-                    const QString filter =
-                        project ? tr("Mesh2Cad project (*.m2c)") : tr("Meshes (*.stl *.obj *.ply)");
+                const bool saving = prop.value("x-file", Json::object()).value("save", false);
+                const QString filter = fileFilter(prop);
+                connect(browse, &QToolButton::clicked, this, [this, edit, saving, filter] {
                     const QString file =
                         saving
                             ? QFileDialog::getSaveFileName(this, tr("Save"), edit->text(), filter)

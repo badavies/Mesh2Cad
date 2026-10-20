@@ -76,6 +76,30 @@ TEST_CASE("Every object id parameter names the kinds it accepts", "[commands]") 
     CHECK(annotated >= 50);
 }
 
+TEST_CASE("Every file path parameter names its file types", "[commands]") {
+    // The app's file chooser takes its filter, and whether it opens or saves, from x-file.
+    Session s;
+    std::size_t annotated = 0;
+    for (const Command* c : s.registry.list()) {
+        const Json properties = c->paramsSchema.value("properties", Json::object());
+        for (const auto& [key, prop] : properties.items()) {
+            CAPTURE(c->name, key);
+            if (key == "path" || key.ends_with("_path")) REQUIRE(prop.contains("x-file"));
+            if (!prop.contains("x-file")) continue;
+            ++annotated;
+            const Json& x = prop["x-file"];
+            CHECK(x.value("save", Json()).is_boolean());
+            REQUIRE(x.contains("types"));
+            CHECK_FALSE(x["types"].empty());
+            for (const Json& type : x["types"]) {
+                CHECK(type.get<std::string>().find_first_not_of(
+                          "abcdefghijklmnopqrstuvwxyz0123456789") == std::string::npos);
+            }
+        }
+    }
+    CHECK(annotated == 7);
+}
+
 TEST_CASE("Registry rejects bad registrations", "[commands]") {
     Session s;
     const auto handler = [](CommandContext&, const Json&) -> Result<Json> {
