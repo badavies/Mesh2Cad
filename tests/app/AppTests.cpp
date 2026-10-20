@@ -8,9 +8,11 @@
 #include <QElapsedTimer>
 #include <QLineEdit>
 #include <QMouseEvent>
+#include <QStringList>
 #include <QSurfaceFormat>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -234,6 +236,10 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         const auto info = readSessionFile(defaultSessionFile());
         REQUIRE(info.has_value());
         const ObjectId meshId = engine.snapshot()->objects.front().id;
+        QStringList log;
+        QObject::connect(
+            &engine, &Engine::logLine, [&](const QString& line, bool) { log.append(line); });
+        const std::string exported = (dir.path() / "agent.stl").string();
         std::atomic<bool> finished{false};
         Json listed;
         Json rejected;
@@ -256,6 +262,7 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
                 call(2, "rpc.auth", {{"token", info->token}, {"source", "mcp"}});
                 call(3, "select.all", {{"id", meshId}});
                 listed = call(4, "doc.list", Json::object());
+                call(5, "mesh.export", {{"id", meshId}, {"path", exported}});
             }
             finished = true;
         });
@@ -266,6 +273,17 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         CHECK(listed["result"]["objects"].size() == 2);
         REQUIRE(waitFor([&] { return countKind(*engine.snapshot(), "selection") == 1; }));
         CHECK(engine.snapshot()->undo.back().source == "mcp");
+        // The export changes nothing in the document, but the person still sees the file it wrote;
+        // the read-only doc.list stays out of the log.
+        const QString writeLine = QStringLiteral("[mcp] mesh.export  #%1").arg(meshId);
+        REQUIRE(waitFor([&] {
+            return std::ranges::any_of(log,
+                                       [&](const QString& l) { return l.startsWith(writeLine); });
+        }));
+        CHECK(std::ranges::any_of(
+            log, [&](const QString& l) { return l.endsWith(QString::fromStdString(exported)); }));
+        CHECK_FALSE(std::ranges::any_of(
+            log, [](const QString& l) { return l.startsWith("[mcp] doc.list"); }));
     }
 }
 

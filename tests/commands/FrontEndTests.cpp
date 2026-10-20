@@ -124,6 +124,10 @@ TEST_CASE("MCP server lists commands as tools and calls them", "[mcp]") {
             CHECK(t["inputSchema"]["required"][0] == "path");
         }
         if (name == "doc_list") CHECK(t["annotations"]["readOnlyHint"] == true);
+        if (name == "solid_export") { // leaves the document alone but writes a file
+            CHECK(t["annotations"]["readOnlyHint"] == false);
+            CHECK(t["annotations"]["destructiveHint"] == true);
+        }
     }
     CHECK(sawImport);
 

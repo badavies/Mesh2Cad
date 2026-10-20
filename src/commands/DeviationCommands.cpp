@@ -91,7 +91,7 @@ void addDeviationCommands(std::vector<Command>& out) {
             return Json{{"id", *id}, {"stats", toJson(stats)}};
         }));
 
-    out.push_back(makeCommand(
+    Command report = makeCommand(
         "deviation.report",
         "Write a deviation's statistics and a histogram of its distances to a CSV file.",
         R"({
@@ -113,7 +113,9 @@ void addDeviationCommands(std::vector<Command>& out) {
             const DeviationField& field = object->deviation()->field;
             M2C_TRY(written, writeDeviationReport(field, static_cast<std::size_t>(*bins), file));
             return Json{{"id", object->id}, {"path", *path}, {"stats", toJson(field.stats())}};
-        }));
+        });
+    report.writesFiles = true;
+    out.push_back(std::move(report));
 }
 
 } // namespace m2c::cmd

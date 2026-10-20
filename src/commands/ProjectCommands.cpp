@@ -24,7 +24,7 @@
 namespace m2c::cmd {
 
 void addProjectCommands(std::vector<Command>& out) {
-    out.push_back(makeCommand(
+    Command save = makeCommand(
         "project.save",
         "Save every object (meshes, selections, measurements, alignments, quad layouts, solids, "
         "deviations, primitives and sketches) to a project file (.m2c).",
@@ -66,7 +66,9 @@ void addProjectCommands(std::vector<Command>& out) {
             }
             M2C_TRY(written, writeProject(project, std::filesystem::path(*path)));
             return Json{{"path", *path}, {"object_count", project.objects.size()}};
-        }));
+        });
+    save.writesFiles = true;
+    out.push_back(std::move(save));
 
     Command open = makeCommand(
         "project.open",

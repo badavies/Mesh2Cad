@@ -60,6 +60,10 @@ QString summarize(const std::string& source, const std::string& command, const R
         if (j.contains("distance_mm") && j["distance_mm"].is_number()) {
             line += QStringLiteral("  %1 mm").arg(j["distance_mm"].get<double>(), 0, 'f', 3);
         }
+        if (j.contains("path") && j["path"].is_string()) {
+            line +=
+                QStringLiteral("  -> %1").arg(QString::fromStdString(j["path"].get<std::string>()));
+        }
     }
     return line;
 }
@@ -190,7 +194,7 @@ void Engine::run(const QString& command, const Json& params, Done done) {
                             .count();
         publish(); // the UI sees the new document before the callback runs
         const Command* c = registry_.find(name);
-        const bool quiet = result && c != nullptr && !c->mutatesDocument;
+        const bool quiet = result && c != nullptr && !c->mutatesDocument && !c->writesFiles;
         QString line = summarize("ui", name, result);
         if (ms >= 100)
             line += QStringLiteral("  (%1 s)").arg(static_cast<double>(ms) / 1000.0, 0, 'f', 1);
@@ -274,7 +278,8 @@ void Engine::onReadyRead(int connectionId) {
                 // A notification has no reply; the parse then gives a discarded value.
                 const Json response = Json::parse(reply, nullptr, false);
                 failed = response.is_object() && response.contains("error");
-                if (command != nullptr && (command->mutatesDocument || failed)) {
+                if (command != nullptr &&
+                    (command->mutatesDocument || command->writesFiles || failed)) {
                     const Result<Json> r =
                         failed
                             ? Result<Json>(

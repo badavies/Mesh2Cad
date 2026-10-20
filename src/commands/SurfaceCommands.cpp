@@ -316,7 +316,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                         {"summary", toJson(object->solid()->solid.summary())}};
         }));
 
-    out.push_back(makeCommand(
+    Command exportStep = makeCommand(
         "solid.export",
         "Write a solid to a STEP AP242 file in millimetres, then read the file back and check it "
         "holds one valid closed solid with the same volume (within 0.1%). Fails, writing "
@@ -356,7 +356,9 @@ void addSurfaceCommands(std::vector<Command>& out) {
                           {"face_count", reread->faceCount},
                           {"volume_mm3", reread->volumeMm3},
                           {"volume_error", error}}}};
-        }));
+        });
+    exportStep.writesFiles = true;
+    out.push_back(std::move(exportStep));
 
     out.push_back(makeCommand(
         "solid.extrude",

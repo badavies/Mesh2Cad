@@ -84,19 +84,21 @@ Result<Json> McpServer::listTools() {
     for (const Json& c : (*reply)["result"]["commands"]) {
         const std::string command = c["name"].get<std::string>();
         const bool mutates = c.value("mutates_document", false);
+        // A file it writes may replace one that was there, so it is neither read-only nor safe.
+        const bool writes = c.value("writes_files", false);
         const std::string name = toolName(command);
         commandForTool_[name] = command;
-        tools.push_back(
-            Json{{"name", name},
-                 {"title", command},
-                 {"description",
-                  c.value("summary", "") +
-                      (mutates ? " Changes the document (undoable with doc_undo)." : "")},
-                 {"inputSchema", c["params_schema"]},
-                 {"annotations",
-                  {{"readOnlyHint", !mutates},
-                   {"destructiveHint", mutates},
-                   {"openWorldHint", false}}}});
+        std::string description = c.value("summary", "");
+        if (mutates) description += " Changes the document (undoable with doc_undo).";
+        if (writes) description += " Writes the file at path, replacing any file already there.";
+        tools.push_back(Json{{"name", name},
+                             {"title", command},
+                             {"description", description},
+                             {"inputSchema", c["params_schema"]},
+                             {"annotations",
+                              {{"readOnlyHint", !mutates && !writes},
+                               {"destructiveHint", mutates || writes},
+                               {"openWorldHint", false}}}});
     }
     return Json{{"tools", std::move(tools)}};
 }
