@@ -33,6 +33,9 @@ Must not depend on: `adapters`, `app`, `cli`, `rpc`, `mcp`, Qt, and kernel libra
   through `CommandRegistry::execute`; regenerate `docs/COMMANDS.md` with
   `scripts/gen_commands.py`. Front ends pick it up from the registry with no change.
 - Names are dotted and lower-case (`mesh.repair`). JSON keys are snake_case, lengths in mm.
+- A parameter that names an object carries `"x-object"`: the kind it accepts (`"mesh"`,
+  `"selection"`, `"primitive"`, ...), an array of kinds, or `"any"`. The app builds its object
+  drop-downs from it and `docs/COMMANDS.md` shows it; a test checks every `id` and `*_id` has one.
 - The schema is published by `commands.list` but not enforced by the dispatcher. Handlers
   validate their own parameters with the `detail/Params.h` helpers and return errors; they do
   not throw on bad input.

@@ -43,6 +43,9 @@ def main() -> int:
                     ptype = p.get("type", "")
                     if "enum" in p:
                         ptype = " \\| ".join(f"`{v}`" for v in p["enum"])
+                    if "x-object" in p:
+                        kinds = p["x-object"] if isinstance(p["x-object"], list) else [p["x-object"]]
+                        ptype = " or ".join("object" if k == "any" else k for k in kinds) + " id"
                     notes = p.get("description", "")
                     if "default" in p:
                         notes = (notes + " " if notes else "") + f"Default `{json.dumps(p['default'])}`."

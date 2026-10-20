@@ -36,7 +36,7 @@ Json shellJson(const ShellInfo& s) {
 constexpr auto kSmallSchema = R"({
     "type":"object",
     "properties":{
-        "id":{"type":"integer","minimum":0},
+        "id":{"type":"integer","x-object":"mesh","minimum":0},
         "min_faces":{"type":"integer","minimum":0,"default":0,"description":"Shells with fewer faces count as small."},
         "min_area_mm2":{"type":"number","minimum":0,"default":0,"description":"Shells with less area count as small."}
     },
@@ -49,7 +49,7 @@ void addShellCommands(std::vector<Command>& out) {
         "shells.detect",
         "List the unconnected parts (shells) of a mesh with face count, area and bounds; the "
         "largest is marked as the main part.",
-        R"({"type":"object","properties":{"id":{"type":"integer","minimum":0}},
+        R"({"type":"object","properties":{"id":{"type":"integer","x-object":"mesh","minimum":0}},
             "required":["id"],"additionalProperties":false})",
         false,
         [](const CommandContext& context, const Json& params) -> Result<Json> {
@@ -66,7 +66,7 @@ void addShellCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "shells":{"type":"array","items":{"type":"integer","minimum":0},"description":"Shell indices from shells.detect."}
             },
             "required":["id","shells"],"additionalProperties":false})",
@@ -128,7 +128,7 @@ void addShellCommands(std::vector<Command>& out) {
     out.push_back(makeCommand("shells.keep",
                               "Delete every shell except the main (largest) part.",
                               R"({
-            "type":"object","properties":{"id":{"type":"integer","minimum":0}},
+            "type":"object","properties":{"id":{"type":"integer","x-object":"mesh","minimum":0}},
             "required":["id"],"additionalProperties":false})",
                               true,
                               [](CommandContext& context, const Json& params) -> Result<Json> {
@@ -151,7 +151,7 @@ void addShellCommands(std::vector<Command>& out) {
         "shells.split",
         "Split every shell except the main part into its own mesh object.",
         R"({
-            "type":"object","properties":{"id":{"type":"integer","minimum":0}},
+            "type":"object","properties":{"id":{"type":"integer","x-object":"mesh","minimum":0}},
             "required":["id"],"additionalProperties":false})",
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {

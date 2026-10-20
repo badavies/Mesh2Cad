@@ -37,6 +37,7 @@
 #include <Qt>
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -241,6 +242,7 @@ void MainWindow::buildDocks() {
 
     form_ = new ParamForm;
     connect(form_, &ParamForm::runRequested, this, &MainWindow::runForm);
+    connect(form_, &ParamForm::objectChosen, this, &MainWindow::chooseObject);
     auto* scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setWidget(form_);
@@ -460,8 +462,9 @@ void MainWindow::onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot) 
             break;
         }
     }
-    viewport_->setCurrent(currentMesh(), currentSelection());
+    showCurrent();
     refreshTree();
+    form_->setObjects(snapshot_);
 
     history_->clear();
     for (const auto& [label, source] : snapshot_->undo) {
@@ -535,6 +538,10 @@ void MainWindow::refreshTree() {
         } else if (const DeviationData* d = o.deviation()) {
             item = makeItem(o, tr("RMS %1 mm").arg(d->field.stats().rmsMm, 0, 'f', 3));
             parent = d->meshId;
+        } else if (const SketchData* k = o.sketch()) {
+            const auto loops = static_cast<int>(k->sketch.loops.size());
+            item = makeItem(o, loops == 1 ? tr("1 loop") : tr("%1 loops").arg(loops));
+            parent = o.provenance.inputs.empty() ? 0 : o.provenance.inputs.front();
         } else {
             continue;
         }
@@ -560,7 +567,17 @@ void MainWindow::onTreeSelection() {
     if (updatingTree_) return;
     const QList<QTreeWidgetItem*> items = tree_->selectedItems();
     selected_ = items.isEmpty() ? 0 : items.front()->data(0, kIdRole).value<ObjectId>();
-    viewport_->setCurrent(currentMesh(), currentSelection());
+    showCurrent();
+}
+
+void MainWindow::showCurrent() const {
+    viewport_->setCurrent(currentMesh(), currentSelection(), selected_);
+}
+
+void MainWindow::chooseObject(const ObjectId id) {
+    selected_ = id;
+    refreshTree();
+    showCurrent();
 }
 
 ObjectId MainWindow::currentMesh() const {
@@ -612,24 +629,27 @@ Json MainWindow::formDefaults(const Command& command) const {
         }
         return 0;
     };
-    // Commands whose "id" is not a mesh.
-    static const std::map<std::string, std::string> kIdKind{{"surface.build", "quad_layout"},
-                                                            {"solid.info", "solid"},
-                                                            {"solid.export", "solid"},
-                                                            {"deviation.report", "deviation"}};
-    if (properties.contains("id")) {
-        const auto kind = kIdKind.find(command.name);
-        const ObjectId id = kind != kIdKind.end()                 ? pick(kind->second)
-                            : command.name.starts_with("object.") ? selected_
-                                                                  : currentMesh();
-        if (id != 0) values["id"] = id;
-    }
-    if (properties.contains("mesh_id") && currentMesh() != 0) values["mesh_id"] = currentMesh();
-    if (properties.contains("reference_id")) {
-        if (const ObjectId solid = pick("solid")) values["reference_id"] = solid;
-    }
-    if (properties.contains("selection_id") && isRequired("selection_id") && currentSelection()) {
-        values["selection_id"] = currentSelection();
+    // Object fields the command needs, from the kinds in their schema: a mesh is the current one,
+    // a selection only the current one, anything else the selected or newest of its kind.
+    for (const auto& [key, prop] : properties.items()) {
+        if (!prop.contains("x-object") || !(isRequired(key) || key == "id" || key == "mesh_id"))
+            continue;
+        const Json& x = prop["x-object"];
+        const Json kinds = x.is_array() ? x : Json::array({x});
+        ObjectId id = 0;
+        for (std::size_t i = 0; i < kinds.size() && id == 0; ++i) {
+            const std::string kind = kinds[i].get<std::string>();
+            if (kind == "any") {
+                id = selected_;
+            } else if (kind == "selection") {
+                id = currentSelection();
+            } else if (kind == "mesh") {
+                id = i == 0 ? currentMesh() : 0; // a second-choice mesh would be the current one
+            } else {
+                id = pick(kind);
+            }
+        }
+        if (id != 0) values[key] = id;
     }
     if (properties.contains("path") && command.name == "project.save" && !projectPath_.isEmpty()) {
         values["path"] = projectPath_.toStdString();
@@ -690,7 +710,7 @@ void MainWindow::adoptSelection(const Result<Json>& result) {
     if (result && result->is_object() && result->contains("selection_id")) {
         selected_ = (*result)["selection_id"].get<ObjectId>();
         refreshTree();
-        viewport_->setCurrent(currentMesh(), currentSelection());
+        showCurrent();
     }
 }
 

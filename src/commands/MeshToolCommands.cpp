@@ -46,7 +46,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "remove_self_intersections":{"type":"boolean","default":false,
                     "description":"Also remove self-intersections: locally within a shell, and by uniting closed shells that pass through each other (slow on large scans)."}
             },
@@ -73,7 +73,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "max_perimeter_mm":{"type":"number","minimum":0,"default":0,"description":"Leave holes with a longer boundary open; 0 = no limit."},
                 "max_edges":{"type":"integer","minimum":0,"default":0,"description":"Leave holes with more boundary edges open; 0 = no limit."},
                 "fair":{"type":"boolean","default":true,"description":"Refine and fair the patch to match the surrounding curvature. Where the surface meets the hole at more than 45 degrees (an open end) the patch stays flat instead of doming."}
@@ -107,8 +107,8 @@ void addMeshToolCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
-                "selection_id":{"type":"integer","minimum":0,"description":"Smooth only these faces."},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
+                "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"Smooth only these faces."},
                 "iterations":{"type":"integer","minimum":1,"maximum":1000,"default":10},
                 "strength":{"type":"number","exclusiveMinimum":0,"maximum":1,"default":0.5},
                 "preserve_sharp_edges":{"type":"boolean","default":false},
@@ -145,7 +145,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "target_faces":{"type":"integer","minimum":1,"description":"Target triangle count."},
                 "target_ratio":{"type":"number","exclusiveMinimum":0,"maximum":1,"description":"Target as a fraction of the current count (used when target_faces is not given). Default 0.5 unless max_error_mm is given."},
                 "max_error_mm":{"type":"number","exclusiveMinimum":0,"description":"Stop before the surface moves further than this from the original. With no target given, simplifies as far as this allows."},
@@ -182,7 +182,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "target_edge_mm":{"type":"number","exclusiveMinimum":0},
                 "iterations":{"type":"integer","minimum":1,"maximum":100,"default":3},
                 "sharp_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":60,"description":"Keep edges sharper than this; 0 keeps none."}
@@ -213,7 +213,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "alpha_mm":{"type":"number","exclusiveMinimum":0,"description":"Probe size. Defaults to 1/100 of the bounding-box diagonal."},
                 "offset_mm":{"type":"number","exclusiveMinimum":0,"description":"Distance from the input. Defaults to alpha_mm / 30."},
                 "name":{"type":"string"}
@@ -243,7 +243,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
         "Delete the faces of a selection from its mesh.",
         R"({
             "type":"object",
-            "properties":{"selection_id":{"type":"integer","minimum":0}},
+            "properties":{"selection_id":{"type":"integer","x-object":"selection","minimum":0}},
             "required":["selection_id"],"additionalProperties":false})",
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {
@@ -260,7 +260,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
     out.push_back(makeCommand("mesh.flip",
                               "Reverse the orientation of every face of a mesh.",
                               R"({
-            "type":"object","properties":{"id":{"type":"integer","minimum":0}},
+            "type":"object","properties":{"id":{"type":"integer","x-object":"mesh","minimum":0}},
             "required":["id"],"additionalProperties":false})",
                               true,
                               [](CommandContext& context, const Json& params) -> Result<Json> {
@@ -279,7 +279,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             "properties":{
                 "origin":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},
                 "direction":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},
-                "id":{"type":"integer","minimum":0,"description":"Only this mesh."}
+                "id":{"type":"integer","x-object":"mesh","minimum":0,"description":"Only this mesh."}
             },
             "required":["origin","direction"],"additionalProperties":false})",
         false,

@@ -14,9 +14,11 @@
 #include <QStringList>
 #include <QToolButton>
 #include <QVBoxLayout>
+#include <QVariant>
 #include <QWidget>
 #include <Qt>
 #include <algorithm>
+#include <ranges>
 #include <string>
 #include <vector>
 
@@ -62,7 +64,6 @@ ParamForm::ParamForm(QWidget* parent) : QWidget(parent) {
     title_->setFont(bold);
     summary_ = new QLabel;
     summary_->setWordWrap(true);
-    summary_->setStyleSheet("color: palette(mid);");
     fieldsHost_ = new QWidget;
     fields_ = new QFormLayout(fieldsHost_);
     fields_->setContentsMargins(0, 4, 0, 4);
@@ -119,11 +120,25 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
             field.type = "boolean";
             field.editor = combo;
             combo->setObjectName(QString::fromStdString(key));
+        } else if (prop.contains("x-object")) {
+            const Json& x = prop["x-object"];
+            for (const Json& kind : x.is_array() ? x : Json::array({x})) {
+                if (kind != "any") field.kinds.push_back(kind.get<std::string>());
+            }
+            auto* combo = new QComboBox;
+            combo->setObjectName(QString::fromStdString(key));
+            field.type = "object";
+            field.editor = combo;
+            fillObjects(field, has ? values[key].get<ObjectId>() : 0);
+            connect(combo, &QComboBox::activated, this, [this, combo] {
+                if (const auto id = combo->currentData().value<ObjectId>(); id != 0)
+                    emit objectChosen(id);
+            });
         } else if (type == "string" && prop.contains("enum")) {
             auto* combo = new QComboBox;
             combo->addItem(prop.contains("default")
                                ? tr("Default (%1)").arg(valueText(prop["default"]))
-                               : tr("Default"));
+                               : tr("None"));
             for (const Json& option : prop["enum"]) combo->addItem(valueText(option));
             if (has) combo->setCurrentText(valueText(values[key]));
             field.type = "enum";
@@ -180,6 +195,35 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
     }
 }
 
+void ParamForm::setObjects(std::shared_ptr<const DocSnapshot> snapshot) {
+    snapshot_ = std::move(snapshot);
+    for (const Field& field : std::views::values(editors_)) {
+        if (field.type == "object") {
+            fillObjects(field,
+                        static_cast<QComboBox*>(field.editor)->currentData().value<ObjectId>());
+        }
+    }
+}
+
+void ParamForm::fillObjects(const Field& field, const ObjectId chosen) const {
+    auto* combo = static_cast<QComboBox*>(field.editor);
+    combo->clear();
+    QStringList names;
+    for (const std::string& kind : field.kinds)
+        names << QString::fromStdString(kind).replace('_', ' ');
+    const QString prompt =
+        names.isEmpty() ? tr("Choose an object") : tr("Choose a %1").arg(names.join(tr(" or ")));
+    combo->addItem(field.required ? prompt : tr("None"), QVariant::fromValue(ObjectId{0}));
+    if (!snapshot_) return;
+    for (const DocumentObject& o : snapshot_->objects) {
+        if (!field.kinds.empty() && std::ranges::find(field.kinds, o.kind()) == field.kinds.end())
+            continue;
+        combo->addItem(QStringLiteral("%1 (#%2)").arg(QString::fromStdString(o.name)).arg(o.id),
+                       QVariant::fromValue(o.id));
+        if (o.id == chosen) combo->setCurrentIndex(combo->count() - 1);
+    }
+}
+
 Result<Json> ParamForm::params() const {
     Json out = Json::object();
     for (const auto& [key, field] : editors_) {
@@ -189,6 +233,16 @@ Result<Json> ParamForm::params() const {
         if (field.type == "boolean") {
             if (const int index = static_cast<QComboBox*>(field.editor)->currentIndex(); index > 0)
                 out[key] = index == 1;
+            continue;
+        }
+        if (field.type == "object") {
+            if (const auto id =
+                    static_cast<QComboBox*>(field.editor)->currentData().value<ObjectId>();
+                id != 0) {
+                out[key] = id;
+            } else if (field.required) {
+                return bad(tr("required"));
+            }
             continue;
         }
         if (field.type == "enum") {

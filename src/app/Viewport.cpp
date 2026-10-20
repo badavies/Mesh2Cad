@@ -40,6 +40,7 @@
 #include "m2c/core/DeviationField.h"
 #include "m2c/core/DisplayProxy.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -124,10 +125,60 @@ const TriMesh* primitiveDisplay(const DocumentObject& o) {
     return p != nullptr ? p->display.get() : nullptr;
 }
 
-/// Meshes, solids and primitives (their display meshes) and quad layouts (their edges) are drawn.
+/// A sketch's curves as line segments in world coordinates; arcs are drawn every 5 degrees.
+struct SketchLines {
+    std::vector<Vec3d> points;
+    std::vector<std::uint32_t> segments; ///< Pairs of point indices.
+};
+
+SketchLines sketchLines(const Sketch& sketch) {
+    SketchLines out;
+    for (const SketchLoop& loop : sketch.loops) {
+        for (const SketchCurve& c : loop.curves) {
+            std::vector<Vec2d> along = c.points;
+            if (c.kind == CurveKind::Arc) {
+                const int n =
+                    std::max(2, static_cast<int>(std::ceil(std::abs(c.sweepRad) / 0.0873)));
+                along.clear();
+                for (int k = 0; k <= n; ++k) {
+                    const double a = c.startRad + c.sweepRad * k / n;
+                    along.push_back(c.centre + Vec2d{std::cos(a), std::sin(a)} * c.radiusMm);
+                }
+            }
+            for (std::size_t k = 0; k < along.size(); ++k) {
+                if (k > 0) {
+                    const auto last = static_cast<std::uint32_t>(out.points.size());
+                    out.segments.insert(out.segments.end(), {last - 1, last});
+                }
+                out.points.push_back(sketch.plane.toWorld(along[k]));
+            }
+        }
+    }
+    return out;
+}
+
+Aabb pointBounds(const std::vector<Vec3d>& points) {
+    Aabb box{.min = points.front(), .max = points.front()};
+    for (const Vec3d& p : points) {
+        box.min = {.x = std::min(box.min.x, p.x),
+                   .y = std::min(box.min.y, p.y),
+                   .z = std::min(box.min.z, p.z)};
+        box.max = {.x = std::max(box.max.x, p.x),
+                   .y = std::max(box.max.y, p.y),
+                   .z = std::max(box.max.z, p.z)};
+    }
+    return box;
+}
+
+bool isSketch(const DocumentObject& o) {
+    return o.sketch() != nullptr && !o.sketch()->sketch.loops.empty();
+}
+
+/// Meshes, solids and primitives (their display meshes), quad layouts (their edges) and
+/// sketches (their curves) are drawn.
 bool isDrawn(const DocumentObject& o) {
     return o.mesh() != nullptr || o.solid() != nullptr || o.quadLayout() != nullptr ||
-           primitiveDisplay(o) != nullptr;
+           primitiveDisplay(o) != nullptr || isSketch(o);
 }
 
 /// Identity of what an object draws, shared by every snapshot copy of it.
@@ -142,6 +193,7 @@ Aabb drawnBounds(const DocumentObject& o) {
     if (const MeshData* m = o.mesh()) return m->mesh->bounds();
     if (const SolidData* s = o.solid()) return s->solid.display().bounds();
     if (const TriMesh* p = primitiveDisplay(o)) return p->bounds();
+    if (isSketch(o)) return pointBounds(sketchLines(o.sketch()->sketch).points);
     return o.quadLayout()->cage.bounds();
 }
 
@@ -224,9 +276,12 @@ void Viewport::setSnapshot(std::shared_ptr<const DocSnapshot> snapshot) {
     update();
 }
 
-void Viewport::setCurrent(const ObjectId meshId, const ObjectId selectionId) {
+void Viewport::setCurrent(const ObjectId meshId,
+                          const ObjectId selectionId,
+                          const ObjectId highlightId) {
     currentMesh_ = meshId;
     currentSelection_ = selectionId;
+    highlight_ = highlightId;
     update();
 }
 
@@ -438,6 +493,18 @@ void Viewport::syncGpu() {
     for (const DocumentObject& o : snapshot_->objects) {
         if (!isDrawn(o)) continue;
         GpuMesh& gpu = gpu_[o.id];
+        if (isSketch(o)) {
+            // A sketch never changes once made, so it is uploaded once.
+            if (gpu.vao != 0) continue;
+            auto lines = std::make_shared<const SketchLines>(sketchLines(o.sketch()->sketch));
+            const auto [min, max] = pointBounds(lines->points);
+            gpu.offset = (min + max) * 0.5;
+            gpu.lines = true;
+            gpu.source = lines.get();
+            upload(gpu, lines->points, lines->segments, gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
+            gpu.keepAlive = std::move(lines);
+            continue;
+        }
         if (o.solid() != nullptr || o.quadLayout() != nullptr || o.primitive() != nullptr) {
             if (gpu.source == drawSource(o)) continue;
             if (gpu.vao != 0) release(gpu);
@@ -548,24 +615,39 @@ void Viewport::paintGL() {
         program_.setUniformValue("selection", 0);
         const Mat4d projection = camera_.projection(aspect());
         const Mat4d view = camera_.viewRelative();
+        const QVector3D highlight(1.00f, 0.82f, 0.25f);
+        // Sketches go last, over everything: a section usually lies inside its mesh.
+        std::vector<const DocumentObject*> order;
         for (const DocumentObject& o : snapshot_->objects) {
-            if (!isDrawn(o) || !o.visible) continue;
+            if (isDrawn(o) && o.visible && !isSketch(o)) order.push_back(&o);
+        }
+        for (const DocumentObject& o : snapshot_->objects) {
+            if (o.visible && isSketch(o)) order.push_back(&o);
+        }
+        for (const DocumentObject* object : order) {
+            const DocumentObject& o = *object;
             const auto it = gpu_.find(o.id);
             if (it == gpu_.end()) continue;
             const GpuMesh& gpu = it->second;
             const Mat4d mv = view * translation(gpu.offset - camera_.target);
             program_.setUniformValue("mv", toQt(mv));
             program_.setUniformValue("mvp", toQt(projection * mv));
+            const bool highlighted = o.id == highlight_;
             if (gpu.lines) {
                 program_.setUniformValue("lineMode", 1);
-                program_.setUniformValue("lineColor", QVector3D(0.95f, 0.60f, 0.20f));
+                program_.setUniformValue("lineColor",
+                                         highlighted   ? highlight
+                                         : isSketch(o) ? QVector3D(0.30f, 0.85f, 0.95f)
+                                                       : QVector3D(0.95f, 0.60f, 0.20f));
+                if (isSketch(o)) glDisable(GL_DEPTH_TEST);
                 glBindVertexArray(gpu.vao);
                 glDrawElements(GL_LINES, gpu.indexCount, GL_UNSIGNED_INT, nullptr);
                 continue;
             }
             const bool current = o.id == currentMesh_;
             program_.setUniformValue("baseColor",
-                                     o.solid() != nullptr       ? QVector3D(0.55f, 0.66f, 0.82f)
+                                     highlighted && o.mesh() == nullptr ? highlight
+                                     : o.solid() != nullptr     ? QVector3D(0.55f, 0.66f, 0.82f)
                                      : o.primitive() != nullptr ? QVector3D(0.56f, 0.78f, 0.60f)
                                      : current                  ? QVector3D(0.80f, 0.82f, 0.86f)
                                                                 : QVector3D(0.66f, 0.68f, 0.70f));

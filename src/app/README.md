@@ -29,6 +29,10 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
   thread and sends commands with `Engine::run`.
 - The viewport never changes the document either: tools emit signals that `MainWindow` turns
   into commands. Never add a UI-only code path; add a command instead.
+- Tool forms show each object parameter (`x-object` in its schema, ADR-029) as a drop-down of
+  the document's objects of that kind. Choosing one selects it in the Objects list and
+  highlights it in the viewport.
+- Sketches are listed under the mesh they were cut from and drawn as cyan lines over everything.
 - Solids draw from their display mesh, quad layouts as orange edges. A mesh with a visible
   deviation object is coloured by its newest one (green within tolerance, warm outward, cold
   inward; **View > Colour-blind-safe deviation colours** switches to grey, orange and purple),
