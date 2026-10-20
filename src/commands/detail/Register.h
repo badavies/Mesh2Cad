@@ -20,5 +20,6 @@ void addQuadCommands(std::vector<Command>& out);
 void addSurfaceCommands(std::vector<Command>& out);
 void addSketchCommands(std::vector<Command>& out);
 void addDeviationCommands(std::vector<Command>& out);
+void addViewCommands(std::vector<Command>& out);
 
 } // namespace m2c::cmd

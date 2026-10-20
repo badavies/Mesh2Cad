@@ -210,6 +210,7 @@ Result<void> registerBuiltinCommands(CommandRegistry& registry) {
     cmd::addSurfaceCommands(commands);
     cmd::addSketchCommands(commands);
     cmd::addDeviationCommands(commands);
+    cmd::addViewCommands(commands);
     for (Command& command : commands) {
         if (auto added = registry.add(std::move(command)); !added) return added;
     }

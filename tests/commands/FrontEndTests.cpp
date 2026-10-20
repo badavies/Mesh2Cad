@@ -136,6 +136,18 @@ TEST_CASE("MCP server lists commands as tools and calls them", "[mcp]") {
     CHECK(called["result"]["structuredContent"]["stats"]["face_count"] == 12);
     CHECK(e.document.undoHistory().back().source == "mcp");
 
+    // A picture comes back as an image the agent can see, after the text.
+    const auto png = (dir.path() / "view.png").string();
+    const Json view = *mcp.handle(request(
+        6,
+        "tools/call",
+        {{"name", "view_render"}, {"arguments", {{"path", png}, {"width", 32}, {"height", 32}}}}));
+    const Json& content = view["result"]["content"];
+    REQUIRE(content.size() == 2);
+    CHECK(content[1]["type"] == "image");
+    CHECK(content[1]["mimeType"] == "image/png");
+    CHECK(content[1]["data"].get<std::string>().starts_with("iVBORw0KGgo"));
+
     const Json failed =
         *mcp.handle(request(4, "tools/call", {{"name", "mesh_info"}, {"arguments", {{"id", 99}}}}));
     CHECK(failed["result"]["isError"] == true);

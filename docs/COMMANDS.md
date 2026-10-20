@@ -615,3 +615,19 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 | `refine_to_mm` | number |  | While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off. Default `0`. |
 | `smoothing` | number |  | How strongly the cage keeps its own shape while fitting. Default `0.05`. |
 | `thickness_mm` | number |  | For an open cage: thicken the fitted sheet by this much, against its faces' direction; required for an open cage and only for one. Default `0`. |
+
+## view
+
+### `view.render`
+
+Draw the visible objects to a PNG file, as the app's viewport shows them, so an agent can see the document: meshes grey (red where a back face shows, deviation colours when a deviation of the mesh is visible), solids blue, primitives green, quad layout edges orange and sketches cyan over everything. selection_id marks a selection's faces orange and highlight_id draws one object yellow. The view is orthographic and framed on what is drawn. Needs no GPU or display. Over MCP the picture is also returned as an image. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `direction` | array |  | From the part towards the camera, instead of a standard view. |
+| `height` | integer |  | Default `600`. |
+| `highlight_id` | object id |  | An object drawn in yellow. |
+| `path` | string | yes | PNG file to write. |
+| `selection_id` | selection id |  | A selection whose faces are marked. |
+| `view` | `iso` \| `front` \| `back` \| `left` \| `right` \| `top` \| `bottom` |  | Default `"iso"`. |
+| `width` | integer |  | Default `800`. |
