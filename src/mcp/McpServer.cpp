@@ -151,7 +151,10 @@ Json McpServer::callTool(const Json& params) {
     const auto it = commandForTool_.find(name);
     if (it == commandForTool_.end()) return failed("unknown tool '" + name + "'");
     const std::string& command = it->second;
-    const Json arguments = params.contains("arguments") ? params["arguments"] : Json::object();
+    // Clients send a tool without parameters no arguments, {} or null.
+    const Json arguments = params.contains("arguments") && !params["arguments"].is_null()
+                               ? params["arguments"]
+                               : Json::object();
     Json token;
     if (params.contains("_meta") && params["_meta"].is_object() &&
         params["_meta"].contains("progressToken")) {
