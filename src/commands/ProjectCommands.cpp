@@ -24,11 +24,11 @@
 namespace m2c::cmd {
 
 void addProjectCommands(std::vector<Command>& out) {
-    out.push_back(makeCommand(
+    Command save = makeCommand(
         "project.save",
         "Save every object (meshes, selections, measurements, alignments, quad layouts, solids, "
         "deviations, primitives and sketches) to a project file (.m2c).",
-        R"({"type":"object","properties":{"path":{"type":"string"}},
+        R"({"type":"object","properties":{"path":{"type":"string","x-file-types":["m2c"]}},
             "required":["path"],"additionalProperties":false})",
         false,
         [](const CommandContext& context, const Json& params) -> Result<Json> {
@@ -66,12 +66,14 @@ void addProjectCommands(std::vector<Command>& out) {
             }
             M2C_TRY(written, writeProject(project, std::filesystem::path(*path)));
             return Json{{"path", *path}, {"object_count", project.objects.size()}};
-        }));
+        });
+    save.writesFiles = true;
+    out.push_back(std::move(save));
 
     Command open = makeCommand(
         "project.open",
         "Open a project file, replacing the current document. Clears the undo history.",
-        R"({"type":"object","properties":{"path":{"type":"string"}},
+        R"({"type":"object","properties":{"path":{"type":"string","x-file-types":["m2c"]}},
             "required":["path"],"additionalProperties":false})",
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {

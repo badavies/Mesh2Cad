@@ -274,14 +274,14 @@ The UI is a thin shell over the document: Qt 6 Widgets for panels, a custom Open
 
 **Command engine and control channels**
 
-- **Every action is a command.** A command has a dotted name (`mesh.smooth`, `shells.detect`, `measure.distance`, `surface.build`), JSON Schemas for its parameters and result, a handler, and a kind: query (read-only) or mutation (undoable).
+- **Every action is a command.** A command has a dotted name (`mesh.smooth`, `shells.detect`, `measure.distance`, `surface.build`), JSON Schemas for its parameters and result, a handler, and a kind: query (read-only) or mutation (undoable). A command that writes the file named by its `path` parameter (an export, a save, a picture) says so (`writesFiles`), and every `path` parameter names the file types it takes (`x-file-types`), so front ends offer the right files and do not present a file write as read-only (ADR-031).
 - **One registry, four front ends.** UI menus and panels, CLI subcommands, JSON-RPC methods and MCP tools all come from the registry. A new command is available everywhere at once; no front end has private commands or extra logic.
 - **One dispatch path.** Validate parameters against the schema, run the handler (on a worker thread if long), apply the result to the document as one undo step, then emit an event. Queries never change the document. As built, each handler validates its own parameters (the schemas are published but not enforced, pending json-schema-validator), and the desktop app runs every command, from any source, on one engine thread (ADR-023).
 - **Stable ids, plain data.** Commands refer to objects by id and return ids and plain values, never pointers. Large data such as meshes travels by object id or file path, never inline in JSON.
-- **Long jobs.** Long commands return a job id; progress and completion arrive as events; `job.cancel` stops them. Not built yet: commands run to completion, and the app shows a busy state meanwhile.
+- **Long jobs.** Long commands return a job id; progress and completion arrive as events; `job.cancel` stops them. Not built yet: commands run to completion, and the app shows a busy state meanwhile. Until then, an agent's command that is still running after two seconds gets a "running" line in the app's log (its finishing line gives the time taken), and the MCP server sends `notifications/progress` every two seconds to a client that passed a `progressToken`. That progress is the time spent, with no total: commands cannot yet report how far along they are.
 - **Undo is cheap.** Pipeline data is immutable, so undo stores the previous object pointers rather than copies. Undo of a 5M-triangle repair costs almost no memory.
 - **JSON channel.** JSON-RPC 2.0 over stdio (when a script or the MCP server launches a headless engine) or over a local socket or named pipe (to drive the running desktop app). Events are JSON-RPC notifications. No network listener; local connections need a per-session token.
-- **MCP server.** A separate thin process that talks to the engine over the JSON channel and exposes each command as an MCP tool with its schema and description. Mutating tools are marked as such so MCP clients can ask the user before running them. `view.render` lets an agent see the document: it draws the visible objects to a PNG with a software rasteriser, and the MCP server returns the picture as an image.
+- **MCP server.** A separate thin process that talks to the engine over the JSON channel and exposes each command as an MCP tool with its schema and description. Mutating tools, and tools that write a file, are marked as such so MCP clients can ask the user before running them. `view.render` lets an agent see the document: it draws the visible objects to a PNG with a software rasteriser, and the MCP server returns the picture as an image.
 - **Session log and replay.** Every executed command is logged as one JSON line with its parameters. Replaying the log reproduces the result, which serves as bug reports, golden tests and simple macros.
 - **The command set is a public API.** Changes are additive. Renaming a command or breaking its schema needs a new version and a decision record.
 
@@ -290,7 +290,7 @@ The UI is a thin shell over the document: Qt 6 Widgets for panels, a custom Open
 - The agent connects to the running desktop app, so its commands change the same document the person is looking at, and the viewport updates live.
 - Every undo step records its source (UI, CLI, JSON or MCP), so the person can see what the agent did and undo it like any other step.
 - The agent can read what the person sees: selection, visible objects, shell lists, measurements and deviation statistics, plus a viewport snapshot command so it can look at the model.
-- Long agent jobs show in the same progress panel as the person's own jobs and can be cancelled from the UI.
+- Long agent jobs show in the same progress panel as the person's own jobs and can be cancelled from the UI. As built, the log panel shows every command an agent runs that changes the document or writes a file (with the path), a "running" line for one that takes longer than two seconds, and its duration when it finishes.
 
 **Rule.** UI code contains no geometry logic and includes no CGAL or OCCT headers. If a panel needs a computed value, the pipeline or document API provides it.
 
@@ -453,7 +453,7 @@ The biggest technical risk is the surfacing stage producing small gaps or kinks,
 | A dependency turns out not to be GPL v3 compatible | Cannot distribute | `THIRD_PARTY.md` review on every new dependency |
 | Scope drift, including from AI tools | Unfinished, hard-to-maintain code | Non-goals in section 1, AI rules in section 11, milestone gates |
 
-**Control channel risks.** The JSON channel and MCP server let other programs, including AI agents, change and save work. Mitigations: local connections only with a per-session token, mutating commands marked so MCP clients confirm them, file writes only to paths the caller passes, and the session log as a full audit trail. A second risk is the command API freezing too early; treat it as unstable (version 0.x) until the end of M3.
+**Control channel risks.** The JSON channel and MCP server let other programs, including AI agents, change and save work. Mitigations: local connections only with a per-session token, mutating and file-writing commands marked so MCP clients confirm them, file writes only to paths the caller passes and shown in the app's log, and the session log as a full audit trail. A second risk is the command API freezing too early; treat it as unstable (version 0.x) until the end of M3.
 
 **Open decisions**
 
@@ -498,6 +498,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-028 | The sanitizer build drops alignment reports inside Open CASCADE's headers | Accepted | OCCT 8.0.1 misaligns BRepMesh's shapes; every other report still fails; see `docs/adr/0028-occt-alignment-suppression.md` |
 | ADR-029 | Command schemas name the object kinds an id accepts (`x-object`) | Accepted | The app's object drop-downs and the command docs come from the schema; see `docs/adr/0029-object-kinds-in-schemas.md` |
 | ADR-030 | Agents see the document through a software-rendered PNG (`view.render`) | Accepted | A rasteriser in `core` and miniz PNG; the MCP server returns the picture as an image; see `docs/adr/0030-software-render-for-agents.md` |
+| ADR-031 | Commands that write files say so (`writesFiles`) and path parameters name their file types (`x-file-types`) | Accepted | The app logs file writes and builds its file dialogs from the schema; MCP stops calling them read-only; see `docs/adr/0031-file-writing-commands-and-file-types.md` |
 
 ## 15. Review log
 

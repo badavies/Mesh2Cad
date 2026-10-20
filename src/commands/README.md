@@ -8,7 +8,8 @@ Handlers read parameters, call `io` and `pipeline` functions, and commit the res
 ## Public API
 
 - `m2c/commands/Command.h`:
-  - `Command`: name, summary, `paramsSchema` (JSON Schema), `mutatesDocument`, `opensUndoStep` and `handler`.
+  - `Command`: name, summary, `paramsSchema` (JSON Schema), `mutatesDocument`, `opensUndoStep`,
+    `writesFiles` (it writes the file at its `path`) and `handler`.
   - `CommandRegistry`: `add`, `find`, `list` and `execute`.
   - `CommandContext`: the `Document`, the `source` ("ui", "cli", "json", "mcp") and the optional `sessionLog` callback.
   - `registerBuiltinCommands`: registers every built-in command.
@@ -36,6 +37,10 @@ Must not depend on: `adapters`, `app`, `cli`, `rpc`, `mcp`, Qt, and kernel libra
 - A parameter that names an object carries `"x-object"`: the kind it accepts (`"mesh"`,
   `"selection"`, `"primitive"`, ...), an array of kinds, or `"any"`. The app builds its object
   drop-downs from it and `docs/COMMANDS.md` shows it; a test checks every `id` and `*_id` has one.
+- A `path` parameter carries `"x-file-types"`: the extensions it takes, preferred first
+  (`["step", "stp"]`). A command that writes that file sets `writesFiles`, which
+  `commands.list` publishes as `writes_files`; the app logs such commands and the MCP server does
+  not call them read-only (ADR-031). Tests check both.
 - The schema is published by `commands.list` but not enforced by the dispatcher. Handlers
   validate their own parameters with the `detail/Params.h` helpers and return errors; they do
   not throw on bad input.

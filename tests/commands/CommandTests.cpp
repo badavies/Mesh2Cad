@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <algorithm>
 #include <regex>
 #include <set>
 #include <string>
@@ -44,6 +45,42 @@ TEST_CASE("Every command is well formed", "[commands]") {
         CHECK_FALSE(c->summary.empty());
         CHECK(c->paramsSchema.is_object());
         CHECK(c->paramsSchema.value("type", "") == "object");
+        // A command that writes a file is told where by a required "path".
+        if (c->writesFiles) {
+            const Json& required = c->paramsSchema.value("required", Json::array());
+            CHECK(std::ranges::find(required, Json("path")) != required.end());
+        }
+    }
+}
+
+TEST_CASE("Every path parameter names the file types it takes", "[commands]") {
+    // The app's file dialogs filter on x-file-types, so a path without it offers every file.
+    Session s;
+    const std::regex extension("^[a-z0-9]+$");
+    for (const Command* c : s.registry.list()) {
+        const Json properties = c->paramsSchema.value("properties", Json::object());
+        if (!properties.contains("path")) continue;
+        CAPTURE(c->name);
+        const Json& types = properties["path"].value("x-file-types", Json::array());
+        CHECK_FALSE(types.empty());
+        for (const Json& t : types) CHECK(std::regex_match(t.get<std::string>(), extension));
+    }
+    const Json& step = s.registry.find("solid.export")->paramsSchema["properties"]["path"];
+    CHECK(step["x-file-types"] == Json::array({"step", "stp"}));
+}
+
+TEST_CASE("Commands that write files say so", "[commands]") {
+    Session s;
+    const std::set<std::string> writers{
+        "deviation.report", "mesh.export", "project.save", "solid.export", "view.render"};
+    for (const Command* c : s.registry.list()) {
+        CAPTURE(c->name);
+        CHECK(c->writesFiles == writers.contains(c->name));
+    }
+    const auto listed = s.run("commands.list");
+    REQUIRE(listed.has_value());
+    for (const Json& c : (*listed)["commands"]) {
+        CHECK(c["writes_files"] == writers.contains(c["name"].get<std::string>()));
     }
 }
 

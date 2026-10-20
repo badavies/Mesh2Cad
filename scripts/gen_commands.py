@@ -32,7 +32,12 @@ def main() -> int:
     for group, items in groups.items():
         lines += [f"## {group}", ""]
         for c in items:
-            kind = "changes the document" if c.get("mutates_document") else "read-only"
+            if c.get("mutates_document"):
+                kind = "changes the document"
+            elif c.get("writes_files"):
+                kind = "writes a file"
+            else:
+                kind = "read-only"
             lines += [f"### `{c['name']}`", "", f"{c['summary']} *({kind})*", ""]
             schema = c.get("params_schema", {})
             props = schema.get("properties", {})
@@ -47,6 +52,9 @@ def main() -> int:
                         kinds = p["x-object"] if isinstance(p["x-object"], list) else [p["x-object"]]
                         ptype = " or ".join("object" if k == "any" else k for k in kinds) + " id"
                     notes = p.get("description", "")
+                    if "x-file-types" in p:
+                        files = ", ".join(f"`.{t}`" for t in p["x-file-types"])
+                        notes = (notes + " " if notes else "") + f"Files: {files}."
                     if "default" in p:
                         notes = (notes + " " if notes else "") + f"Default `{json.dumps(p['default'])}`."
                     notes = notes.replace("|", "\\|")

@@ -91,14 +91,14 @@ void addDeviationCommands(std::vector<Command>& out) {
             return Json{{"id", *id}, {"stats", toJson(stats)}};
         }));
 
-    out.push_back(makeCommand(
+    Command report = makeCommand(
         "deviation.report",
         "Write a deviation's statistics and a histogram of its distances to a CSV file.",
         R"({
             "type":"object",
             "properties":{
                 "id":{"type":"integer","x-object":"deviation","minimum":0,"description":"The deviation."},
-                "path":{"type":"string","description":"The .csv file to write."},
+                "path":{"type":"string","x-file-types":["csv"],"description":"The .csv file to write."},
                 "bins":{"type":"integer","minimum":2,"maximum":200,"default":20,"description":"Histogram bins from the smallest to the largest distance."}
             },
             "required":["id","path"],"additionalProperties":false})",
@@ -113,7 +113,9 @@ void addDeviationCommands(std::vector<Command>& out) {
             const DeviationField& field = object->deviation()->field;
             M2C_TRY(written, writeDeviationReport(field, static_cast<std::size_t>(*bins), file));
             return Json{{"id", object->id}, {"path", *path}, {"stats", toJson(field.stats())}};
-        }));
+        });
+    report.writesFiles = true;
+    out.push_back(std::move(report));
 }
 
 } // namespace m2c::cmd

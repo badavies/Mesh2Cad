@@ -50,6 +50,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                             commands.push_back(Json{{"name", c->name},
                                                     {"summary", c->summary},
                                                     {"mutates_document", c->mutatesDocument},
+                                                    {"writes_files", c->writesFiles},
                                                     {"params_schema", c->paramsSchema}});
                         }
                         return Json{{"commands", std::move(commands)}};
@@ -145,7 +146,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
         R"({
             "type":"object",
             "properties":{
-                "path":{"type":"string","description":"Path of the mesh file to read (.stl, .obj, .ply)."},
+                "path":{"type":"string","x-file-types":["stl","obj","ply"],"description":"Path of the mesh file to read (.stl, .obj, .ply)."},
                 "name":{"type":"string","description":"Object name. Defaults to the file name without extension."}
             },
             "required":["path"],"additionalProperties":false})",
@@ -173,14 +174,14 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
             return describeMesh(context.document, object->id);
         }));
 
-    out.push_back(
+    Command exportMesh =
         makeCommand("mesh.export",
                     "Write a mesh object to a file: binary STL, OBJ, or binary PLY.",
                     R"({
             "type":"object",
             "properties":{
                 "id":{"type":"integer","x-object":"mesh","minimum":0,"description":"Object id."},
-                "path":{"type":"string","description":"Destination file; the extension (.stl, .obj, .ply) selects the format."}
+                "path":{"type":"string","x-file-types":["stl","obj","ply"],"description":"Destination file; the extension (.stl, .obj, .ply) selects the format."}
             },
             "required":["id","path"],"additionalProperties":false})",
                     false,
@@ -189,7 +190,9 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                         M2C_TRY(path, requireString(params, "path"));
                         M2C_TRY(written, writeMesh(*object->mesh, std::filesystem::path(*path)));
                         return Json{{"id", object->id}, {"path", *path}};
-                    }));
+                    });
+    exportMesh.writesFiles = true;
+    out.push_back(std::move(exportMesh));
 }
 
 } // namespace m2c::cmd

@@ -47,6 +47,10 @@ struct Command {
     Json paramsSchema;
     bool mutatesDocument{false};
     std::function<Result<Json>(CommandContext&, const Json& params)> handler;
+    /// Writes a file named by its "path" parameter (an export, a save, a picture). Such a command
+    /// leaves the document alone but is not read-only for the person: the app logs it and MCP
+    /// clients are told it changes something outside the document.
+    bool writesFiles{false};
     /// Mutating commands run inside one document undo step, so whatever they change is undone
     /// together. Only commands that manage the history themselves (undo, redo, open) turn this off.
     bool opensUndoStep{true};

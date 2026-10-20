@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <map>
 #include <optional>
@@ -19,8 +20,16 @@ class McpServer {
 public:
     /// Sends {method, params} to the engine and returns the JSON-RPC response object.
     using EngineCall = std::function<Result<Json>(const std::string& method, const Json& params)>;
+    /// Sends a notification to the client. Called from another thread while a tool runs, never
+    /// at the same time as `handle` returns a response, so it needs no lock of its own.
+    using Notify = std::function<void(const Json& notification)>;
 
-    explicit McpServer(EngineCall call);
+    /// While a tools/call whose request carries `_meta.progressToken` runs, `notify` gets a
+    /// notifications/progress every `progressEvery`, so a client can show that a long command is
+    /// alive and keep waiting for it. Without `notify` no progress is sent.
+    explicit McpServer(EngineCall call,
+                       Notify notify = {},
+                       std::chrono::milliseconds progressEvery = std::chrono::seconds(2));
 
     /// Handles one MCP message; returns the response, or nothing for notifications.
     [[nodiscard]] std::optional<Json> handle(const Json& message);
@@ -31,8 +40,13 @@ public:
 private:
     [[nodiscard]] Result<Json> listTools();
     [[nodiscard]] Json callTool(const Json& params);
+    /// call_(command, arguments), reporting progress against `token` (null: none) meanwhile.
+    [[nodiscard]] Result<Json>
+    callReporting(const std::string& command, const Json& arguments, const Json& token);
 
     EngineCall call_;
+    Notify notify_;
+    std::chrono::milliseconds progressEvery_;
     std::map<std::string, std::string> commandForTool_;
 };
 

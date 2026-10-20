@@ -8,15 +8,19 @@
 #include <QElapsedTimer>
 #include <QLineEdit>
 #include <QMouseEvent>
+#include <QStringList>
 #include <QSurfaceFormat>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <iostream>
 #include <numbers>
 #include <thread>
+#include <utility>
 
 #include "m2c/io/MeshIO.h"
 #include "m2c/rpc/Session.h"
@@ -234,6 +238,15 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         const auto info = readSessionFile(defaultSessionFile());
         REQUIRE(info.has_value());
         const ObjectId meshId = engine.snapshot()->objects.front().id;
+        QStringList log;
+        QObject::connect(
+            &engine, &Engine::logLine, [&](const QString& line, bool) { log.append(line); });
+        const std::string exported = (dir.path() / "agent.stl").string();
+        // Big enough that smoothing it takes far longer than the GUI takes to look.
+        const std::string bigPath = (dir.path() / "big.stl").string();
+        REQUIRE(writeMesh(makeBumpySphere(10.0, 300, 600), bigPath).has_value());
+        // An agent command still running when the GUI next looks gets its "running" line.
+        engine.setRunningNotice(std::chrono::milliseconds(0));
         std::atomic<bool> finished{false};
         Json listed;
         Json rejected;
@@ -256,6 +269,9 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
                 call(2, "rpc.auth", {{"token", info->token}, {"source", "mcp"}});
                 call(3, "select.all", {{"id", meshId}});
                 listed = call(4, "doc.list", Json::object());
+                call(5, "mesh.export", {{"id", meshId}, {"path", exported}});
+                const Json big = call(6, "mesh.import", {{"path", bigPath}});
+                call(7, "mesh.smooth", {{"id", big["result"].value("id", 0)}, {"iterations", 100}});
             }
             finished = true;
         });
@@ -266,6 +282,24 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         CHECK(listed["result"]["objects"].size() == 2);
         REQUIRE(waitFor([&] { return countKind(*engine.snapshot(), "selection") == 1; }));
         CHECK(engine.snapshot()->undo.back().source == "mcp");
+        // The export changes nothing in the document, but the person still sees the file it wrote;
+        // the read-only doc.list stays out of the log.
+        const QString writeLine = QStringLiteral("[mcp] mesh.export  #%1").arg(meshId);
+        REQUIRE(waitFor([&] {
+            return std::ranges::any_of(log,
+                                       [&](const QString& l) { return l.startsWith(writeLine); });
+        }));
+        CHECK(std::ranges::any_of(
+            log, [&](const QString& l) { return l.endsWith(QString::fromStdString(exported)); }));
+        CHECK_FALSE(std::ranges::any_of(
+            log, [](const QString& l) { return l.startsWith("[mcp] doc.list"); }));
+        // The smoothing of the big mesh is still running when the GUI looks: it is announced, then
+        // logged again when it finishes.
+        const auto smoothed = [](const QString& l) { return l.startsWith("[mcp] mesh.smooth  #"); };
+        REQUIRE(waitFor([&] { return std::ranges::any_of(log, smoothed); }));
+        const auto announced = log.indexOf(QStringLiteral("[mcp] mesh.smooth  running..."));
+        CHECK(announced >= 0);
+        CHECK(announced < std::ranges::find_if(log, smoothed) - log.begin());
     }
 }
 
@@ -499,6 +533,22 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});
     CHECK(form.findChild<QComboBox*>("plane_id")->currentText() == "None");
     CHECK_FALSE(form.params()->contains("plane_id"));
+
+    // A path field browses for the files its command takes, and asks for a new file when the
+    // command writes one: a STEP export must not default to meshes.
+    const auto browse = [&](const char* command) {
+        form.setCommand(registry.find(command));
+        const auto* button = form.findChild<QToolButton*>("browse");
+        REQUIRE(button != nullptr);
+        return std::pair{button->property("filter").toString(),
+                         button->property("saving").toBool()};
+    };
+    CHECK(browse("solid.export") ==
+          std::pair{QStringLiteral("STEP, STP (*.step *.stp);;All files (*)"), true});
+    CHECK(browse("mesh.import") ==
+          std::pair{QStringLiteral("STL, OBJ, PLY (*.stl *.obj *.ply);;All files (*)"), false});
+    CHECK(browse("view.render").second); // writes a picture, so a save dialog
+    CHECK(browse("project.open").first.startsWith("M2C (*.m2c)"));
 }
 
 // The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or

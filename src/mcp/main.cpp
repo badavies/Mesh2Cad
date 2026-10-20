@@ -132,27 +132,29 @@ int main(int argc, char** argv) {
         std::cerr << "mesh2cad-mcp: using a headless document\n";
     }
 
-    m2c::McpServer server([&](const std::string& method, const Json& params) -> Result<Json> {
-        return remote ? remote->call(method, params) : headless->call(method, params);
-    });
+    const auto send = [](const Json& message) {
+        std::cout << message.dump(-1, ' ', false, Json::error_handler_t::replace) << '\n'
+                  << std::flush;
+    };
+    // Progress notifications go out while a tool runs; the server never writes them while it is
+    // sending a response, so the two writers do not interleave.
+    m2c::McpServer server(
+        [&](const std::string& method, const Json& params) -> Result<Json> {
+            return remote ? remote->call(method, params) : headless->call(method, params);
+        },
+        send);
 
     std::string line;
     while (std::getline(std::cin, line)) {
         if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
         const Json message = Json::parse(line, nullptr, false);
         if (message.is_discarded()) {
-            std::cout << Json{{"jsonrpc", "2.0"},
-                              {"id", nullptr},
-                              {"error", {{"code", -32700}, {"message", "parse error"}}}}
-                             .dump()
-                      << '\n'
-                      << std::flush;
+            send(Json{{"jsonrpc", "2.0"},
+                      {"id", nullptr},
+                      {"error", {{"code", -32700}, {"message", "parse error"}}}});
             continue;
         }
-        if (const auto reply = server.handle(message)) {
-            std::cout << reply->dump(-1, ' ', false, Json::error_handler_t::replace) << '\n'
-                      << std::flush;
-        }
+        if (const auto reply = server.handle(message)) send(*reply);
     }
     return 0;
 }

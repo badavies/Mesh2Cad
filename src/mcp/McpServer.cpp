@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "McpServer.h"
 
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <expected>
 #include <fstream>
 #include <iterator>
+#include <mutex>
 #include <optional>
+#include <stop_token>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include "m2c/commands/Command.h"
@@ -63,7 +68,37 @@ void attachImage(const Json& result, Json& content) {
 
 } // namespace
 
-McpServer::McpServer(EngineCall call) : call_(std::move(call)) {}
+McpServer::McpServer(EngineCall call, Notify notify, const std::chrono::milliseconds progressEvery)
+    : call_(std::move(call)), notify_(std::move(notify)), progressEvery_(progressEvery) {}
+
+Result<Json>
+McpServer::callReporting(const std::string& command, const Json& arguments, const Json& token) {
+    if (!notify_ || token.is_null()) return call_(command, arguments);
+    // The engine call blocks this thread; a second one reports the seconds spent until it returns.
+    // Commands cannot say how far along they are yet (that comes with long jobs), so the
+    // progress is the elapsed time and there is no total.
+    std::mutex mutex;
+    std::condition_variable_any tick;
+    std::jthread heartbeat([&](const std::stop_token& stop) {
+        const auto started = std::chrono::steady_clock::now();
+        std::unique_lock lock(mutex);
+        for (;;) {
+            (void)tick.wait_for(lock, stop, progressEvery_, [] { return false; });
+            if (stop.stop_requested()) return;
+            const double seconds =
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+            notify_(Json{{"jsonrpc", "2.0"},
+                         {"method", "notifications/progress"},
+                         {"params",
+                          {{"progressToken", token},
+                           {"progress", seconds},
+                           {"message",
+                            command + " running, " +
+                                std::to_string(static_cast<long long>(seconds)) + " s"}}}});
+        }
+    });
+    return call_(command, arguments); // the heartbeat stops and is joined on return
+}
 
 std::string McpServer::toolName(const std::string& command) {
     std::string name = command;
@@ -84,19 +119,21 @@ Result<Json> McpServer::listTools() {
     for (const Json& c : (*reply)["result"]["commands"]) {
         const std::string command = c["name"].get<std::string>();
         const bool mutates = c.value("mutates_document", false);
+        // A file it writes may replace one that was there, so it is neither read-only nor safe.
+        const bool writes = c.value("writes_files", false);
         const std::string name = toolName(command);
         commandForTool_[name] = command;
-        tools.push_back(
-            Json{{"name", name},
-                 {"title", command},
-                 {"description",
-                  c.value("summary", "") +
-                      (mutates ? " Changes the document (undoable with doc_undo)." : "")},
-                 {"inputSchema", c["params_schema"]},
-                 {"annotations",
-                  {{"readOnlyHint", !mutates},
-                   {"destructiveHint", mutates},
-                   {"openWorldHint", false}}}});
+        std::string description = c.value("summary", "");
+        if (mutates) description += " Changes the document (undoable with doc_undo).";
+        if (writes) description += " Writes the file at path, replacing any file already there.";
+        tools.push_back(Json{{"name", name},
+                             {"title", command},
+                             {"description", description},
+                             {"inputSchema", c["params_schema"]},
+                             {"annotations",
+                              {{"readOnlyHint", !mutates && !writes},
+                               {"destructiveHint", mutates || writes},
+                               {"openWorldHint", false}}}});
     }
     return Json{{"tools", std::move(tools)}};
 }
@@ -118,8 +155,14 @@ Json McpServer::callTool(const Json& params) {
     const Json arguments = params.contains("arguments") && !params["arguments"].is_null()
                                ? params["arguments"]
                                : Json::object();
+    Json token;
+    if (params.contains("_meta") && params["_meta"].is_object() &&
+        params["_meta"].contains("progressToken")) {
+        const Json& t = params["_meta"]["progressToken"];
+        if (t.is_string() || t.is_number_integer()) token = t;
+    }
 
-    const auto reply = call_(command, arguments);
+    const auto reply = callReporting(command, arguments, token);
     if (!reply) return failed(reply.error().message);
     if (reply->contains("error")) {
         const Json& e = (*reply)["error"];

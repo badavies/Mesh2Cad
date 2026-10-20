@@ -78,13 +78,13 @@ Signed distance from every vertex of a mesh to a solid (exact, onto its B-spline
 
 ### `deviation.report`
 
-Write a deviation's statistics and a histogram of its distances to a CSV file. *(read-only)*
+Write a deviation's statistics and a histogram of its distances to a CSV file. *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `bins` | integer |  | Histogram bins from the smallest to the largest distance. Default `20`. |
 | `id` | deviation id | yes | The deviation. |
-| `path` | string | yes | The .csv file to write. |
+| `path` | string | yes | The .csv file to write. Files: `.csv`. |
 
 ## doc
 
@@ -144,12 +144,12 @@ Measure the distance between two points and save it as a measurement object. A p
 
 ### `mesh.export`
 
-Write a mesh object to a file: binary STL, OBJ, or binary PLY. *(read-only)*
+Write a mesh object to a file: binary STL, OBJ, or binary PLY. *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | mesh id | yes | Object id. |
-| `path` | string | yes | Destination file; the extension (.stl, .obj, .ply) selects the format. |
+| `path` | string | yes | Destination file; the extension (.stl, .obj, .ply) selects the format. Files: `.stl`, `.obj`, `.ply`. |
 
 ### `mesh.flip`
 
@@ -166,7 +166,7 @@ Read a mesh file (STL, OBJ or PLY) into the document as a new object. *(changes 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `name` | string |  | Object name. Defaults to the file name without extension. |
-| `path` | string | yes | Path of the mesh file to read (.stl, .obj, .ply). |
+| `path` | string | yes | Path of the mesh file to read (.stl, .obj, .ply). Files: `.stl`, `.obj`, `.ply`. |
 
 ### `mesh.info`
 
@@ -353,15 +353,15 @@ Open a project file, replacing the current document. Clears the undo history. *(
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `path` | string | yes |  |
+| `path` | string | yes | Files: `.m2c`. |
 
 ### `project.save`
 
-Save every object (meshes, selections, measurements, alignments, quad layouts, solids, deviations, primitives and sketches) to a project file (.m2c). *(read-only)*
+Save every object (meshes, selections, measurements, alignments, quad layouts, solids, deviations, primitives and sketches) to a project file (.m2c). *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `path` | string | yes |  |
+| `path` | string | yes | Files: `.m2c`. |
 
 ## quad
 
@@ -553,12 +553,12 @@ Combine two solids into a new one: fuse joins them, cut removes tool_id from id,
 
 ### `solid.export`
 
-Write a solid to a STEP AP242 file in millimetres, then read the file back and check it holds one valid closed solid with the same volume (within 0.1%). Fails, writing nothing, if the solid is not valid. *(read-only)*
+Write a solid to a STEP AP242 file in millimetres, then read the file back and check it holds one valid closed solid with the same volume (within 0.1%). Fails, writing nothing, if the solid is not valid. *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | solid id | yes | The solid. |
-| `path` | string | yes | The .step or .stp file to write. |
+| `path` | string | yes | The .step or .stp file to write. Files: `.step`, `.stp`. |
 | `product_name` | string |  | Product name in the file; the object name if omitted. |
 
 ### `solid.extrude`
@@ -620,14 +620,14 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 
 ### `view.render`
 
-Draw the visible objects to a PNG file, as the app's viewport shows them, so an agent can see the document: meshes grey (red where a back face shows, deviation colours when a deviation of the mesh is visible), solids blue, primitives green, quad layout edges orange and sketches cyan over everything. selection_id marks a selection's faces orange and highlight_id draws one object yellow. The view is orthographic and framed on what is drawn. Needs no GPU or display. Over MCP the picture is also returned as an image. *(read-only)*
+Draw the visible objects to a PNG file, as the app's viewport shows them, so an agent can see the document: meshes grey (red where a back face shows, deviation colours when a deviation of the mesh is visible), solids blue, primitives green, quad layout edges orange and sketches cyan over everything. selection_id marks a selection's faces orange and highlight_id draws one object yellow. The view is orthographic and framed on what is drawn. Needs no GPU or display. Over MCP the picture is also returned as an image. *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `direction` | array |  | From the part towards the camera, instead of a standard view. |
 | `height` | integer |  | Default `600`. |
 | `highlight_id` | object id |  | An object drawn in yellow. |
-| `path` | string | yes | PNG file to write. |
+| `path` | string | yes | PNG file to write. Files: `.png`. |
 | `selection_id` | selection id |  | A selection whose faces are marked. |
 | `view` | `iso` \| `front` \| `back` \| `left` \| `right` \| `top` \| `bottom` |  | Default `"iso"`. |
 | `width` | integer |  | Default `800`. |

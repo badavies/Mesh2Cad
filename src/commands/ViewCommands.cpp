@@ -89,7 +89,7 @@ std::vector<Rgb> deviationColors(const std::vector<DocumentObject>& objects, Obj
 } // namespace
 
 void addViewCommands(std::vector<Command>& out) {
-    out.push_back(makeCommand(
+    Command render = makeCommand(
         "view.render",
         "Draw the visible objects to a PNG file, as the app's viewport shows them, so an agent "
         "can see the document: meshes grey (red where a back face shows, deviation colours "
@@ -101,7 +101,7 @@ void addViewCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "path":{"type":"string","description":"PNG file to write."},
+                "path":{"type":"string","x-file-types":["png"],"description":"PNG file to write."},
                 "view":{"type":"string","enum":["iso","front","back","left","right","top","bottom"],"default":"iso"},
                 "direction":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,"description":"From the part towards the camera, instead of a standard view."},
                 "width":{"type":"integer","minimum":16,"maximum":4096,"default":800},
@@ -232,7 +232,9 @@ void addViewCommands(std::vector<Command>& out) {
                         {"view_direction", toJson(view.from * (1.0 / length(view.from)))},
                         {"drawn_ids", std::move(drawn)},
                         {"image", {{"path", *path}, {"mime_type", "image/png"}}}};
-        }));
+        });
+    render.writesFiles = true;
+    out.push_back(std::move(render));
 }
 
 } // namespace m2c::cmd
