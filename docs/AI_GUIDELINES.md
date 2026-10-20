@@ -38,7 +38,7 @@ AI coding tools drift in predictable ways: they widen scope, add dependencies an
 | Layering | `scripts/check_layers.py` enforces who may include whom and keeps kernel headers inside `src/adapters/`. It runs as a ctest. | `scripts/check_layers.py` |
 | Meshes | `TriMesh` is immutable and shares its buffers. A tool returns a new `TriMesh`; it never mutates one. | `src/core/include/m2c/core/TriMesh.h` |
 | Units and names | Millimetres. Put units in names: `surface_area_mm2`, `tolerance_mm`. JSON keys are snake_case; C++ uses `camelCase` functions and members with a trailing `_`. | `src/commands/JsonConvert.cpp` |
-| Commands | Dotted lower-case names (`mesh.import`). Each has a summary, a JSON Schema, a `mutatesDocument` flag and a test in `tests/commands`. | `src/commands/*Commands.cpp` (one file per group; `registerBuiltinCommands` is in `DocumentCommands.cpp`) |
+| Commands | Dotted lower-case names (`mesh.import`). Each has a summary, a JSON Schema, a `mutatesDocument` flag and a test in `tests/commands`. Object ids carry `x-object` (ADR-029); a `path` parameter carries `x-file-types`, and a command that writes that file sets `writesFiles` (ADR-031). | `src/commands/*Commands.cpp` (one file per group; `registerBuiltinCommands` is in `DocumentCommands.cpp`) |
 | Floating point | `-ffp-contract=off` / `/fp:precise` are set globally; never add fast-math. Serial loops in index order unless a deterministic parallel reduction is required. | `cmake/Mesh2CadBuild.cmake` |
 | Tests | Catch2. Check measured outcomes (counts, validity, tolerances), not byte-exact output. Shared helpers in `tests/support/`. | `tests/unit/MeshStatsTests.cpp` |
 | Licence header | First line of every source file: `// SPDX-License-Identifier: GPL-3.0-or-later` | any `.cpp` |
@@ -46,7 +46,8 @@ AI coding tools drift in predictable ways: they widen scope, add dependencies an
 ## Adding a command (checklist)
 
 1. Implement the logic in the right layer (`pipeline`, `io`, `core`), not in the command handler.
-2. Add the handler to `src/commands/` with a summary, a parameter schema and `mutatesDocument`.
+2. Add the handler to `src/commands/` with a summary, a parameter schema and `mutatesDocument`. Give every object id `x-object` and every `path` `x-file-types`; set `writesFiles` if the command writes the file at `path`.
 3. Register it in `registerBuiltinCommands` (or the registration function of its module).
 4. Add a test in `tests/commands/` that runs it through the registry, plus unit or stage tests for the logic.
-5. Do not touch `app/`, `cli/`, `rpc/` or `mcp/`: they pick up the command from the registry.
+5. Do not touch `app/`, `cli/`, `rpc/` or `mcp/`: they pick up the command from the registry, including its object pickers, file dialogs, log lines and MCP annotations.
+6. Regenerate `docs/COMMANDS.md` with `python3 scripts/gen_commands.py <path to mesh2cad>`.

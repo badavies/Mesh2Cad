@@ -32,6 +32,11 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
 - Tool forms show each object parameter (`x-object` in its schema, ADR-029) as a drop-down of
   the document's objects of that kind. Choosing one selects it in the Objects list and
   highlights it in the viewport.
+- A path field's browse button filters on the parameter's `x-file-types` and opens a Save dialog
+  when the command writes files, an Open dialog otherwise (ADR-031).
+- The log panel shows every command that changes the document or writes a file (with the path),
+  from any source. An agent's command still running after two seconds gets a "running" line,
+  and its finishing line gives the time taken.
 - Sketches are listed under the mesh they were cut from and drawn as cyan lines over everything.
 - Solids draw from their display mesh, quad layouts as orange edges. A mesh with a visible
   deviation object is coloured by its newest one (green within tolerance, warm outward, cold
