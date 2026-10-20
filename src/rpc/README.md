@@ -10,6 +10,7 @@ stdin and stdout; the desktop app serves the same protocol on its local socket.
   - Every registered command is a method of the same name.
   - `rpc.hello` reports the server name, version and whether a token is needed; `rpc.auth` checks the token and may name the client `source`.
   - A `doc.changed` notification with the new revision follows each request that changed the document.
+  - While a request runs, each stage its command reports (`CommandContext::progress`) is sent as an `rpc.progress` notification `{"id", "command", "stage", "fraction"?}` before the reply.
 - `m2c/rpc/Session.h`: `SessionInfo`, `defaultSessionFile`, `writeSessionFile`, `readSessionFile`, `makeSessionToken` and `LocalClient`, a line-based client for the app's local socket (Unix domain socket, or a named pipe on Windows).
 
 ## Dependencies

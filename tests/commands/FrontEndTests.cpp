@@ -2,8 +2,12 @@
 // The JSON-RPC channel and the MCP server, and the M1 gate rule that the CLI, JSON and MCP front
 // ends give the same results (ARCHITECTURE.md sections 8 and 12).
 
+#include <algorithm>
 #include <chrono>
 #include <cstddef>
+#include <mutex>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -208,6 +212,63 @@ TEST_CASE("MCP server reports progress while a slow tool runs", "[mcp]") {
         request(3, "tools/call", {{"name", "doc_list"}, {"_meta", {{"progressToken", 7}}}}));
     REQUIRE(sent.size() > count);
     CHECK(sent.back()["params"]["progressToken"] == 7);
+}
+
+TEST_CASE("Long commands report progress over JSON-RPC and MCP", "[rpc][mcp]") {
+    Engine e;
+    REQUIRE(e.registry
+                .add(Command{.name = "test.progress",
+                             .summary = "Reports two stages.",
+                             .paramsSchema = {{"type", "object"}},
+                             .handler = [](CommandContext& context, const Json&) -> Result<Json> {
+                                 report(context.progress, "starting");
+                                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                 report(context.progress, "half", 0.5);
+                                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                                 return Json{{"done", true}};
+                             }})
+                .has_value());
+    std::vector<std::string> outer;
+    e.context.progress = [&outer](std::string_view stage, double) { outer.emplace_back(stage); };
+    std::vector<Json> events;
+    McpServer* mcpServer = nullptr;
+    RpcServer rpc(e.registry, e.context, std::nullopt, [&](const Json& event) {
+        events.push_back(event);
+        if (mcpServer != nullptr) mcpServer->engineEvent(event);
+    });
+
+    // JSON-RPC: each stage is a notification for the request, sent before its response.
+    CHECK((*rpc.handle(request(7, "test.progress")))["result"]["done"] == true);
+    REQUIRE(events.size() == 2);
+    CHECK(events[0]["method"] == "rpc.progress");
+    CHECK(events[0]["params"] ==
+          Json{{"id", 7}, {"command", "test.progress"}, {"stage", "starting"}});
+    CHECK(events[1]["params"]["fraction"] == 0.5);
+    CHECK(outer == std::vector<std::string>{"starting", "half"}); // the context's own listener too
+    REQUIRE(e.context.progress);
+
+    // MCP: the progress messages name the latest stage.
+    std::mutex mutex;
+    std::vector<std::string> messages;
+    int next = 100;
+    McpServer mcp(
+        [&](const std::string& method, const Json& params) -> Result<Json> {
+            return *rpc.handle(request(next++, method, params));
+        },
+        [&](const Json& n) {
+            const std::scoped_lock lock(mutex);
+            messages.push_back(n["params"]["message"].get<std::string>());
+        },
+        std::chrono::milliseconds(20));
+    mcpServer = &mcp;
+    const Json called = *mcp.handle(
+        request(1, "tools/call", {{"name", "test_progress"}, {"_meta", {{"progressToken", "t"}}}}));
+    CHECK(called["result"]["isError"] == false);
+    const std::scoped_lock lock(mutex);
+    REQUIRE(messages.size() >= 4);
+    CHECK(std::ranges::any_of(
+        messages, [](const std::string& m) { return m.starts_with("test.progress: starting, "); }));
+    CHECK(messages.back().starts_with("test.progress: half (50%), "));
 }
 
 TEST_CASE("CLI, JSON-RPC and MCP give identical results", "[rpc][mcp][gate]") {

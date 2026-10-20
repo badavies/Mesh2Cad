@@ -12,6 +12,7 @@
 #include "m2c/commands/Command.h"
 #include "m2c/core/DeviationField.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Report.h"
 #include "m2c/pipeline/Deviation.h"
@@ -72,6 +73,7 @@ void addDeviationCommands(std::vector<Command>& out) {
                 return fail(ErrorCode::NotFound,
                             "no object with id " + std::to_string(*referenceId));
             }
+            report(context.progress, "measuring the scan against the reference");
             Result<DeviationField> field =
                 reference->solid() != nullptr
                     ? deviationToSolid(*mesh->mesh, reference->solid()->solid, *tolerance)

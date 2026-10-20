@@ -16,6 +16,7 @@
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
@@ -129,7 +130,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
             } else if (p.fit) {
                 return fail(ErrorCode::InvalidArgument, "mesh_id is required when fit is true");
             }
-            M2C_TRY(built, buildSurface(layout->quadLayout()->cage, scan.get(), p));
+            M2C_TRY(built,
+                    buildSurface(layout->quadLayout()->cage, scan.get(), p, context.progress));
             const SolidSummary summary = built->solid.summary();
             M2C_TRY(id,
                     context.document.add(name->value_or(layout->name + " (solid)"),
@@ -207,6 +209,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(name, optionalString(params, "name"));
             p.maxDistanceMm = *distance;
             p.minCoverage = *coverage;
+            report(context.progress, "trimming the primitives against each other");
             M2C_TRY(trimmed, trimPrimitives(primitives, *mesh->mesh, p));
             const SolidSummary summary = trimmed->solid.summary();
             M2C_TRY(id,

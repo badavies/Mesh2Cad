@@ -11,6 +11,7 @@
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 
 namespace m2c {
 
@@ -130,7 +131,18 @@ std::optional<Json> RpcServer::handleOne(const Json& request) {
     }
 
     const std::uint64_t before = context_.document.revision();
+    // While the command runs, its stages go out as rpc.progress notifications for this request.
+    const Progress outer = context_.progress;
+    if (events_) {
+        context_.progress = [this, &id, &method, &outer](std::string_view stage, double fraction) {
+            Json event{{"id", id}, {"command", method}, {"stage", std::string(stage)}};
+            if (fraction >= 0.0) event["fraction"] = fraction;
+            events_(Json{{"jsonrpc", "2.0"}, {"method", "rpc.progress"}, {"params", event}});
+            report(outer, stage, fraction);
+        };
+    }
     const auto result = registry_.execute(context_, method, params);
+    context_.progress = outer;
     if (events_ && context_.document.revision() != before) {
         events_(
             Json{{"jsonrpc", "2.0"},

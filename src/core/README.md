@@ -8,6 +8,7 @@ millimetres. Errors cross module boundaries as `Result<T>` (`std::expected<T, Er
 
 - `m2c/core/Vec3.h`: `Vec3d` (a point or vector in mm) with `dot`, `cross`, `length` and arithmetic operators.
 - `m2c/core/Error.h`: `ErrorCode`, `Error`, `Result<T>`, `toString(ErrorCode)` and the `fail(code, message)` shorthand.
+- `m2c/core/Progress.h`: `Progress` (a callback told the stage a long operation is at, and how far through it) and `report`, which calls it when set.
 - `m2c/core/TriMesh.h`: `TriMesh` (immutable indexed triangle mesh, built with `TriMesh::create`) and `Aabb`.
 - `m2c/core/MeshStats.h`: `MeshStats` and `computeStats` (counts, boundary and non-manifold edges, area, volume, bounds).
 - `m2c/core/MeshTopology.h`: `FaceAdjacency`, `buildFaceAdjacency`, `faceComponents`, `faceNormal`, `faceArea`, `extractFaces`.

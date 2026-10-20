@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/document/Document.h"
 
 namespace m2c {
@@ -25,6 +26,9 @@ struct CommandContext {
     /// Called after every successful mutating command with {"command", "params", "source"}: the
     /// session log. Replaying the logged lines reproduces the session (ARCHITECTURE.md section 8).
     std::function<void(const Json&)> sessionLog{};
+    /// Long commands report their stage here ("fitting the cage", 0.4); a front end shows it
+    /// while the command runs. Empty when nobody is listening.
+    Progress progress{};
 
     // Set by CommandRegistry::execute while a handler runs.
     std::string currentCommand{};

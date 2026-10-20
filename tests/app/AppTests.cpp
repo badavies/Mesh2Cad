@@ -301,6 +301,50 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         CHECK(announced >= 0);
         CHECK(announced < std::ranges::find_if(log, smoothed) - log.begin());
     }
+
+    SECTION("an agent and the person see a long command's stages") {
+        REQUIRE(engine.startLocalServer().startsWith("Listening"));
+        const auto info = readSessionFile(defaultSessionFile());
+        REQUIRE(info.has_value());
+        const ObjectId meshId = engine.snapshot()->objects.front().id;
+        QStringList shown;      // what the status bar was told
+        const QObject listener; // ends the connection before `shown` goes
+        QObject::connect(&engine, &Engine::progressChanged, &listener, [&shown](const QString& t) {
+            shown << t;
+        });
+        std::atomic<bool> finished{false};
+        std::vector<Json> lines; // everything the agent read, in order
+        std::thread agent([&] {
+            if (auto client = LocalClient::connect(info->endpoint)) {
+                const auto call = [&](int id, const char* method, const Json& params) {
+                    (void)(*client)->writeLine(
+                        Json{{"jsonrpc", "2.0"}, {"id", id}, {"method", method}, {"params", params}}
+                            .dump());
+                    for (;;) {
+                        auto line = (*client)->readLine();
+                        if (!line) return;
+                        lines.push_back(Json::parse(*line, nullptr, false));
+                        if (lines.back().contains("id")) return;
+                    }
+                };
+                call(1, "rpc.auth", {{"token", info->token}});
+                call(2, "mesh.simplify", {{"id", meshId}, {"target_faces", 200}});
+            }
+            finished = true;
+        });
+        const bool done = waitFor([&] { return finished.load(); });
+        agent.join();
+        REQUIRE(done);
+        // The stage comes before the reply.
+        REQUIRE(lines.size() >= 3);
+        CHECK(lines[1]["method"] == "rpc.progress");
+        CHECK(lines[1]["params"]["id"] == 2);
+        CHECK(lines[1]["params"]["stage"] == "simplifying the mesh");
+        CHECK(lines.back()["id"] == 2);
+        CHECK(lines.back().contains("result"));
+        REQUIRE(waitFor([&] { return !shown.isEmpty(); }));
+        CHECK(shown.front() == "mesh.simplify: simplifying the mesh");
+    }
 }
 
 TEST_CASE("The viewport draws solids, cages and deviation colours", "[app][surface]") {

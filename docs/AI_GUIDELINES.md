@@ -48,6 +48,7 @@ AI coding tools drift in predictable ways: they widen scope, add dependencies an
 1. Implement the logic in the right layer (`pipeline`, `io`, `core`), not in the command handler.
 2. Add the handler to `src/commands/` with a summary, a parameter schema and `mutatesDocument`. Give every object id `x-object` and every `path` `x-file-types`; set `writesFiles` if the command writes the file at `path`.
 3. Register it in `registerBuiltinCommands` (or the registration function of its module).
-4. Add a test in `tests/commands/` that runs it through the registry, plus unit or stage tests for the logic.
-5. Do not touch `app/`, `cli/`, `rpc/` or `mcp/`: they pick up the command from the registry, including its object pickers, file dialogs, log lines and MCP annotations.
-6. Regenerate `docs/COMMANDS.md` with `python3 scripts/gen_commands.py <path to mesh2cad>`.
+4. If it can run for more than a few seconds, say what it is doing: call `report(context.progress, "stage")` before each long step, or pass `context.progress` to the stage function (`m2c/core/Progress.h`). Every front end shows it.
+5. Add a test in `tests/commands/` that runs it through the registry, plus unit or stage tests for the logic.
+6. Do not touch `app/`, `cli/`, `rpc/` or `mcp/`: they pick up the command from the registry, including its object pickers, file dialogs, log lines, progress and MCP annotations.
+7. Regenerate `docs/COMMANDS.md` with `python3 scripts/gen_commands.py <path to mesh2cad>`.

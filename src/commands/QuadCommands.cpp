@@ -121,7 +121,7 @@ void addQuadCommands(std::vector<Command>& out) {
             CageCloseParams close;
             close.joinParts = *join;
             close.keepOutline = *outline;
-            M2C_TRY(result, quadRemesh(*object->mesh, p, close));
+            M2C_TRY(result, quadRemesh(*object->mesh, p, close, context.progress));
             M2C_TRY(id,
                     context.document.add(name->value_or(object->name + " (quads)"),
                                          QuadLayoutData{result->cage},

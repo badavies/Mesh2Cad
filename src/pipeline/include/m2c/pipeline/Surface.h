@@ -8,6 +8,7 @@
 
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/adapters/osd/Subdivision.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/Solid.h"
 #include "m2c/pipeline/PatchMerge.h"
 
@@ -78,7 +79,9 @@ struct SurfaceBuildResult {
 /// `scan` may be null when fit is off.
 /// Fails unless the result is one valid closed solid of positive volume whose faces meet at no
 /// more than maxFoldAngleDeg. Deterministic for the same inputs.
-[[nodiscard]] Result<SurfaceBuildResult>
-buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildParams& params);
+[[nodiscard]] Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
+                                                      const TriMesh* scan,
+                                                      const SurfaceBuildParams& params,
+                                                      const Progress& progress = {});
 
 } // namespace m2c

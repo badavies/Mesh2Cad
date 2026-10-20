@@ -25,6 +25,11 @@ def main() -> int:
         "",
         "Lengths are millimetres; objects are referred to by id (see `doc.list`).",
         "",
+        "Long commands (`quad.remesh`, `surface.build`, `deviation.compute`, `mesh.simplify`,",
+        "`mesh.remesh`, `primitive.trim`) say which stage they are at while they run: as",
+        "`rpc.progress` notifications over JSON-RPC, as `notifications/progress` over MCP when the",
+        "tool call carries `_meta.progressToken`, and in the desktop app's status bar.",
+        "",
     ]
     groups: dict[str, list] = {}
     for c in commands:

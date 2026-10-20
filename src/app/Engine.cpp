@@ -25,6 +25,7 @@
 #include <mutex>
 #include <ranges>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -85,6 +86,9 @@ Engine::Engine(QObject* parent) : QObject(parent) {
     uiContext_ = std::make_unique<CommandContext>(document_);
     uiContext_->source = "ui";
     uiContext_->sessionLog = [this](const Json& entry) { writeLog(entry); };
+    uiContext_->progress = [this](std::string_view stage, double fraction) {
+        showProgress(uiContext_->currentCommand, stage, fraction);
+    };
 
     // Session log: every change from every source, one JSON object per line, replayable.
     const QString dir =
@@ -174,6 +178,21 @@ void Engine::publish() {
         Qt::QueuedConnection);
 }
 
+void Engine::showProgress(const std::string& command,
+                          const std::string_view stage,
+                          const double fraction) {
+    QString text = QStringLiteral("%1: %2").arg(QString::fromStdString(command),
+                                                QString::fromStdString(std::string(stage)));
+    if (fraction >= 0.0) text += QStringLiteral(" (%1%)").arg(qRound(fraction * 100.0));
+    QMetaObject::invokeMethod(
+        this,
+        [this, text] {
+            busyShown_ = true; // so the status clears when the command finishes
+            emit progressChanged(text);
+        },
+        Qt::QueuedConnection);
+}
+
 void Engine::writeLog(const Json& entry) const {
     if (!log_) return;
     Json line = entry;
@@ -243,7 +262,24 @@ void Engine::onNewConnection() {
         c->context = std::make_unique<CommandContext>(document_);
         c->context->source = "json";
         c->context->sessionLog = [this](const Json& entry) { writeLog(entry); };
-        c->rpc = std::make_unique<RpcServer>(registry_, *c->context, token_);
+        // The client hears its own commands' stages (rpc.progress) before their replies; the
+        // person sees them in the status bar. publish() sends doc.changed to every client.
+        c->rpc =
+            std::make_unique<RpcServer>(registry_, *c->context, token_, [this, id](const Json& n) {
+                if (n.value("method", Json()) != "rpc.progress") return;
+                const Json p = n.value("params", Json::object());
+                showProgress(p.value("command", std::string()),
+                             p.value("stage", std::string()),
+                             p.value("fraction", -1.0));
+                const QByteArray line = QByteArray::fromStdString(n.dump() + "\n");
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, id, line] {
+                        if (const auto conn = connections_.find(id); conn != connections_.end())
+                            conn->second->socket->write(line);
+                    },
+                    Qt::QueuedConnection);
+            });
         connections_[id] = c;
         connect(socket, &QLocalSocket::readyRead, this, [this, id] { onReadyRead(id); });
         connect(socket, &QLocalSocket::disconnected, this, [this, id] { onDisconnected(id); });

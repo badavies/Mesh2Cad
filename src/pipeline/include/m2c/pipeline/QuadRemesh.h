@@ -8,6 +8,7 @@
 
 #include "m2c/adapters/quad/QuadRemesh.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/TriMesh.h"
 
@@ -60,7 +61,9 @@ struct QuadRemeshResult {
 };
 
 /// Remeshes a scan into a quad cage and closes it (closeCage()).
-[[nodiscard]] Result<QuadRemeshResult>
-quadRemesh(const TriMesh& scan, const QuadRemeshParams& params, const CageCloseParams& close = {});
+[[nodiscard]] Result<QuadRemeshResult> quadRemesh(const TriMesh& scan,
+                                                  const QuadRemeshParams& params,
+                                                  const CageCloseParams& close = {},
+                                                  const Progress& progress = {});
 
 } // namespace m2c

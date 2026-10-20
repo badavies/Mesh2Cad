@@ -13,6 +13,8 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -75,6 +77,8 @@ signals:
     /// A finished command, from any source: a short line for the log panel.
     void logLine(const QString& line, bool error);
     void busyChanged(bool busy, const QString& command);
+    /// The running command's latest stage, from any source: "surface.build: making the faces".
+    void progressChanged(const QString& text);
     void clientsChanged(int count);
 
 private:
@@ -90,6 +94,8 @@ private:
     void workerLoop();
     /// Sends a new snapshot to the UI if the document changed since the last one.
     void publish();
+    /// Shows a running command's stage in the UI; called on the engine thread.
+    void showProgress(const std::string& command, std::string_view stage, double fraction);
     void writeLog(const Json& entry) const;
     void onNewConnection();
     void onReadyRead(int connectionId);

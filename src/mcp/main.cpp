@@ -13,8 +13,10 @@
 #include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -33,17 +35,24 @@ namespace {
 using m2c::Json;
 using m2c::Result;
 
+/// Where an engine sends the notifications it writes while a call runs (rpc.progress, ...).
+using EventSink = std::function<void(const Json&)>;
+
 /// Engine in this process, reached through the JSON-RPC layer like any other front end.
 struct HeadlessEngine {
     m2c::CommandRegistry registry;
     m2c::Document document;
     m2c::CommandContext context{.document = document};
     std::unique_ptr<m2c::RpcServer> server;
+    EventSink onEvent;
 
     HeadlessEngine() {
         (void)m2c::registerBuiltinCommands(registry);
         context.source = "mcp";
-        server = std::make_unique<m2c::RpcServer>(registry, context);
+        server = std::make_unique<m2c::RpcServer>(
+            registry, context, std::nullopt, [this](const Json& n) {
+                if (onEvent) onEvent(n);
+            });
     }
 
     Result<Json> call(const std::string& method, const Json& params) const {
@@ -58,6 +67,7 @@ struct HeadlessEngine {
 struct RemoteEngine {
     std::unique_ptr<m2c::LocalClient> client;
     long long next{1};
+    EventSink onEvent;
 
     Result<Json> call(const std::string& method, const Json& params) {
         const long long id = next++;
@@ -66,10 +76,11 @@ struct RemoteEngine {
         while (true) {
             auto line = client->readLine();
             if (!line) return std::unexpected(line.error());
-            // Skip doc.changed notifications and anything that is not our answer.
-            if (Json reply = Json::parse(*line, nullptr, false);
-                reply.is_object() && reply.value("id", Json()) == Json(id))
-                return reply;
+            // Notifications (doc.changed, rpc.progress) go to the sink; other answers are skipped.
+            Json reply = Json::parse(*line, nullptr, false);
+            if (!reply.is_object()) continue;
+            if (reply.value("id", Json()) == Json(id)) return reply;
+            if (reply.contains("method") && !reply.contains("id") && onEvent) onEvent(reply);
         }
     }
 
@@ -143,6 +154,10 @@ int main(int argc, char** argv) {
             return remote ? remote->call(method, params) : headless->call(method, params);
         },
         send);
+    // The stages a long command reports go into the progress messages.
+    const EventSink forward = [&server](const Json& n) { server.engineEvent(n); };
+    if (remote) remote->onEvent = forward;
+    if (headless) headless->onEvent = forward;
 
     std::string line;
     while (std::getline(std::cin, line)) {
