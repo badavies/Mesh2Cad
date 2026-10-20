@@ -325,7 +325,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
             "type":"object",
             "properties":{
                 "id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid."},
-                "path":{"type":"string","description":"The .step or .stp file to write."},
+                "path":{"type":"string","x-file-types":["step","stp"],"description":"The .step or .stp file to write."},
                 "product_name":{"type":"string","description":"Product name in the file; the object name if omitted."}
             },
             "required":["id","path"],"additionalProperties":false})",

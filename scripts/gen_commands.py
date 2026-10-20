@@ -52,6 +52,9 @@ def main() -> int:
                         kinds = p["x-object"] if isinstance(p["x-object"], list) else [p["x-object"]]
                         ptype = " or ".join("object" if k == "any" else k for k in kinds) + " id"
                     notes = p.get("description", "")
+                    if "x-file-types" in p:
+                        files = ", ".join(f"`.{t}`" for t in p["x-file-types"])
+                        notes = (notes + " " if notes else "") + f"Files: {files}."
                     if "default" in p:
                         notes = (notes + " " if notes else "") + f"Default `{json.dumps(p['default'])}`."
                     notes = notes.replace("|", "\\|")

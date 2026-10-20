@@ -53,6 +53,22 @@ TEST_CASE("Every command is well formed", "[commands]") {
     }
 }
 
+TEST_CASE("Every path parameter names the file types it takes", "[commands]") {
+    // The app's file dialogs filter on x-file-types, so a path without it offers every file.
+    Session s;
+    const std::regex extension("^[a-z0-9]+$");
+    for (const Command* c : s.registry.list()) {
+        const Json properties = c->paramsSchema.value("properties", Json::object());
+        if (!properties.contains("path")) continue;
+        CAPTURE(c->name);
+        const Json& types = properties["path"].value("x-file-types", Json::array());
+        CHECK_FALSE(types.empty());
+        for (const Json& t : types) CHECK(std::regex_match(t.get<std::string>(), extension));
+    }
+    const Json& step = s.registry.find("solid.export")->paramsSchema["properties"]["path"];
+    CHECK(step["x-file-types"] == Json::array({"step", "stp"}));
+}
+
 TEST_CASE("Commands that write files say so", "[commands]") {
     Session s;
     const std::set<std::string> writers{

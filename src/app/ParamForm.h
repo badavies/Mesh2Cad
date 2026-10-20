@@ -41,6 +41,11 @@ public:
 
     void setBusy(bool busy) const;
 
+    /// The file dialog filter for a path parameter, from its "x-file-types" (extensions without
+    /// the dot), e.g. "STEP, STP (*.step *.stp);;All files (*)". The first entry is the default,
+    /// so a typed name gets the right extension.
+    [[nodiscard]] static QString fileFilter(const Json& property);
+
 signals:
     void runRequested();
     /// The person picked an object in a drop-down.

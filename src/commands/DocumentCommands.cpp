@@ -146,7 +146,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
         R"({
             "type":"object",
             "properties":{
-                "path":{"type":"string","description":"Path of the mesh file to read (.stl, .obj, .ply)."},
+                "path":{"type":"string","x-file-types":["stl","obj","ply"],"description":"Path of the mesh file to read (.stl, .obj, .ply)."},
                 "name":{"type":"string","description":"Object name. Defaults to the file name without extension."}
             },
             "required":["path"],"additionalProperties":false})",
@@ -181,7 +181,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
             "type":"object",
             "properties":{
                 "id":{"type":"integer","x-object":"mesh","minimum":0,"description":"Object id."},
-                "path":{"type":"string","description":"Destination file; the extension (.stl, .obj, .ply) selects the format."}
+                "path":{"type":"string","x-file-types":["stl","obj","ply"],"description":"Destination file; the extension (.stl, .obj, .ply) selects the format."}
             },
             "required":["id","path"],"additionalProperties":false})",
                     false,

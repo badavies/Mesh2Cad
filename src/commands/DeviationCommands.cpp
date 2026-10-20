@@ -98,7 +98,7 @@ void addDeviationCommands(std::vector<Command>& out) {
             "type":"object",
             "properties":{
                 "id":{"type":"integer","x-object":"deviation","minimum":0,"description":"The deviation."},
-                "path":{"type":"string","description":"The .csv file to write."},
+                "path":{"type":"string","x-file-types":["csv"],"description":"The .csv file to write."},
                 "bins":{"type":"integer","minimum":2,"maximum":200,"default":20,"description":"Histogram bins from the smallest to the largest distance."}
             },
             "required":["id","path"],"additionalProperties":false})",

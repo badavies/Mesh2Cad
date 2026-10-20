@@ -163,18 +163,19 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
             field.editor = edit;
             edit->setObjectName(QString::fromStdString(key));
             if (key == "path") {
-                // A file chooser next to path fields; saving commands ask for a new file.
+                // A file chooser next to path fields, showing the files the command takes;
+                // commands that write files ask for a new one.
                 auto* row = new QWidget;
                 auto* h = new QHBoxLayout(row);
                 h->setContentsMargins(0, 0, 0, 0);
                 auto* browse = new QToolButton;
                 browse->setText(QStringLiteral("…"));
-                const bool saving = command->name.find("export") != std::string::npos ||
-                                    command->name.find("save") != std::string::npos;
-                const bool project = command->name.starts_with("project.");
-                connect(browse, &QToolButton::clicked, this, [this, edit, saving, project] {
-                    const QString filter =
-                        project ? tr("Mesh2Cad project (*.m2c)") : tr("Meshes (*.stl *.obj *.ply)");
+                browse->setObjectName(QStringLiteral("browse"));
+                const bool saving = command->writesFiles;
+                const QString filter = fileFilter(prop);
+                browse->setProperty("saving", saving);
+                browse->setProperty("filter", filter);
+                connect(browse, &QToolButton::clicked, this, [this, edit, saving, filter] {
                     const QString file =
                         saving
                             ? QFileDialog::getSaveFileName(this, tr("Save"), edit->text(), filter)
@@ -288,6 +289,22 @@ Result<Json> ParamForm::params() const {
 void ParamForm::setBusy(const bool busy) const {
     run_->setEnabled(!busy && command_ != nullptr);
     run_->setText(busy ? tr("Working…") : tr("Run"));
+}
+
+QString ParamForm::fileFilter(const Json& property) {
+    const QString all = tr("All files (*)");
+    if (!property.contains("x-file-types") || !property["x-file-types"].is_array()) return all;
+    QStringList names;
+    QStringList patterns;
+    for (const Json& type : property["x-file-types"]) {
+        if (!type.is_string()) continue;
+        const QString extension = QString::fromStdString(type.get<std::string>());
+        names.append(extension.toUpper());
+        patterns.append(QStringLiteral("*.") + extension);
+    }
+    if (patterns.isEmpty()) return all;
+    return QStringLiteral("%1 (%2);;%3")
+        .arg(names.join(QStringLiteral(", ")), patterns.join(QLatin1Char(' ')), all);
 }
 
 } // namespace m2c::app

@@ -84,7 +84,7 @@ Write a deviation's statistics and a histogram of its distances to a CSV file. *
 | --- | --- | --- | --- |
 | `bins` | integer |  | Histogram bins from the smallest to the largest distance. Default `20`. |
 | `id` | deviation id | yes | The deviation. |
-| `path` | string | yes | The .csv file to write. |
+| `path` | string | yes | The .csv file to write. Files: `.csv`. |
 
 ## doc
 
@@ -149,7 +149,7 @@ Write a mesh object to a file: binary STL, OBJ, or binary PLY. *(writes a file)*
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | mesh id | yes | Object id. |
-| `path` | string | yes | Destination file; the extension (.stl, .obj, .ply) selects the format. |
+| `path` | string | yes | Destination file; the extension (.stl, .obj, .ply) selects the format. Files: `.stl`, `.obj`, `.ply`. |
 
 ### `mesh.flip`
 
@@ -166,7 +166,7 @@ Read a mesh file (STL, OBJ or PLY) into the document as a new object. *(changes 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `name` | string |  | Object name. Defaults to the file name without extension. |
-| `path` | string | yes | Path of the mesh file to read (.stl, .obj, .ply). |
+| `path` | string | yes | Path of the mesh file to read (.stl, .obj, .ply). Files: `.stl`, `.obj`, `.ply`. |
 
 ### `mesh.info`
 
@@ -353,7 +353,7 @@ Open a project file, replacing the current document. Clears the undo history. *(
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `path` | string | yes |  |
+| `path` | string | yes | Files: `.m2c`. |
 
 ### `project.save`
 
@@ -361,7 +361,7 @@ Save every object (meshes, selections, measurements, alignments, quad layouts, s
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `path` | string | yes |  |
+| `path` | string | yes | Files: `.m2c`. |
 
 ## quad
 
@@ -558,7 +558,7 @@ Write a solid to a STEP AP242 file in millimetres, then read the file back and c
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | solid id | yes | The solid. |
-| `path` | string | yes | The .step or .stp file to write. |
+| `path` | string | yes | The .step or .stp file to write. Files: `.step`, `.stp`. |
 | `product_name` | string |  | Product name in the file; the object name if omitted. |
 
 ### `solid.extrude`
@@ -627,7 +627,7 @@ Draw the visible objects to a PNG file, as the app's viewport shows them, so an 
 | `direction` | array |  | From the part towards the camera, instead of a standard view. |
 | `height` | integer |  | Default `600`. |
 | `highlight_id` | object id |  | An object drawn in yellow. |
-| `path` | string | yes | PNG file to write. |
+| `path` | string | yes | PNG file to write. Files: `.png`. |
 | `selection_id` | selection id |  | A selection whose faces are marked. |
 | `view` | `iso` \| `front` \| `back` \| `left` \| `right` \| `top` \| `bottom` |  | Default `"iso"`. |
 | `width` | integer |  | Default `800`. |

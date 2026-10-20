@@ -10,6 +10,7 @@
 #include <QMouseEvent>
 #include <QStringList>
 #include <QSurfaceFormat>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <algorithm>
@@ -19,6 +20,7 @@
 #include <iostream>
 #include <numbers>
 #include <thread>
+#include <utility>
 
 #include "m2c/io/MeshIO.h"
 #include "m2c/rpc/Session.h"
@@ -531,6 +533,22 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});
     CHECK(form.findChild<QComboBox*>("plane_id")->currentText() == "None");
     CHECK_FALSE(form.params()->contains("plane_id"));
+
+    // A path field browses for the files its command takes, and asks for a new file when the
+    // command writes one: a STEP export must not default to meshes.
+    const auto browse = [&](const char* command) {
+        form.setCommand(registry.find(command));
+        const auto* button = form.findChild<QToolButton*>("browse");
+        REQUIRE(button != nullptr);
+        return std::pair{button->property("filter").toString(),
+                         button->property("saving").toBool()};
+    };
+    CHECK(browse("solid.export") ==
+          std::pair{QStringLiteral("STEP, STP (*.step *.stp);;All files (*)"), true});
+    CHECK(browse("mesh.import") ==
+          std::pair{QStringLiteral("STL, OBJ, PLY (*.stl *.obj *.ply);;All files (*)"), false});
+    CHECK(browse("view.render").second); // writes a picture, so a save dialog
+    CHECK(browse("project.open").first.startsWith("M2C (*.m2c)"));
 }
 
 // The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or
