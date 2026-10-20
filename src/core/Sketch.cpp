@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <numbers>
 #include <optional>
@@ -82,6 +83,30 @@ double distanceTo(const SketchCurve& curve, const Vec2d& p) noexcept {
         best = std::min(best, distanceToSegment(curve.points[i - 1], curve.points[i], p));
     }
     return best;
+}
+
+SketchLines sketchLines(const Sketch& sketch) {
+    SketchLines out;
+    for (const SketchLoop& loop : sketch.loops) {
+        for (const SketchCurve& c : loop.curves) {
+            std::vector<Vec2d> along = c.points;
+            if (c.kind == CurveKind::Arc) {
+                const int n =
+                    std::max(2, static_cast<int>(std::ceil(std::abs(c.sweepRad) / 0.0873)));
+                along.clear();
+                for (int k = 0; k <= n; ++k)
+                    along.push_back(onCircle(c, c.startRad + c.sweepRad * k / n));
+            }
+            for (std::size_t k = 0; k < along.size(); ++k) {
+                if (k > 0) {
+                    const auto last = static_cast<std::uint32_t>(out.points.size());
+                    out.segments.insert(out.segments.end(), {last - 1, last});
+                }
+                out.points.push_back(sketch.plane.toWorld(along[k]));
+            }
+        }
+    }
+    return out;
 }
 
 } // namespace m2c

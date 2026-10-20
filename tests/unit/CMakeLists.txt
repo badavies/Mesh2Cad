@@ -5,6 +5,7 @@ add_executable(m2c_unit_tests
     MeshStatsTests.cpp
     ObjPlyTests.cpp
     ProjectTests.cpp
+    RasterTests.cpp
     StlTests.cpp
     TriMeshTests.cpp)
 target_link_libraries(m2c_unit_tests PRIVATE

@@ -125,38 +125,6 @@ const TriMesh* primitiveDisplay(const DocumentObject& o) {
     return p != nullptr ? p->display.get() : nullptr;
 }
 
-/// A sketch's curves as line segments in world coordinates; arcs are drawn every 5 degrees.
-struct SketchLines {
-    std::vector<Vec3d> points;
-    std::vector<std::uint32_t> segments; ///< Pairs of point indices.
-};
-
-SketchLines sketchLines(const Sketch& sketch) {
-    SketchLines out;
-    for (const SketchLoop& loop : sketch.loops) {
-        for (const SketchCurve& c : loop.curves) {
-            std::vector<Vec2d> along = c.points;
-            if (c.kind == CurveKind::Arc) {
-                const int n =
-                    std::max(2, static_cast<int>(std::ceil(std::abs(c.sweepRad) / 0.0873)));
-                along.clear();
-                for (int k = 0; k <= n; ++k) {
-                    const double a = c.startRad + c.sweepRad * k / n;
-                    along.push_back(c.centre + Vec2d{std::cos(a), std::sin(a)} * c.radiusMm);
-                }
-            }
-            for (std::size_t k = 0; k < along.size(); ++k) {
-                if (k > 0) {
-                    const auto last = static_cast<std::uint32_t>(out.points.size());
-                    out.segments.insert(out.segments.end(), {last - 1, last});
-                }
-                out.points.push_back(sketch.plane.toWorld(along[k]));
-            }
-        }
-    }
-    return out;
-}
-
 Aabb pointBounds(const std::vector<Vec3d>& points) {
     Aabb box{.min = points.front(), .max = points.front()};
     for (const Vec3d& p : points) {
@@ -195,21 +163,6 @@ Aabb drawnBounds(const DocumentObject& o) {
     if (const TriMesh* p = primitiveDisplay(o)) return p->bounds();
     if (isSketch(o)) return pointBounds(sketchLines(o.sketch()->sketch).points);
     return o.quadLayout()->cage.bounds();
-}
-
-/// Each cage edge once, as pairs of vertex indices.
-std::vector<std::uint32_t> cageEdges(const QuadLayout& cage) {
-    std::vector<std::uint32_t> edges;
-    for (std::size_t f = 0; f + 1 < cage.faceStarts().size(); ++f) {
-        const std::uint32_t begin = cage.faceStarts()[f], end = cage.faceStarts()[f + 1];
-        for (std::uint32_t k = begin; k < end; ++k) {
-            const std::uint32_t a = cage.faceVertices()[k];
-            // A closed cage has each edge in two faces, once in each direction.
-            if (const std::uint32_t b = cage.faceVertices()[k + 1 < end ? k + 1 : begin]; a < b)
-                edges.insert(edges.end(), {a, b});
-        }
-    }
-    return edges;
 }
 
 } // namespace

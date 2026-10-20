@@ -4,6 +4,7 @@ m2c_add_library(io
         MeshIO.cpp
         Obj.cpp
         Ply.cpp
+        Png.cpp
         Project.cpp
         Report.cpp
         Stl.cpp
