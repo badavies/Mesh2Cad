@@ -5,6 +5,7 @@
 #include <QObject>
 #include <QString>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -65,6 +66,10 @@ public:
     [[nodiscard]] bool busy() const noexcept { return pending_ > 0; }
     [[nodiscard]] QString sessionLogPath() const;
 
+    /// An agent's command still running after this long gets a "running" line in the log, so
+    /// the person can tell a long command from a hung one.
+    void setRunningNotice(std::chrono::milliseconds after) noexcept { runningNotice_ = after; }
+
 signals:
     void documentChanged(std::shared_ptr<const m2c::app::DocSnapshot> snapshot);
     /// A finished command, from any source: a short line for the log panel.
@@ -113,6 +118,7 @@ private:
     std::map<int, std::shared_ptr<Connection>> connections_;
     int nextConnection_{1};
     std::unique_ptr<QFile> log_;
+    std::chrono::milliseconds runningNotice_{2000};
 };
 
 } // namespace m2c::app

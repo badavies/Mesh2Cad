@@ -240,6 +240,11 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         QObject::connect(
             &engine, &Engine::logLine, [&](const QString& line, bool) { log.append(line); });
         const std::string exported = (dir.path() / "agent.stl").string();
+        // Big enough that smoothing it takes far longer than the GUI takes to look.
+        const std::string bigPath = (dir.path() / "big.stl").string();
+        REQUIRE(writeMesh(makeBumpySphere(10.0, 300, 600), bigPath).has_value());
+        // An agent command still running when the GUI next looks gets its "running" line.
+        engine.setRunningNotice(std::chrono::milliseconds(0));
         std::atomic<bool> finished{false};
         Json listed;
         Json rejected;
@@ -263,6 +268,8 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
                 call(3, "select.all", {{"id", meshId}});
                 listed = call(4, "doc.list", Json::object());
                 call(5, "mesh.export", {{"id", meshId}, {"path", exported}});
+                const Json big = call(6, "mesh.import", {{"path", bigPath}});
+                call(7, "mesh.smooth", {{"id", big["result"].value("id", 0)}, {"iterations", 100}});
             }
             finished = true;
         });
@@ -284,6 +291,13 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
             log, [&](const QString& l) { return l.endsWith(QString::fromStdString(exported)); }));
         CHECK_FALSE(std::ranges::any_of(
             log, [](const QString& l) { return l.startsWith("[mcp] doc.list"); }));
+        // The smoothing of the big mesh is still running when the GUI looks: it is announced, then
+        // logged again when it finishes.
+        const auto smoothed = [](const QString& l) { return l.startsWith("[mcp] mesh.smooth  #"); };
+        REQUIRE(waitFor([&] { return std::ranges::any_of(log, smoothed); }));
+        const auto announced = log.indexOf(QStringLiteral("[mcp] mesh.smooth  running..."));
+        CHECK(announced >= 0);
+        CHECK(announced < std::ranges::find_if(log, smoothed) - log.begin());
     }
 }
 
