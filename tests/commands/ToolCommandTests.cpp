@@ -2,7 +2,9 @@
 // Every M1 command run end to end through the registry, as the UI, CLI, JSON channel and MCP
 // server all do.
 
+#include <cmath>
 #include <limits>
+#include <numbers>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -16,6 +18,8 @@ using namespace m2c::test;
 using Catch::Matchers::WithinAbs;
 
 namespace {
+
+constexpr double kDegree = std::numbers::pi / 180.0;
 
 struct Session {
     CommandRegistry registry;
@@ -217,6 +221,113 @@ TEST_CASE("primitive.fit adds an exact primitive fitted to a selection", "[comma
 
     s.run("doc.undo");
     CHECK(s.document.objects().size() == before + 1);
+}
+
+TEST_CASE("primitive.align makes fitted planes parallel and refits them", "[commands][fit]") {
+    Session s;
+    const TempDir dir;
+    // A block whose top leans 0.573 degrees along x.
+    const TriMesh box = makeBox(30, 20, 10, 8);
+    std::vector<Vec3d> p = box.positions();
+    for (Vec3d& q : p) {
+        if (q.z == 10.0) q.z += 0.01 * (q.x - 15.0);
+    }
+    const ObjectId mesh = s.import(dir, makeMesh(p, box.indices()), "block");
+    const Json regions = s.run("mesh.segment", {{"id", mesh}})["regions"];
+    REQUIRE(regions.size() == 6);
+    ObjectId top = 0, bottom = 0, side = 0;
+    for (const Json& r : regions) {
+        const Json fit = s.run("primitive.fit", {{"selection_id", r["selection_id"]}});
+        const double nz = fit["normal"][2].get<double>();
+        const double nx = fit["normal"][0].get<double>();
+        if (nz > 0.9) top = fit["id"];
+        if (nz < -0.9) bottom = fit["id"];
+        if (nx > 0.9) side = fit["id"];
+    }
+    REQUIRE(top != 0);
+    REQUIRE(bottom != 0);
+    REQUIRE(side != 0);
+    const auto normal = [&](ObjectId id) {
+        return s.document.find(id)->primitive()->fit.surface.direction;
+    };
+    const std::size_t steps = s.document.undoHistory().size();
+
+    // Too far from its region for 0.05 mm: nothing changes.
+    const Vec3d leaning = normal(top);
+    const auto strict =
+        s.tryRun("primitive.align",
+                 {{"ids", {top}}, {"reference_ids", {bottom}}, {"max_residual_mm", 0.05}});
+    REQUIRE_FALSE(strict.has_value());
+    CHECK(strict.error().code == ErrorCode::InvalidState);
+    CHECK(normal(top) == leaning);
+
+    const Json aligned = s.run("primitive.align", {{"ids", {top}}, {"reference_ids", {bottom}}});
+    REQUIRE(aligned["primitives"].size() == 1);
+    const Json& line = aligned["primitives"][0];
+    CHECK_THAT(line["turned_deg"].get<double>(), WithinAbs(0.573, 0.01));
+    CHECK(line["p95_before_mm"].get<double>() < 1e-6);
+    CHECK(line["p95_mm"].get<double>() > 0.1);
+    CHECK(normal(top) == normal(bottom) * -1.0);
+    CHECK_THAT(s.document.find(top)->primitive()->fit.surface.point.z, WithinAbs(10.0, 1e-9));
+    CHECK(s.document.find(top)->primitive()->display != nullptr);
+    CHECK(s.document.undoHistory().size() == steps + 1);
+    CHECK(s.document.undoHistory().back().label == "primitive.align");
+    s.run("doc.undo");
+    CHECK(normal(top) == leaning);
+
+    // With no reference, both take their mean and end exactly parallel.
+    s.run("primitive.align", {{"ids", {top, bottom}}});
+    CHECK_THAT(dot(normal(top), normal(bottom)), WithinAbs(-1.0, 1e-15));
+    CHECK_THAT(dot(normal(top), Vec3d{0, 0, 1}), WithinAbs(std::cos(0.2865 * kDegree), 1e-6));
+
+    // A world plane, a perpendicular and a set angle.
+    s.run("primitive.align", {{"ids", {top}}, {"plane", "xy"}});
+    CHECK(normal(top) == Vec3d{0, 0, 1});
+    const Json square =
+        s.run("primitive.align",
+              {{"ids", {side}}, {"reference_ids", {top}}, {"relation", "perpendicular"}});
+    CHECK(square["primitives"][0]["turned_deg"].get<double>() < 1e-6);
+    s.run("primitive.align",
+          {{"ids", {side}}, {"axis", "z"}, {"relation", "angle"}, {"angle_deg", 60}});
+    CHECK_THAT(dot(normal(side), Vec3d{0, 0, 1}), WithinAbs(std::cos(30 * kDegree), 1e-12));
+
+    CHECK_FALSE(s.tryRun("primitive.align", {{"ids", {top}}, {"relation", "perpendicular"}}));
+    CHECK_FALSE(
+        s.tryRun("primitive.align", {{"ids", {top}}, {"axis", "z"}, {"relation", "angle"}}));
+    CHECK_FALSE(s.tryRun("primitive.align", {{"ids", {top}}, {"axis", "z"}, {"plane", "xy"}}));
+    CHECK_FALSE(s.tryRun("primitive.align", {{"ids", {mesh}}, {"axis", "z"}}));
+    CHECK_FALSE(s.tryRun("primitive.align", {{"ids", Json::array()}}));
+}
+
+TEST_CASE("primitive.align holds a cylinder's axis along a plane's normal", "[commands][fit]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId id = s.import(dir, makeCylinder(10.0, 30.0, 96, 30), "can");
+    const Json regions = s.run("mesh.segment", {{"id", id}})["regions"];
+    REQUIRE(regions.size() == 3);
+    const ObjectId cap =
+        s.run("primitive.fit", {{"selection_id", regions[0]["selection_id"]}})["id"];
+    const Json side = s.run("primitive.fit", {{"selection_id", regions[2]["selection_id"]}});
+    REQUIRE(side["kind"] == "cylinder");
+    const ObjectId can = side["id"];
+
+    // Perpendicular to the cap's plane: the axis along its normal.
+    const Json aligned =
+        s.run("primitive.align",
+              {{"ids", {can}}, {"reference_ids", {cap}}, {"relation", "perpendicular"}});
+    const Primitive axis = s.document.find(can)->primitive()->fit.surface;
+    CHECK(std::abs(axis.direction.z) == 1.0);
+    CHECK_THAT(axis.radiusMm, WithinAbs(10.0, 1e-3));
+    CHECK(aligned["primitives"][0]["p95_mm"].get<double>() < 1e-3);
+    // Parallel to the plane would lay it on its side, far from its region.
+    CHECK_FALSE(s.tryRun("primitive.align",
+                         {{"ids", {can}}, {"reference_ids", {cap}}, {"max_residual_mm", 1.0}}));
+    // Mixed references, and a region that is gone.
+    CHECK_FALSE(s.tryRun("primitive.align", {{"ids", {cap}}, {"reference_ids", {cap, can}}}));
+    s.run("object.delete", {{"id", regions[2]["selection_id"]}});
+    const auto gone = s.tryRun("primitive.align", {{"ids", {can}}, {"axis", "z"}});
+    REQUIRE_FALSE(gone.has_value());
+    CHECK(gone.error().message.find("is gone") != std::string::npos);
 }
 
 TEST_CASE("Selections, face deletion and datum alignment through commands", "[commands][align]") {

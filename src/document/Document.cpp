@@ -196,6 +196,19 @@ Result<void> Document::replaceMeasurement(const ObjectId id, const Measurement& 
     });
 }
 
+Result<void> Document::replacePrimitive(const ObjectId id, PrimitiveData primitive) {
+    const auto it = objects_.find(id);
+    if (it == objects_.end() || it->second.primitive() == nullptr) {
+        return fail(ErrorCode::NotFound, "no primitive object with id " + std::to_string(id));
+    }
+    if (auto ok = checkData(primitive); !ok) return ok;
+    return inStep(*this, "primitive", [&]() -> Result<void> {
+        it->second.data = std::move(primitive);
+        changed();
+        return {};
+    });
+}
+
 void Document::removeDependents(const ObjectId id, const Dependents which) {
     for (auto it = objects_.begin(); it != objects_.end();) {
         const DocumentObject& o = it->second;

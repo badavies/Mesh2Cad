@@ -294,6 +294,20 @@ Fit a least-squares plane to the faces of a selection. *(read-only)*
 
 ## primitive
 
+### `primitive.align`
+
+Make planes, cylinders and cones exactly parallel, perpendicular or at a set angle to a reference, then refit everything but the direction to the regions they were fitted to. The reference is the mean of reference_ids, a world axis, or a world plane; with none, the mean of the primitives' own directions (parallel only). Angles have their CAD meaning: a plane is measured by its normal and a cylinder or cone by its axis, so a cylinder perpendicular to a plane has its axis along the normal. Replaces the primitives in place as one step. Fails, changing nothing, for a sphere, a turn whose way is undefined, a region that is gone, or a new P95 above max_residual_mm. The result gives each primitive's turn in degrees and its P95 before and after. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `angle_deg` | number |  | The angle, for relation angle. |
+| `axis` | `x` \| `y` \| `z` |  | A world axis as the reference, a line. |
+| `ids` | array | yes | The primitives to align. |
+| `max_residual_mm` | number |  | Largest P95 distance allowed after aligning. |
+| `plane` | `xy` \| `yz` \| `zx` |  | A world plane as the reference. |
+| `reference_ids` | array |  | Primitives whose mean direction is the reference: all planes, or all cylinders and cones. |
+| `relation` | `parallel` \| `perpendicular` \| `angle` |  | Default `"parallel"`. |
+
 ### `primitive.fit`
 
 Fit an exact, unbounded plane, cylinder, sphere or cone to the faces of a selection by least squares, starting from CGAL's estimate, and add it as a primitive. With kind "auto" it takes the simplest kind that fits about as well as any. Fails, adding nothing, when 95% of the region's vertices are not within max_residual_mm of the surface. The result gives the primitive, its RMS, largest and P95 distance, and the region's bounding box. *(changes the document)*

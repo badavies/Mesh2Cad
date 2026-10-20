@@ -179,6 +179,9 @@ public:
     /// Replaces the value of a measurement object.
     [[nodiscard]] Result<void> replaceMeasurement(ObjectId id, const Measurement& measurement);
 
+    /// Replaces the fit and display of a primitive object.
+    [[nodiscard]] Result<void> replacePrimitive(ObjectId id, PrimitiveData primitive);
+
     /// Removes an object and every selection, measurement and deviation that refers to it.
     [[nodiscard]] Result<void> remove(ObjectId id);
 

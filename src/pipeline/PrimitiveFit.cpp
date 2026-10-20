@@ -172,53 +172,61 @@ Result<PrimitiveFit> fitKind(const TriMesh& mesh,
 
 } // namespace
 
-PrimitiveFit fitPrimitive(const Primitive& start, std::span<const Vec3d> points) {
+namespace {
+
+/// Gauss-Newton on the residuals over the parameters moved() steps that are in `free`; the start
+/// is kept if no step fits better.
+Primitive
+refine(const Primitive& start, std::span<const Vec3d> points, std::span<const Eigen::Index> free) {
+    const Eigen::Index n = start.kind == PrimitiveKind::Sphere     ? 4
+                           : start.kind == PrimitiveKind::Cylinder ? 5
+                                                                   : 6;
+    const auto m = static_cast<Eigen::Index>(points.size());
+    const auto k = static_cast<Eigen::Index>(free.size());
+    const auto residuals = [&](const Primitive& s) {
+        Eigen::VectorXd f(m);
+        for (Eigen::Index i = 0; i < m; ++i) {
+            const Vec3d& p = points[static_cast<std::size_t>(i)];
+            f(i) = dot(p - s.point, normalAt(s, p)) - s.radiusMm;
+        }
+        return f;
+    };
     Primitive best = start;
-    if (start.kind == PrimitiveKind::Plane) {
-        best = fitPlane(start, points);
-    } else {
-        const Eigen::Index n = start.kind == PrimitiveKind::Sphere     ? 4
-                               : start.kind == PrimitiveKind::Cylinder ? 5
-                                                                       : 6;
-        const auto m = static_cast<Eigen::Index>(points.size());
-        const auto residuals = [&](const Primitive& s) {
-            Eigen::VectorXd f(m);
-            for (Eigen::Index i = 0; i < m; ++i) {
-                const Vec3d& p = points[static_cast<std::size_t>(i)];
-                f(i) = dot(p - s.point, normalAt(s, p)) - s.radiusMm;
-            }
-            return f;
-        };
-        double bestRms = rms(start, points);
-        Primitive at = start;
-        for (int it = 0; it < kMaxSteps && m >= n; ++it) {
-            // Forward differences: the residuals are smooth away from the axis or centre.
-            const Eigen::VectorXd f = residuals(at);
-            const double h = 1e-7 * std::max(1.0, at.radiusMm);
-            Eigen::MatrixXd j(m, n);
-            for (Eigen::Index k = 0; k < n; ++k) {
-                Eigen::VectorXd step = Eigen::VectorXd::Zero(n);
-                step(k) = h;
-                j.col(k) = (residuals(moved(at, step)) - f) / h;
-            }
-            const Eigen::VectorXd step = (j.transpose() * j).ldlt().solve(-j.transpose() * f);
-            if (!step.allFinite()) break;
-            at = moved(at, step);
-            if (const double now = rms(at, points); now < bestRms) {
-                bestRms = now;
-                best = at;
-            }
-            if (step.norm() < 1e-10 * std::max(1.0, at.radiusMm)) break;
+    double bestRms = rms(start, points);
+    Primitive at = start;
+    for (int it = 0; it < kMaxSteps && m >= k; ++it) {
+        // Forward differences: the residuals are smooth away from the axis or centre.
+        const Eigen::VectorXd f = residuals(at);
+        const double h = 1e-7 * std::max(1.0, at.radiusMm);
+        Eigen::MatrixXd j(m, k);
+        for (Eigen::Index c = 0; c < k; ++c) {
+            Eigen::VectorXd step = Eigen::VectorXd::Zero(n);
+            step(free[static_cast<std::size_t>(c)]) = h;
+            j.col(c) = (residuals(moved(at, step)) - f) / h;
         }
-        if (best.kind == PrimitiveKind::Cylinder) {
-            best.point =
-                best.point + best.direction * dot(centroid(points) - best.point, best.direction);
+        const Eigen::VectorXd reduced = (j.transpose() * j).ldlt().solve(-j.transpose() * f);
+        if (!reduced.allFinite()) break;
+        Eigen::VectorXd step = Eigen::VectorXd::Zero(n);
+        for (Eigen::Index c = 0; c < k; ++c) step(free[static_cast<std::size_t>(c)]) = reduced(c);
+        at = moved(at, step);
+        if (const double now = rms(at, points); now < bestRms) {
+            bestRms = now;
+            best = at;
         }
+        if (reduced.norm() < 1e-10 * std::max(1.0, at.radiusMm)) break;
     }
-    PrimitiveFit out{.primitive = best, .rmsMm = rms(best, points)};
+    if (best.kind == PrimitiveKind::Cylinder) {
+        best.point =
+            best.point + best.direction * dot(centroid(points) - best.point, best.direction);
+    }
+    return best;
+}
+
+PrimitiveFit summarise(const Primitive& s, std::span<const Vec3d> points) {
+    PrimitiveFit out{.primitive = s, .rmsMm = rms(s, points)};
     std::vector<double> distances;
     distances.reserve(points.size());
-    for (const Vec3d& p : points) distances.push_back(distanceTo(best, p));
+    for (const Vec3d& p : points) distances.push_back(distanceTo(s, p));
     if (!distances.empty()) {
         out.maxMm = std::ranges::max(distances);
         const auto at =
@@ -228,6 +236,66 @@ PrimitiveFit fitPrimitive(const Primitive& start, std::span<const Vec3d> points)
         out.p95Mm = *at;
     }
     return out;
+}
+
+} // namespace
+
+PrimitiveFit fitPrimitive(const Primitive& start, std::span<const Vec3d> points) {
+    if (start.kind == PrimitiveKind::Plane) return summarise(fitPlane(start, points), points);
+    static constexpr Eigen::Index kAll[] = {0, 1, 2, 3, 4, 5};
+    const std::size_t n = start.kind == PrimitiveKind::Sphere     ? 4
+                          : start.kind == PrimitiveKind::Cylinder ? 5
+                                                                  : 6;
+    return summarise(refine(start, points, std::span(kAll, n)), points);
+}
+
+Result<PrimitiveFit> fitWithDirection(const Primitive& start, std::span<const Vec3d> points) {
+    if (start.kind == PrimitiveKind::Sphere) {
+        return fail(ErrorCode::InvalidArgument, "a sphere has no direction to hold");
+    }
+    if (!(std::abs(length(start.direction) - 1.0) < 1e-9)) {
+        return fail(ErrorCode::InvalidArgument, "the direction must be a unit vector");
+    }
+    if (points.empty()) return fail(ErrorCode::InvalidArgument, "there are no points to fit");
+    if (start.kind == PrimitiveKind::Plane) {
+        // With the normal fixed, the least-squares plane goes through the centroid.
+        Primitive plane = start;
+        plane.point = centroid(points);
+        return summarise(plane, points);
+    }
+    // moved()'s parameters without the axis tilt: a cylinder's axis point across the axis and
+    // radius, a cone's apex and half-angle.
+    static constexpr Eigen::Index kCylinder[] = {0, 1, 4};
+    static constexpr Eigen::Index kCone[] = {0, 1, 2, 5};
+    const std::span<const Eigen::Index> free = start.kind == PrimitiveKind::Cylinder
+                                                   ? std::span<const Eigen::Index>(kCylinder)
+                                                   : std::span<const Eigen::Index>(kCone);
+    if (points.size() < free.size()) {
+        return fail(ErrorCode::InvalidArgument, "too few points to fit");
+    }
+    Primitive held = refine(start, points, free);
+    held.direction = start.direction; // moved() renormalises it, which can move the last bit
+    return summarise(held, points);
+}
+
+Result<Vec3d>
+alignedDirection(const Vec3d& direction, const Vec3d& reference, const double angleRad) {
+    const Vec3d d = unit(direction), r0 = unit(reference);
+    if (length(d) == 0.0 || length(r0) == 0.0) {
+        return fail(ErrorCode::InvalidArgument, "a direction is zero");
+    }
+    if (!(angleRad >= 0.0 && angleRad <= std::numbers::pi / 2 + 1e-12)) {
+        return fail(ErrorCode::InvalidArgument, "the angle must be from 0 to 90 degrees");
+    }
+    // The reference's sign nearer the direction, so a plane's normal keeps its side.
+    const Vec3d r = dot(d, r0) < 0.0 ? r0 * -1.0 : r0;
+    if (angleRad == 0.0) return r;
+    const Vec3d off = d - r * dot(d, r);
+    if (length(off) < 1e-9) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the direction is along the reference, so which way to turn it is undefined");
+    }
+    return r * std::cos(angleRad) + unit(off) * std::sin(angleRad);
 }
 
 double turnAngle(const Primitive& s, std::span<const Vec3d> points) {

@@ -30,6 +30,20 @@ struct PrimitiveFit {
 /// five for a cylinder and six for a cone, to be determined).
 [[nodiscard]] PrimitiveFit fitPrimitive(const Primitive& start, std::span<const Vec3d> points);
 
+/// fitPrimitive with start.direction held exactly (a plane's normal, a cylinder's or cone's axis):
+/// a plane goes through the points' centroid, a cylinder's axis moves across itself and its
+/// radius changes, a cone's apex and half-angle change. Fails for a sphere or a direction that
+/// is not a unit vector. Deterministic.
+[[nodiscard]] Result<PrimitiveFit> fitWithDirection(const Primitive& start,
+                                                    std::span<const Vec3d> points);
+
+/// The unit direction at angleRad (0 to pi/2) from `reference`, turned from it towards
+/// `direction` in the plane they span: the reference itself (with direction's sign) for 0.
+/// Fails for a zero vector, an angle outside 0 to pi/2, or a nonzero angle when direction lies
+/// along the reference.
+[[nodiscard]] Result<Vec3d>
+alignedDirection(const Vec3d& direction, const Vec3d& reference, double angleRad);
+
 /// How far a cylinder, cone or sphere turns over the points, in radians: around the axis (the
 /// full circle less the largest gap), or the widest angle at the centre between a point and the
 /// points' mean direction, doubled. Zero for a plane. A strip of a plane also fits a large

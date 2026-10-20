@@ -106,3 +106,60 @@ TEST_CASE("Distances and normals of primitives", "[stages][fit]") {
     CHECK_THAT(distanceTo(plane, {4, 5, -1}), WithinAbs(2.0, 1e-12));
     CHECK(normalAt(plane, {4, 5, -1}) == Vec3d{0, 0, 1});
 }
+
+TEST_CASE("A fit with the direction held refits the rest of a cylinder", "[stages][fit]") {
+    const Vec3d axis = Vec3d{0.2, 0.3, 1.0} * (1.0 / length(Vec3d{0.2, 0.3, 1.0}));
+    const std::vector<Vec3d> points = cylinderPatch(axis);
+    const Primitive start{.kind = PrimitiveKind::Cylinder,
+                          .point = Vec3d{1.5, 2.0, 3.0},
+                          .direction = axis,
+                          .radiusMm = 8.4};
+    const Result<PrimitiveFit> fit = fitWithDirection(start, points);
+    REQUIRE(fit);
+    CHECK(fit->primitive.direction == axis);
+    CHECK_THAT(fit->primitive.radiusMm, WithinAbs(8.0, 0.01));
+    const Vec3d off = fit->primitive.point - Vec3d{1, 2, 3};
+    CHECK(length(off - axis * dot(off, axis)) < 0.01);
+    CHECK(fit->rmsMm < 0.015);
+}
+
+TEST_CASE("A plane fit with the normal held goes through the centroid", "[stages][fit]") {
+    std::vector<Vec3d> points;
+    for (int i = 0; i < 10; ++i) {
+        for (int j = 0; j < 10; ++j) points.push_back({1.0 * i, 2.0 * j, 5.0 + 0.02 * i});
+    }
+    const Primitive start{.kind = PrimitiveKind::Plane, .direction = Vec3d{0, 0, 1}};
+    const Result<PrimitiveFit> fit = fitWithDirection(start, points);
+    REQUIRE(fit);
+    CHECK(fit->primitive.direction == Vec3d{0, 0, 1});
+    CHECK_THAT(fit->primitive.point.z, WithinAbs(5.09, 1e-9));
+    CHECK_THAT(fit->maxMm, WithinAbs(0.09, 1e-9));
+
+    CHECK_FALSE(fitWithDirection(Primitive{.kind = PrimitiveKind::Sphere, .radiusMm = 1}, points));
+    CHECK_FALSE(
+        fitWithDirection(Primitive{.kind = PrimitiveKind::Plane, .direction = {0, 0, 2}}, points));
+    CHECK_FALSE(fitWithDirection(start, {}));
+}
+
+TEST_CASE("Aligned directions are parallel, perpendicular or at an angle", "[stages][fit]") {
+    const Vec3d z{0, 0, 1};
+    const Vec3d tilted = Vec3d{0.05, 0, -1} * (1.0 / length(Vec3d{0.05, 0, -1}));
+    // Parallel keeps the side the direction was on.
+    const Result<Vec3d> parallel = alignedDirection(tilted, z, 0.0);
+    REQUIRE(parallel);
+    CHECK(*parallel == Vec3d{0, 0, -1});
+    // Perpendicular turns towards where the direction already leant.
+    const Result<Vec3d> square = alignedDirection(Vec3d{0.9, 0.1, 0.3}, z, std::numbers::pi / 2);
+    REQUIRE(square);
+    CHECK_THAT(dot(*square, z), WithinAbs(0.0, 1e-12));
+    CHECK(dot(*square, Vec3d{0.9, 0.1, 0}) > 0.0);
+    const Result<Vec3d> thirty = alignedDirection(Vec3d{1, 0, 1}, z, 30 * kDeg);
+    REQUIRE(thirty);
+    CHECK_THAT(dot(*thirty, z), WithinAbs(std::cos(30 * kDeg), 1e-12));
+    CHECK_THAT(length(*thirty), WithinAbs(1.0, 1e-12));
+    CHECK_THAT(thirty->y, WithinAbs(0.0, 1e-12));
+
+    CHECK_FALSE(alignedDirection(z, z, 30 * kDeg));
+    CHECK_FALSE(alignedDirection(z, Vec3d{}, 0.0));
+    CHECK_FALSE(alignedDirection(z, Vec3d{1, 0, 0}, 100 * kDeg));
+}
