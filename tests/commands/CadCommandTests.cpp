@@ -508,3 +508,196 @@ TEST_CASE("primitive.trim trims fitted planes into a box", "[commands][trim]") {
     CHECK(after.faces().empty());
     CHECK(after.display().positions() == object->solid()->solid.display().positions());
 }
+
+namespace {
+
+/// A box scan from `at` to `at + size`, trimmed from its fitted planes.
+ObjectId trimmedBox(
+    Session& s, const TempDir& dir, const Vec3d& at, const Vec3d& size, const std::string& name) {
+    const TriMesh scan = makeBox(size.x, size.y, size.z, 8);
+    std::vector<Vec3d> p = scan.positions();
+    for (Vec3d& v : p) v = v + at;
+    const ObjectId mesh = s.import(dir, makeMesh(std::move(p), scan.indices()), name);
+    const Json regions = s.run("mesh.segment", {{"id", mesh}})["regions"];
+    Json primitives = Json::array();
+    for (const Json& r : regions) {
+        primitives.push_back(s.run("primitive.fit", {{"selection_id", r["selection_id"]}})["id"]);
+    }
+    return s
+        .run("primitive.trim",
+             {{"primitive_ids", primitives}, {"mesh_id", mesh}, {"name", name}})["id"]
+        .get<ObjectId>();
+}
+
+} // namespace
+
+TEST_CASE("solid.boolean fuses, cuts and intersects trimmed boxes", "[commands][boolean]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId a = trimmedBox(s, dir, {0, 0, 0}, {30, 20, 10}, "a");
+    const ObjectId b = trimmedBox(s, dir, {10, 5, 5}, {30, 20, 10}, "b");
+    const ObjectId far = trimmedBox(s, dir, {100, 0, 0}, {30, 20, 10}, "far");
+    const double overlap = 20.0 * 15.0 * 5.0;
+
+    const Json fused = s.run("solid.boolean", {{"id", a}, {"tool_id", b}, {"operation", "fuse"}});
+    CHECK(fused["summary"]["valid"] == true);
+    CHECK(fused["summary"]["solid_count"] == 1);
+    CHECK_THAT(fused["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(12000.0 - overlap, 1e-9));
+    const auto object = s.document.find(fused["id"].get<ObjectId>());
+    REQUIRE(object);
+    CHECK(object->name == "a fuse b");
+    CHECK(object->provenance.inputs == std::vector<ObjectId>{a, b});
+    CHECK_THAT(s.run("solid.info", {{"id", a}})["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(6000.0, 1e-9));
+
+    const Json cut = s.run("solid.boolean",
+                           {{"id", a}, {"tool_id", b}, {"operation", "cut"}, {"name", "notched"}});
+    CHECK_THAT(cut["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(6000.0 - overlap, 1e-9));
+    const auto step = (dir.path() / "notched.step").string();
+    CHECK(s.run("solid.export", {{"id", cut["id"]}, {"path", step}})["check"]["passed"] == true);
+
+    // Disjoint solids share nothing; nothing is added for a failure or a bad request.
+    const std::size_t before = s.document.objects().size();
+    const auto none =
+        s.tryRun("solid.boolean", {{"id", a}, {"tool_id", far}, {"operation", "common"}});
+    REQUIRE_FALSE(none.has_value());
+    CHECK(none.error().code == ErrorCode::InvalidState);
+    CHECK_FALSE(s.tryRun("solid.boolean", {{"id", a}, {"tool_id", a}, {"operation", "fuse"}}));
+    CHECK_FALSE(s.tryRun("solid.boolean", {{"id", a}, {"tool_id", b}, {"operation", "glue"}}));
+    CHECK(s.document.objects().size() == before);
+}
+
+TEST_CASE("primitive.solid makes a fitted cylinder a solid that cuts a true hole",
+          "[commands][boolean]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId can = s.import(dir, makeCylinder(5.0, 30.0, 96, 30), "pin");
+    const Json regions = s.run("mesh.segment", {{"id", can}})["regions"];
+    REQUIRE(regions.size() == 3);
+    REQUIRE(regions[2]["kind"] == "cylinder");
+    const Json fit = s.run("primitive.fit", {{"selection_id", regions[2]["selection_id"]}});
+    const double r = fit["radius_mm"].get<double>();
+    const auto primitive = fit["id"].get<ObjectId>();
+
+    const Json pin = s.run("primitive.solid", {{"id", primitive}});
+    CHECK(pin["summary"]["valid"] == true);
+    CHECK(pin["summary"]["face_count"] == 3);
+    CHECK_THAT(pin["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(std::numbers::pi * r * r * 30.0, 1e-9));
+    const auto object = s.document.find(pin["id"].get<ObjectId>());
+    REQUIRE(object);
+    CHECK(object->name == "Cylinder fit (solid)");
+    CHECK(object->provenance.inputs == std::vector<ObjectId>{primitive});
+    const Json longer = s.run("primitive.solid", {{"id", primitive}, {"length_mm", 40}});
+    CHECK_THAT(longer["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(std::numbers::pi * r * r * 40.0, 1e-9));
+
+    // Through a plate across the middle of the pin, it leaves one exact cylindrical face.
+    const ObjectId plate = trimmedBox(s, dir, {-15, -15, 10}, {30, 30, 10}, "plate");
+    const Json holed =
+        s.run("solid.boolean", {{"id", plate}, {"tool_id", pin["id"]}, {"operation", "cut"}});
+    CHECK(holed["summary"]["face_count"] == 7);
+    CHECK_THAT(holed["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(9000.0 - std::numbers::pi * r * r * 10.0, 1e-9));
+
+    // A plane does not make a solid, and nothing is added.
+    const std::size_t before = s.document.objects().size();
+    const Json cap = s.run("primitive.fit", {{"selection_id", regions[0]["selection_id"]}});
+    const auto flat = s.tryRun("primitive.solid", {{"id", cap["id"]}});
+    REQUIRE_FALSE(flat.has_value());
+    CHECK(flat.error().code == ErrorCode::InvalidArgument);
+    CHECK_FALSE(s.tryRun("primitive.solid", {{"id", plate}}));
+    CHECK(s.document.objects().size() == before + 1);
+}
+
+TEST_CASE("A fuzzy rounded cube is drilled true for a scanned dowel", "[commands][boolean]") {
+    Session s;
+    const TempDir dir;
+    // A 30 mm cube with rounded edges, and a 9 mm dowel 40 mm long through its middle, their skins
+    // roughened by up to 0.15 mm as a printer's fuzzy skin does: no plane or cylinder fits them
+    // within 0.1 mm.
+    const ObjectId cube =
+        s.import(dir, addNoise(makeRoundedCube(15, 4, 4, {15, 15, 15}), 0.15), "cube");
+    std::vector<Vec3d> rod = makeCylinder(4.5, 40, 96, 40).positions();
+    for (Vec3d& v : rod) v = v + Vec3d{15, 15, -5};
+    const ObjectId dowel = s.import(
+        dir,
+        addNoise(makeMesh(std::move(rod), makeCylinder(4.5, 40, 96, 40).indices()), 0.15, 11),
+        "dowel");
+    const Json cage = s.run("quad.remesh", {{"id", cube}, {"target_faces", 400}});
+    const Json body = s.run("surface.build", {{"id", cage["id"]}, {"mesh_id", cube}});
+    REQUIRE(body["summary"]["valid"] == true);
+    REQUIRE(body["summary"]["solid_count"] == 1);
+
+    // Brush the dowel's side in the middle, and fit a cylinder to it.
+    Json centers = Json::array();
+    for (int k = 0; k < 16; ++k) {
+        const double a = 2.0 * std::numbers::pi * k / 16;
+        centers.push_back({15 + 4.5 * std::cos(a), 15 + 4.5 * std::sin(a), 15.0});
+    }
+    const Json side =
+        s.run("select.brush", {{"id", dowel}, {"centers", centers}, {"radius_mm", 8.0}});
+    const Json fit = s.run(
+        "primitive.fit",
+        {{"selection_id", side["selection_id"]}, {"kind", "cylinder"}, {"max_residual_mm", 0.3}});
+    const double r = fit["radius_mm"].get<double>();
+    CHECK_THAT(r, Catch::Matchers::WithinAbs(4.5, 0.05));
+    CHECK_THAT(fit["axis_point"][0].get<double>(), Catch::Matchers::WithinAbs(15.0, 0.05));
+    CHECK_THAT(fit["axis_point"][1].get<double>(), Catch::Matchers::WithinAbs(15.0, 0.05));
+
+    // Drill a hole with 0.1 mm clearance for the dowel all the way through the cube.
+    const double drill = r + 0.1;
+    const Json bit =
+        s.run("primitive.solid", {{"id", fit["id"]}, {"length_mm", 40.0}, {"radius_mm", drill}});
+    CHECK_THAT(bit["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinRel(std::numbers::pi * drill * drill * 40.0, 1e-9));
+    const Json drilled =
+        s.run("solid.boolean", {{"id", body["id"]}, {"tool_id", bit["id"]}, {"operation", "cut"}});
+    CHECK(drilled["summary"]["valid"] == true);
+    CHECK(drilled["summary"]["closed"] == true);
+    CHECK(drilled["summary"]["solid_count"] == 1);
+    const double removed = body["summary"]["volume_mm3"].get<double>() -
+                           drilled["summary"]["volume_mm3"].get<double>();
+    CHECK_THAT(removed, Catch::Matchers::WithinRel(std::numbers::pi * drill * drill * 30.0, 0.02));
+
+    // The hole's wall is the exact cylinder: points on it from z = 2 to 28 lie on the solid.
+    Vec3d axis{fit["axis_direction"][0].get<double>(),
+               fit["axis_direction"][1].get<double>(),
+               fit["axis_direction"][2].get<double>()};
+    if (axis.z < 0) axis = axis * -1.0;
+    const Vec3d point{fit["axis_point"][0].get<double>(),
+                      fit["axis_point"][1].get<double>(),
+                      fit["axis_point"][2].get<double>()};
+    const Vec3d across = cross(axis, Vec3d{1, 0, 0});
+    const Vec3d u = across * (1.0 / length(across));
+    const Vec3d v = cross(axis, u);
+    std::vector<Vec3d> p;
+    std::vector<std::uint32_t> idx;
+    constexpr int around = 64, up = 13;
+    const auto at = [&](const int j, const int i) {
+        return static_cast<std::uint32_t>(j * around + i % around);
+    };
+    for (int j = 0; j <= up; ++j) {
+        const Vec3d centre = point + axis * ((2.0 + 2.0 * j) - point.z);
+        for (int i = 0; i < around; ++i) {
+            const double a = 2.0 * std::numbers::pi * i / around;
+            p.push_back(centre + (u * std::cos(a) + v * std::sin(a)) * drill);
+        }
+    }
+    for (int j = 0; j < up; ++j) {
+        for (int i = 0; i < around; ++i) {
+            idx.insert(idx.end(), {at(j, i), at(j + 1, i + 1), at(j, i + 1)});
+            idx.insert(idx.end(), {at(j, i), at(j + 1, i), at(j + 1, i + 1)});
+        }
+    }
+    const ObjectId wall = s.import(dir, makeMesh(std::move(p), std::move(idx)), "hole wall");
+    const Json onWall = s.run("deviation.compute", {{"id", wall}, {"reference_id", drilled["id"]}});
+    CHECK(onWall["stats"]["max_mm"].get<double>() < 1e-4);
+    CHECK(onWall["stats"]["min_mm"].get<double>() > -1e-4);
+
+    const auto step = (dir.path() / "drilled.step").string();
+    CHECK(s.run("solid.export", {{"id", drilled["id"]}, {"path", step}})["check"]["passed"] ==
+          true);
+}

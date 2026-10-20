@@ -70,9 +70,15 @@ if(MESH2CAD_SANITIZE)
     endif()
     # Alignment reports are recoverable so that cmake/ubsan-suppressions.txt can drop the ones
     # inside Open CASCADE (ADR-028); the sanitize test preset sets halt_on_error=1, so every other
-    # report still stops the test.
-    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer
+    # report still stops the test. -O1 runs the instrumented tests two to three times faster than
+    # the Debug build's -O0 and keeps reports' stack traces readable. At -O1 with the sanitizers,
+    # GCC 13 reports a false "may be used uninitialized" inside libstdc++'s <regex>; the warning
+    # stays on in every other build.
+    add_compile_options(-O1 -fsanitize=address,undefined -fno-omit-frame-pointer
                         -fno-sanitize-recover=undefined -fsanitize-recover=alignment)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        add_compile_options(-Wno-maybe-uninitialized)
+    endif()
     add_link_options(-fsanitize=address,undefined)
 endif()
 

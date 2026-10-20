@@ -19,6 +19,7 @@
 #include "m2c/core/TriMesh.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Step.h"
+#include "m2c/pipeline/Boolean.h"
 #include "m2c/pipeline/Surface.h"
 #include "m2c/pipeline/Trim.h"
 
@@ -214,6 +215,86 @@ void addSurfaceCommands(std::vector<Command>& out) {
                         {"split_faces", trimmed->splitFaces},
                         {"kept_faces", trimmed->keptFaces},
                         {"max_gap_mm", summary.maxToleranceMm}};
+        }));
+
+    out.push_back(makeCommand(
+        "solid.boolean",
+        "Combine two solids into a new one: fuse joins them, cut removes tool_id from id, common "
+        "keeps what they share. Boundaries closer than fuzzy_mm count as touching. Faces of one "
+        "surface are merged, so a cylinder cut from a body leaves one exact cylindrical face. Adds "
+        "a solid object; both inputs are unchanged. Fails, adding nothing, when nothing is left, "
+        "when the result is more than one solid (for example fusing solids that do not touch), "
+        "or unless it is one valid closed solid of positive volume.",
+        R"({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0,"description":"The solid to fuse to, cut from or intersect."},
+                "tool_id":{"type":"integer","minimum":0,"description":"The other solid."},
+                "operation":{"type":"string","enum":["fuse","cut","common"]},
+                "fuzzy_mm":{"type":"number","minimum":0,"default":0.001,"description":"Boundaries this close are treated as touching."},
+                "name":{"type":"string"}
+            },
+            "required":["id","tool_id","operation"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(a, requireObject(context, params, "id", "solid"));
+            M2C_TRY(b, requireObject(context, params, "tool_id", "solid"));
+            M2C_TRY(operation, requireString(params, "operation"));
+            BooleanOp op = BooleanOp::Fuse;
+            if (*operation == "cut") {
+                op = BooleanOp::Cut;
+            } else if (*operation == "common") {
+                op = BooleanOp::Common;
+            } else if (*operation != "fuse") {
+                return fail(ErrorCode::InvalidArgument,
+                            "operation must be fuse, cut or common, not " + *operation);
+            }
+            if (a->id == b->id) {
+                return fail(ErrorCode::InvalidArgument, "id and tool_id must be different solids");
+            }
+            M2C_TRY(fuzzy, optionalNumber(params, "fuzzy_mm", 0.001, 0.0, 1e6));
+            M2C_TRY(name, optionalString(params, "name"));
+            M2C_TRY(combined, booleanSolids(a->solid()->solid, b->solid()->solid, op, *fuzzy));
+            const SolidSummary summary = combined->summary();
+            M2C_TRY(id,
+                    context.document.add(name->value_or(a->name + " " + *operation + " " + b->name),
+                                         SolidData{std::move(*combined)},
+                                         context.provenance({a->id, b->id})));
+            return Json{{"id", *id}, {"summary", toJson(summary)}};
+        }));
+
+    out.push_back(makeCommand(
+        "primitive.solid",
+        "Make a fitted cylinder or sphere (primitive.fit) a solid of its exact surface, to fuse "
+        "to or cut from another solid with solid.boolean, such as a true-cylinder hole through "
+        "an organic body. A sphere is whole; a cylinder runs along its axis, centred on the "
+        "fitted region, length_mm long (0 = as long as the region). radius_mm replaces the "
+        "fitted radius, for example to drill a fuzzy scanned hole clean. Adds a solid object; "
+        "fails for a plane or cone.",
+        R"({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0,"description":"The cylinder or sphere primitive."},
+                "length_mm":{"type":"number","minimum":0,"default":0,"description":"A cylinder's length; 0 = the length of the region it was fitted to."},
+                "radius_mm":{"type":"number","minimum":0,"default":0,"description":"The solid's radius; 0 = the fitted radius."},
+                "name":{"type":"string"}
+            },
+            "required":["id"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireObject(context, params, "id", "primitive"));
+            M2C_TRY(length, optionalNumber(params, "length_mm", 0.0, 0.0, 1e6));
+            M2C_TRY(radius, optionalNumber(params, "radius_mm", 0.0, 0.0, 1e6));
+            M2C_TRY(name, optionalString(params, "name"));
+            FittedPrimitive fit = object->primitive()->fit;
+            if (*radius > 0.0) fit.surface.radiusMm = *radius;
+            M2C_TRY(solid, primitiveSolid(fit, *length));
+            const SolidSummary summary = solid->summary();
+            M2C_TRY(id,
+                    context.document.add(name->value_or(object->name + " (solid)"),
+                                         SolidData{std::move(*solid)},
+                                         context.provenance({object->id})));
+            return Json{{"id", *id}, {"summary", toJson(summary)}};
         }));
 
     out.push_back(makeCommand(

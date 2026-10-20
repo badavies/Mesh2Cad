@@ -190,6 +190,25 @@ Result<FaceTessellation> triangulate(const TopoDS_Shape& solid) {
                             .vertexUvs = std::move(uvs)};
 }
 
+Result<Solid> kernelSolid(const TopoDS_Shape& solid, const std::string& what) {
+    const SolidSummary summary = summarise(solid);
+    if (summary.solidCount != 1 || !summary.closed || !summary.valid ||
+        !(summary.volumeMm3 > 0.0)) {
+        return fail(ErrorCode::InvalidState,
+                    what + " not one valid closed solid (" + std::to_string(summary.freeEdges) +
+                        " free edges, " + (summary.valid ? "valid" : "invalid") + ", volume " +
+                        std::to_string(summary.volumeMm3) + " mm^3)");
+    }
+    auto display = triangulate(solid);
+    if (!display) return std::unexpected(display.error());
+    auto shape = std::make_shared<SolidShape>();
+    shape->shape = solid;
+    return Solid(std::move(shape),
+                 std::make_shared<const std::vector<SurfacePatch>>(),
+                 std::make_shared<const FaceTessellation>(std::move(*display)),
+                 summary);
+}
+
 Result<TrimResult> trimPrimitives(const std::vector<FittedPrimitive>& primitives,
                                   const TriMesh& scan,
                                   const TrimParams& params) {
@@ -266,26 +285,10 @@ Result<TrimResult> trimPrimitives(const std::vector<FittedPrimitive>& primitives
         for (TopExp_Explorer it(merge.Shape(), TopAbs_SOLID); it.More(); it.Next()) {
             solid = it.Current();
         }
-        const SolidSummary summary = summarise(solid);
-        if (summary.solidCount != 1 || !summary.closed || !summary.valid ||
-            !(summary.volumeMm3 > 0.0)) {
-            return fail(ErrorCode::InvalidState,
-                        "the trimmed faces are not one valid closed solid (" +
-                            std::to_string(summary.freeEdges) + " free edges, " +
-                            (summary.valid ? "valid" : "invalid") + ", volume " +
-                            std::to_string(summary.volumeMm3) + " mm^3)");
-        }
-        auto display = triangulate(solid);
-        if (!display) return std::unexpected(display.error());
-        auto shape = std::make_shared<SolidShape>();
-        shape->shape = solid;
-        return TrimResult{.solid =
-                              Solid(std::move(shape),
-                                    std::make_shared<const std::vector<SurfacePatch>>(),
-                                    std::make_shared<const FaceTessellation>(std::move(*display)),
-                                    summary),
-                          .splitFaces = splitFaces,
-                          .keptFaces = keptFaces};
+        auto made = kernelSolid(solid, "the trimmed faces are");
+        if (!made) return std::unexpected(made.error());
+        return TrimResult{
+            .solid = std::move(*made), .splitFaces = splitFaces, .keptFaces = keptFaces};
     });
 }
 

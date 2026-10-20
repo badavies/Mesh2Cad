@@ -178,6 +178,9 @@
     {
       "name": "windows-msvc-release",
       "configurePreset": "windows-msvc-release",
+      "execution": {
+        "jobs": 4
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -206,6 +209,9 @@
     {
       "name": "linux-gcc-release",
       "configurePreset": "linux-gcc-release",
+      "execution": {
+        "jobs": 4
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -213,6 +219,9 @@
     {
       "name": "linux-gcc-sanitize",
       "configurePreset": "linux-gcc-sanitize",
+      "execution": {
+        "jobs": 4
+      },
       "environment": {
         "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1:suppressions=${sourceDir}/cmake/ubsan-suppressions.txt"
       },
