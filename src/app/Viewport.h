@@ -46,8 +46,9 @@ struct Hit {
 /// - Meshes over two million faces get a coarse proxy built in the background; it is drawn
 ///   while the camera moves.
 /// - Picking for brushing and hovering uses the mesh's own BVH at full resolution.
-/// - Solids draw shaded from their display mesh and quad layouts as their edges. A visible
-///   deviation colours its mesh per vertex, with a legend (DeviationColors.h).
+/// - Solids draw shaded from their display mesh, quad layouts as their edges and sketches as
+///   their curves, over everything else. A visible deviation colours its mesh per vertex, with a
+///   legend (DeviationColors.h).
 ///
 /// The viewport never changes the document: tools emit signals that the main window turns into
 /// commands, so everything a person does here is a command an agent could also send.
@@ -61,7 +62,9 @@ public:
     Viewport& operator=(const Viewport&) = delete;
 
     void setSnapshot(std::shared_ptr<const DocSnapshot> snapshot);
-    void setCurrent(ObjectId meshId, ObjectId selectionId);
+    /// The current mesh and selection, and an object to draw highlighted (a primitive, solid,
+    /// quad layout or sketch; a mesh shows as current instead).
+    void setCurrent(ObjectId meshId, ObjectId selectionId, ObjectId highlightId = 0);
     void setMode(Mode mode);
     [[nodiscard]] Mode mode() const noexcept { return mode_; }
     void setBrushRadius(double mm);
@@ -170,6 +173,7 @@ private:
     Mode mode_{Mode::Navigate};
     ObjectId currentMesh_{0};
     ObjectId currentSelection_{0};
+    ObjectId highlight_{0};
     double brushRadius_{2.0};
     double creaseAngle_{20.0};
     bool wireframe_{false};

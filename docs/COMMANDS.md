@@ -16,10 +16,10 @@ Lengths are millimetres; objects are referred to by id (see `doc.list`).
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `flip_primary` | boolean |  | Put the part below Z = 0 instead. Default `false`. |
-| `id` | integer | yes |  |
-| `primary` | integer | yes | Selection id of the primary datum face. |
-| `secondary` | integer |  | Selection id of the secondary datum face. |
-| `tertiary` | integer |  | Selection id of the tertiary datum face. |
+| `id` | mesh id | yes |  |
+| `primary` | selection id | yes | Selection id of the primary datum face. |
+| `secondary` | selection id |  | Selection id of the secondary datum face. |
+| `tertiary` | selection id |  | Selection id of the tertiary datum face. |
 
 ### `align.principal`
 
@@ -27,7 +27,7 @@ Automatic alignment: move the mesh so its principal axes lie along X (longest), 
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `origin` | `centroid` \| `bounds_center` \| `bounds_bottom_center` |  | Default `"centroid"`. |
 
 ### `align.reset`
@@ -36,7 +36,7 @@ Undo every alignment applied to a mesh, returning it to its scanned pose. *(chan
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 
 ### `align.symmetry`
 
@@ -44,7 +44,7 @@ Automatic alignment by the best mirror-symmetry plane: that plane becomes X = 0,
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `origin` | `centroid` \| `bounds_center` \| `bounds_bottom_center` |  | Positions the part in Y and Z; X = 0 stays on the plane. Default `"centroid"`. |
 
 ### `align.transform`
@@ -53,7 +53,7 @@ Apply a rigid transform (rotation matrix and translation) to a mesh. *(changes t
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `rotation` | array |  | Row-major rotation matrix; identity if omitted. |
 | `translation` | array |  |  |
 
@@ -71,9 +71,9 @@ Signed distance from every vertex of a mesh to a solid (exact, onto its B-spline
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | The mesh whose vertices are measured. |
+| `id` | mesh id | yes | The mesh whose vertices are measured. |
 | `name` | string |  |  |
-| `reference_id` | integer | yes | The solid or mesh to measure to. |
+| `reference_id` | solid or mesh id | yes | The solid or mesh to measure to. |
 | `tolerance_mm` | number |  | Distances within this count as in tolerance. Default `0.1`. |
 
 ### `deviation.report`
@@ -83,7 +83,7 @@ Write a deviation's statistics and a histogram of its distances to a CSV file. *
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `bins` | integer |  | Histogram bins from the smallest to the largest distance. Default `20`. |
-| `id` | integer | yes | The deviation. |
+| `id` | deviation id | yes | The deviation. |
 | `path` | string | yes | The .csv file to write. |
 
 ## doc
@@ -112,7 +112,7 @@ Delete the faces of a selection from its mesh. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `selection_id` | integer | yes |  |
+| `selection_id` | selection id | yes |  |
 
 ## holes
 
@@ -123,7 +123,7 @@ Fill open boundaries with patches that blend into the surrounding surface. Holes
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `fair` | boolean |  | Refine and fair the patch to match the surrounding curvature. Where the surface meets the hole at more than 45 degrees (an open end) the patch stays flat instead of doming. Default `true`. |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `max_edges` | integer |  | Leave holes with more boundary edges open; 0 = no limit. Default `0`. |
 | `max_perimeter_mm` | number |  | Leave holes with a longer boundary open; 0 = no limit. Default `0`. |
 
@@ -148,7 +148,7 @@ Write a mesh object to a file: binary STL, OBJ, or binary PLY. *(read-only)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | Object id. |
+| `id` | mesh id | yes | Object id. |
 | `path` | string | yes | Destination file; the extension (.stl, .obj, .ply) selects the format. |
 
 ### `mesh.flip`
@@ -157,7 +157,7 @@ Reverse the orientation of every face of a mesh. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 
 ### `mesh.import`
 
@@ -174,7 +174,7 @@ Report counts, bounds, area, volume and topology problems (holes, non-manifold e
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | Object id. |
+| `id` | mesh id | yes | The mesh. |
 
 ### `mesh.pick`
 
@@ -183,7 +183,7 @@ Cast a ray against visible meshes (or one mesh) at full resolution and return th
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `direction` | array | yes |  |
-| `id` | integer |  | Only this mesh. |
+| `id` | mesh id |  | Only this mesh. |
 | `origin` | array | yes |  |
 
 ### `mesh.remesh`
@@ -192,7 +192,7 @@ Rebuild an even triangle mesh at a set edge length, keeping sharp edges. *(chang
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `iterations` | integer |  | Default `3`. |
 | `sharp_angle_deg` | number |  | Keep edges sharper than this; 0 keeps none. Default `60`. |
 | `target_edge_mm` | number | yes |  |
@@ -203,7 +203,7 @@ Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `remove_self_intersections` | boolean |  | Also remove self-intersections: locally within a shell, and by uniting closed shells that pass through each other (slow on large scans). Default `false`. |
 
 ### `mesh.segment`
@@ -212,7 +212,7 @@ Split a mesh into spheres, cylinders and planes (CGAL region growing, in that or
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `kinds` | array |  | The primitives to look for. Default `["plane", "cylinder"]`. |
 | `max_angle_deg` | number |  | Largest angle between a face normal and the primitive's normal there. Default `10`. |
 | `max_distance_mm` | number |  | Largest distance from a face to its region's primitive. Default `0.1`. |
@@ -224,7 +224,7 @@ Reduce the triangle count (quadric edge collapse), keeping open boundaries in pl
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `max_error_mm` | number |  | Stop before the surface moves further than this from the original. With no target given, simplifies as far as this allows. |
 | `preserve_borders` | boolean |  | Default `true`. |
 | `target_faces` | integer |  | Target triangle count. |
@@ -236,10 +236,10 @@ Taubin smoothing (no shrinkage) of the whole mesh or of a selection. Open edges 
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `iterations` | integer |  | Default `10`. |
 | `preserve_sharp_edges` | boolean |  | Default `false`. |
-| `selection_id` | integer |  | Smooth only these faces. |
+| `selection_id` | selection id |  | Smooth only these faces. |
 | `sharp_angle_deg` | number |  | Default `40`. |
 | `strength` | number |  | Default `0.5`. |
 
@@ -250,7 +250,7 @@ Build a watertight, manifold mesh around a badly damaged scan (alpha wrapping) a
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `alpha_mm` | number |  | Probe size. Defaults to 1/100 of the bounding-box diagonal. |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `name` | string |  |  |
 | `offset_mm` | number |  | Distance from the input. Defaults to alpha_mm / 30. |
 
@@ -262,7 +262,7 @@ Delete an object. Deleting a mesh also deletes its selections and measurements. 
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | Object id. |
+| `id` | object id | yes | Object id. |
 
 ### `object.rename`
 
@@ -270,7 +270,7 @@ Rename an object. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | object id | yes |  |
 | `name` | string | yes |  |
 
 ### `object.show`
@@ -279,7 +279,7 @@ Show or hide an object in the viewport. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | object id | yes |  |
 | `visible` | boolean | yes |  |
 
 ## plane
@@ -290,7 +290,7 @@ Fit a least-squares plane to the faces of a selection. *(read-only)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `selection_id` | integer | yes |  |
+| `selection_id` | selection id | yes |  |
 
 ## primitive
 
@@ -302,7 +302,7 @@ Fit an exact, unbounded plane, cylinder, sphere or cone to the faces of a select
 | --- | --- | --- | --- |
 | `kind` | `auto` \| `plane` \| `cylinder` \| `sphere` \| `cone` |  | Default `"auto"`. |
 | `max_residual_mm` | number |  | Largest P95 distance from the region's vertices to the surface. Default `0.1`. |
-| `selection_id` | integer | yes |  |
+| `selection_id` | selection id | yes |  |
 
 ### `primitive.solid`
 
@@ -310,7 +310,7 @@ Make a fitted cylinder or sphere (primitive.fit) a solid of its exact surface, t
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | The cylinder or sphere primitive. |
+| `id` | primitive id | yes | The cylinder or sphere primitive. |
 | `length_mm` | number |  | A cylinder's length; 0 = the length of the region it was fitted to. Default `0`. |
 | `name` | string |  |  |
 | `radius_mm` | number |  | The solid's radius; 0 = the fitted radius. Default `0`. |
@@ -322,7 +322,7 @@ Make a solid with sharp edges from fitted primitives (primitive.fit): each is bo
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `max_distance_mm` | number |  | A point of a split face lies on the mesh when it is this close. Default `0.5`. |
-| `mesh_id` | integer | yes | The mesh they were fitted to. |
+| `mesh_id` | mesh id | yes | The mesh they were fitted to. |
 | `min_coverage` | number |  | Share of a split face's area that must lie on the mesh for it to be kept. Default `0.9`. |
 | `name` | string |  |  |
 | `primitive_ids` | array | yes | The primitives to trim. |
@@ -359,7 +359,7 @@ Make a quad control cage from a closed mesh with Instant Meshes, then close it: 
 | --- | --- | --- | --- |
 | `crease_angle_deg` | number |  | Align the quads to edges sharper than this; 0 = treat the surface as smooth. Default `0`. |
 | `guides` | array |  | Polylines on the mesh, in mm, that cage edges should follow (manual patch layout); each needs two or more points within a cage edge length of the surface. Default `[]`. |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `join_parts` | boolean |  | Join loose closed parts to the main one instead of leaving them out. Default `true`. |
 | `keep_outline` | boolean |  | Leave the longest boundary loop open, for a sheet that surface.build thickens. Default `false`. |
 | `name` | string |  |  |
@@ -374,10 +374,10 @@ Select every face of a mesh. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `mode` | `replace` \| `add` \| `subtract` |  | How to combine with selection_id (default add). |
 | `name` | string |  | Name of a new selection. |
-| `selection_id` | integer |  | Combine into this selection instead of creating a new one. |
+| `selection_id` | selection id |  | Combine into this selection instead of creating a new one. |
 
 ### `select.brush`
 
@@ -388,11 +388,11 @@ Select the faces within a radius of a point on a mesh (a brush stroke is a serie
 | `center` | array |  |  |
 | `centers` | array |  | A whole stroke: the union of a brush at each point, as one undo step. Use instead of center. |
 | `connected` | boolean |  | Only faces connected to the one under the centre. Default `true`. |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `mode` | `replace` \| `add` \| `subtract` |  | How to combine with selection_id (default add). |
 | `name` | string |  | Name of a new selection. |
 | `radius_mm` | number | yes |  |
-| `selection_id` | integer |  | Combine into this selection instead of creating a new one. |
+| `selection_id` | selection id |  | Combine into this selection instead of creating a new one. |
 
 ### `select.crease`
 
@@ -401,11 +401,11 @@ Flood-fill from a face across edges flatter than an angle (selects a smooth regi
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `face` | integer | yes | Seed face, e.g. from mesh.pick. |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `max_angle_deg` | number |  | Default `20`. |
 | `mode` | `replace` \| `add` \| `subtract` |  | How to combine with selection_id (default add). |
 | `name` | string |  | Name of a new selection. |
-| `selection_id` | integer |  | Combine into this selection instead of creating a new one. |
+| `selection_id` | selection id |  | Combine into this selection instead of creating a new one. |
 
 ### `select.grow`
 
@@ -414,7 +414,7 @@ Grow a selection by rings of neighbouring faces. *(changes the document)*
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `rings` | integer |  | Default `1`. |
-| `selection_id` | integer | yes |  |
+| `selection_id` | selection id | yes |  |
 
 ### `select.invert`
 
@@ -422,7 +422,7 @@ Invert a selection. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `selection_id` | integer | yes |  |
+| `selection_id` | selection id | yes |  |
 
 ### `select.lasso`
 
@@ -431,11 +431,11 @@ Select the faces whose centres fall inside a screen polygon, given the view-proj
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `eye` | array |  | Camera position; skips faces turned away. |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `mode` | `replace` \| `add` \| `subtract` |  | How to combine with selection_id (default add). |
 | `name` | string |  | Name of a new selection. |
 | `polygon` | array | yes | Points in normalised device coordinates. |
-| `selection_id` | integer |  | Combine into this selection instead of creating a new one. |
+| `selection_id` | selection id |  | Combine into this selection instead of creating a new one. |
 | `view_projection` | array | yes | Column-major 4x4 matrix (OpenGL). |
 | `visible_only` | boolean |  | Skip hidden faces (needs eye). Default `false`. |
 
@@ -446,10 +446,10 @@ Select the whole shell (connected part) containing a face. *(changes the documen
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `face` | integer | yes |  |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `mode` | `replace` \| `add` \| `subtract` |  | How to combine with selection_id (default add). |
 | `name` | string |  | Name of a new selection. |
-| `selection_id` | integer |  | Combine into this selection instead of creating a new one. |
+| `selection_id` | selection id |  | Combine into this selection instead of creating a new one. |
 
 ### `select.shrink`
 
@@ -458,7 +458,7 @@ Shrink a selection by rings of faces along its border. *(changes the document)*
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `rings` | integer |  | Default `1`. |
-| `selection_id` | integer | yes |  |
+| `selection_id` | selection id | yes |  |
 
 ## shells
 
@@ -468,7 +468,7 @@ Delete every shell below a size limit (never the main part). *(changes the docum
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `min_area_mm2` | number |  | Shells with less area count as small. Default `0`. |
 | `min_faces` | integer |  | Shells with fewer faces count as small. Default `0`. |
 
@@ -478,7 +478,7 @@ List the unconnected parts (shells) of a mesh with face count, area and bounds; 
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 
 ### `shells.keep`
 
@@ -486,7 +486,7 @@ Delete every shell except the main (largest) part. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 
 ### `shells.select`
 
@@ -494,7 +494,7 @@ Create a selection holding the faces of the listed shells. *(changes the documen
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 | `shells` | array | yes | Shell indices from shells.detect. |
 
 ### `shells.split`
@@ -503,7 +503,7 @@ Split every shell except the main part into its own mesh object. *(changes the d
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes |  |
+| `id` | mesh id | yes |  |
 
 ## sketch
 
@@ -513,14 +513,14 @@ Cut a mesh with a plane and add a sketch of the cut: each closed piece becomes a
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | The mesh to cut. |
+| `id` | mesh id | yes | The mesh to cut. |
 | `max_error_mm` | number |  | Largest distance from a section point to its curve. Default `0.05`. |
 | `min_curve_points` | integer |  | Smooth runs of lines and arcs that each cover fewer section points become a spline. Default `6`. |
 | `name` | string |  |  |
 | `normal` | array |  |  |
 | `offset_mm` | number |  | Moves the plane along its normal. Default `0`. |
 | `plane` | `xy` \| `yz` \| `zx` |  | An origin plane. |
-| `plane_id` | integer |  | A fitted plane primitive. |
+| `plane_id` | primitive id |  | A fitted plane primitive. |
 | `point` | array |  |  |
 
 ## solid
@@ -532,10 +532,10 @@ Combine two solids into a new one: fuse joins them, cut removes tool_id from id,
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `fuzzy_mm` | number |  | Boundaries this close are treated as touching. Default `0.001`. |
-| `id` | integer | yes | The solid to fuse to, cut from or intersect. |
+| `id` | solid id | yes | The solid to fuse to, cut from or intersect. |
 | `name` | string |  |  |
 | `operation` | `fuse` \| `cut` \| `common` | yes |  |
-| `tool_id` | integer | yes | The other solid. |
+| `tool_id` | solid id | yes | The other solid. |
 
 ### `solid.export`
 
@@ -543,7 +543,7 @@ Write a solid to a STEP AP242 file in millimetres, then read the file back and c
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | The solid. |
+| `id` | solid id | yes | The solid. |
 | `path` | string | yes | The .step or .stp file to write. |
 | `product_name` | string |  | Product name in the file; the object name if omitted. |
 
@@ -556,7 +556,7 @@ Extrude a sketch's profile (its largest loop less the loops inside it) along the
 | `back_distance_mm` | number |  | two_sided: the distance against the normal. Default `0`. |
 | `distance_mm` | number | yes |  |
 | `extent` | `one_sided` \| `symmetric` \| `two_sided` |  | Default `"one_sided"`. |
-| `id` | integer | yes | The sketch. |
+| `id` | sketch id | yes | The sketch. |
 | `name` | string |  |  |
 
 ### `solid.info`
@@ -565,7 +565,7 @@ Describe a solid: face, edge and shell counts, whether it is closed and valid, i
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | integer | yes | The solid. |
+| `id` | solid id | yes | The solid. |
 
 ### `solid.revolve`
 
@@ -577,7 +577,7 @@ Revolve a sketch's profile (its largest loop less the loops inside it) by angle_
 | `axis` | `u` \| `v` |  | The sketch plane's u or v axis. |
 | `axis_direction` | array |  |  |
 | `axis_point` | array |  |  |
-| `id` | integer | yes | The sketch. |
+| `id` | sketch id | yes | The sketch. |
 | `name` | string |  |  |
 
 ## surface
@@ -589,14 +589,14 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `fit` | boolean |  | Fit the cage to the mesh first. Default `true`. |
-| `id` | integer | yes | The quad layout. |
+| `id` | quad_layout id | yes | The quad layout. |
 | `isolation_level` | integer |  | Refinement around irregular vertices: higher gives smaller caps and more faces' pieces. Default `2`. |
 | `iterations` | integer |  | Rounds of fitting. Default `3`. |
 | `max_refinements` | integer |  | Most subdivisions refine_to_mm may make. Default `2`. |
 | `max_sample_distance_mm` | number |  | Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length. Default `0`. |
 | `max_samples` | integer |  | Mesh vertices used for fitting (evenly thinned beyond this). Default `60000`. |
 | `merge` | boolean |  | Merge rectangles of cage quads into one face each (fewer faces, same surface). Default `true`. |
-| `mesh_id` | integer |  | The mesh to fit to; required unless fit is false. |
+| `mesh_id` | mesh id |  | The mesh to fit to; required unless fit is false. |
 | `name` | string |  |  |
 | `refine_to_mm` | number |  | While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off. Default `0`. |
 | `smoothing` | number |  | How strongly the cage keeps its own shape while fitting. Default `0.05`. |

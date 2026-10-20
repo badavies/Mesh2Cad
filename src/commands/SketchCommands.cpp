@@ -79,9 +79,9 @@ void addSketchCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The mesh to cut."},
+                "id":{"type":"integer","x-object":"mesh","minimum":0,"description":"The mesh to cut."},
                 "plane":{"type":"string","enum":["xy","yz","zx"],"description":"An origin plane."},
-                "plane_id":{"type":"integer","minimum":0,"description":"A fitted plane primitive."},
+                "plane_id":{"type":"integer","x-object":"primitive","minimum":0,"description":"A fitted plane primitive."},
                 "point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},
                 "normal":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},
                 "offset_mm":{"type":"number","default":0,"description":"Moves the plane along its normal."},

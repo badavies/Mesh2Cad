@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include <regex>
+#include <set>
+#include <string>
 
 #include "m2c/commands/Command.h"
 #include "m2c/io/MeshIO.h"
@@ -43,6 +45,35 @@ TEST_CASE("Every command is well formed", "[commands]") {
         CHECK(c->paramsSchema.is_object());
         CHECK(c->paramsSchema.value("type", "") == "object");
     }
+}
+
+TEST_CASE("Every object id parameter names the kinds it accepts", "[commands]") {
+    // The app builds its object pickers from x-object, so an id without it would be a bare number.
+    Session s;
+    const std::set<std::string> kinds{"mesh",
+                                      "selection",
+                                      "quad_layout",
+                                      "solid",
+                                      "deviation",
+                                      "primitive",
+                                      "sketch",
+                                      "measurement",
+                                      "any"};
+    std::size_t annotated = 0;
+    for (const Command* c : s.registry.list()) {
+        const Json properties = c->paramsSchema.value("properties", Json::object());
+        for (const auto& [key, prop] : properties.items()) {
+            CAPTURE(c->name, key);
+            if (key == "id" || key.ends_with("_id")) CHECK(prop.contains("x-object"));
+            if (!prop.contains("x-object")) continue;
+            ++annotated;
+            const Json& x = prop["x-object"];
+            for (const Json& kind : x.is_array() ? x : Json::array({x})) {
+                CHECK(kinds.contains(kind.get<std::string>()));
+            }
+        }
+    }
+    CHECK(annotated >= 50);
 }
 
 TEST_CASE("Registry rejects bad registrations", "[commands]") {

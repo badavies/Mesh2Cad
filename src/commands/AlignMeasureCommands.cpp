@@ -98,7 +98,7 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
         makeCommand("plane.fit",
                     "Fit a least-squares plane to the faces of a selection.",
                     R"({
-            "type":"object","properties":{"selection_id":{"type":"integer","minimum":0}},
+            "type":"object","properties":{"selection_id":{"type":"integer","x-object":"selection","minimum":0}},
             "required":["selection_id"],"additionalProperties":false})",
                     false,
                     [](const CommandContext& context, const Json& params) -> Result<Json> {
@@ -115,7 +115,7 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "origin":{"type":"string","enum":["centroid","bounds_center","bounds_bottom_center"],"default":"centroid"}
             },
             "required":["id"],"additionalProperties":false})",
@@ -135,7 +135,7 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "origin":{"type":"string","enum":["centroid","bounds_center","bounds_bottom_center"],"default":"centroid","description":"Positions the part in Y and Z; X = 0 stays on the plane."}
             },
             "required":["id"],"additionalProperties":false})",
@@ -158,10 +158,10 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
-                "primary":{"type":"integer","minimum":0,"description":"Selection id of the primary datum face."},
-                "secondary":{"type":"integer","minimum":0,"description":"Selection id of the secondary datum face."},
-                "tertiary":{"type":"integer","minimum":0,"description":"Selection id of the tertiary datum face."},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
+                "primary":{"type":"integer","x-object":"selection","minimum":0,"description":"Selection id of the primary datum face."},
+                "secondary":{"type":"integer","x-object":"selection","minimum":0,"description":"Selection id of the secondary datum face."},
+                "tertiary":{"type":"integer","x-object":"selection","minimum":0,"description":"Selection id of the tertiary datum face."},
                 "flip_primary":{"type":"boolean","default":false,"description":"Put the part below Z = 0 instead."}
             },
             "required":["id","primary"],"additionalProperties":false})",
@@ -198,7 +198,7 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "rotation":{"type":"array","items":{"type":"number"},"minItems":9,"maxItems":9,"description":"Row-major rotation matrix; identity if omitted."},
                 "translation":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3}
             },
@@ -234,18 +234,18 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
             return applyTransform(context, *object, t, {});
         }));
 
-    out.push_back(
-        makeCommand("align.reset",
-                    "Undo every alignment applied to a mesh, returning it to its scanned pose.",
-                    R"({"type":"object","properties":{"id":{"type":"integer","minimum":0}},
+    out.push_back(makeCommand(
+        "align.reset",
+        "Undo every alignment applied to a mesh, returning it to its scanned pose.",
+        R"({"type":"object","properties":{"id":{"type":"integer","x-object":"mesh","minimum":0}},
             "required":["id"],"additionalProperties":false})",
-                    true,
-                    [](CommandContext& context, const Json& params) -> Result<Json> {
-                        M2C_TRY(object, requireMesh(context, params));
-                        const Transform3d inverse =
-                            context.document.find(object->id)->mesh()->alignment.inverse();
-                        return applyTransform(context, *object, inverse, {});
-                    }));
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireMesh(context, params));
+            const Transform3d inverse =
+                context.document.find(object->id)->mesh()->alignment.inverse();
+            return applyTransform(context, *object, inverse, {});
+        }));
 
     out.push_back(makeCommand(
         "measure.distance",
@@ -254,8 +254,8 @@ void addAlignMeasureCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "a":{"type":"object","properties":{"point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"id":{"type":"integer","minimum":0}},"required":["point"]},
-                "b":{"type":"object","properties":{"point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"id":{"type":"integer","minimum":0}},"required":["point"]},
+                "a":{"type":"object","properties":{"point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"id":{"type":"integer","x-object":"mesh","minimum":0}},"required":["point"]},
+                "b":{"type":"object","properties":{"point":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"id":{"type":"integer","x-object":"mesh","minimum":0}},"required":["point"]},
                 "snap_mm":{"type":"number","minimum":0,"default":0,"description":"Snap to a vertex or edge within this distance."},
                 "name":{"type":"string"}
             },

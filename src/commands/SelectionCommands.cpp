@@ -29,7 +29,7 @@ namespace {
 
 /// Shared "where does the result go" properties, spliced into each tool's schema.
 #define M2C_SELECTION_TARGET                                                                       \
-    R"("selection_id":{"type":"integer","minimum":0,"description":"Combine into this selection instead of creating a new one."},
+    R"("selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"Combine into this selection instead of creating a new one."},
     "mode":{"type":"string","enum":["replace","add","subtract"],"description":"How to combine with selection_id (default add)."},
     "name":{"type":"string","description":"Name of a new selection."})"
 
@@ -99,7 +99,7 @@ void addSelectionCommands(std::vector<Command>& out) {
     out.push_back(makeCommand(
         "select.all",
         "Select every face of a mesh.",
-        R"({"type":"object","properties":{"id":{"type":"integer","minimum":0},)" M2C_SELECTION_TARGET
+        R"({"type":"object","properties":{"id":{"type":"integer","x-object":"mesh","minimum":0},)" M2C_SELECTION_TARGET
         R"(},"required":["id"],"additionalProperties":false})",
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {
@@ -112,7 +112,7 @@ void addSelectionCommands(std::vector<Command>& out) {
         "Select the faces within a radius of a point on a mesh (a brush stroke is a series of "
         "these with mode add).",
         R"({"type":"object","properties":{
-            "id":{"type":"integer","minimum":0},
+            "id":{"type":"integer","x-object":"mesh","minimum":0},
             "center":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},
             "centers":{"type":"array","items":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"minItems":1,"description":"A whole stroke: the union of a brush at each point, as one undo step. Use instead of center."},
             "radius_mm":{"type":"number","exclusiveMinimum":0},
@@ -155,7 +155,7 @@ void addSelectionCommands(std::vector<Command>& out) {
         "Select the faces whose centres fall inside a screen polygon, given the view-projection "
         "matrix the polygon was drawn with.",
         R"({"type":"object","properties":{
-            "id":{"type":"integer","minimum":0},
+            "id":{"type":"integer","x-object":"mesh","minimum":0},
             "view_projection":{"type":"array","items":{"type":"number"},"minItems":16,"maxItems":16,"description":"Column-major 4x4 matrix (OpenGL)."},
             "polygon":{"type":"array","items":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2},"minItems":3,"description":"Points in normalised device coordinates."},
             "eye":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,"description":"Camera position; skips faces turned away."},
@@ -188,7 +188,7 @@ void addSelectionCommands(std::vector<Command>& out) {
         "Flood-fill from a face across edges flatter than an angle (selects a smooth region "
         "bounded by creases).",
         R"({"type":"object","properties":{
-            "id":{"type":"integer","minimum":0},
+            "id":{"type":"integer","x-object":"mesh","minimum":0},
             "face":{"type":"integer","minimum":0,"description":"Seed face, e.g. from mesh.pick."},
             "max_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":20},)" M2C_SELECTION_TARGET
         R"(},"required":["id","face"],"additionalProperties":false})",
@@ -210,7 +210,7 @@ void addSelectionCommands(std::vector<Command>& out) {
         makeCommand("select.shell",
                     "Select the whole shell (connected part) containing a face.",
                     R"({"type":"object","properties":{
-            "id":{"type":"integer","minimum":0},
+            "id":{"type":"integer","x-object":"mesh","minimum":0},
             "face":{"type":"integer","minimum":0},)" M2C_SELECTION_TARGET
                     R"(},"required":["id","face"],"additionalProperties":false})",
                     true,
@@ -230,7 +230,7 @@ void addSelectionCommands(std::vector<Command>& out) {
         "select.grow",
         "Grow a selection by rings of neighbouring faces.",
         R"({"type":"object","properties":{
-            "selection_id":{"type":"integer","minimum":0},
+            "selection_id":{"type":"integer","x-object":"selection","minimum":0},
             "rings":{"type":"integer","minimum":1,"maximum":1000,"default":1}},
             "required":["selection_id"],"additionalProperties":false})",
         [](const TriMesh& mesh, const MeshSelection& s, const Json& params) {
@@ -241,7 +241,7 @@ void addSelectionCommands(std::vector<Command>& out) {
         "select.shrink",
         "Shrink a selection by rings of faces along its border.",
         R"({"type":"object","properties":{
-            "selection_id":{"type":"integer","minimum":0},
+            "selection_id":{"type":"integer","x-object":"selection","minimum":0},
             "rings":{"type":"integer","minimum":1,"maximum":1000,"default":1}},
             "required":["selection_id"],"additionalProperties":false})",
         [](const TriMesh& mesh, const MeshSelection& s, const Json& params) {
@@ -251,7 +251,7 @@ void addSelectionCommands(std::vector<Command>& out) {
     out.push_back(selectionEdit(
         "select.invert",
         "Invert a selection.",
-        R"({"type":"object","properties":{"selection_id":{"type":"integer","minimum":0}},
+        R"({"type":"object","properties":{"selection_id":{"type":"integer","x-object":"selection","minimum":0}},
             "required":["selection_id"],"additionalProperties":false})",
         [](const TriMesh&, const MeshSelection& s, const Json&) {
             MeshSelection inverted = s;

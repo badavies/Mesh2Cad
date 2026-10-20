@@ -52,8 +52,8 @@ void addDeviationCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The mesh whose vertices are measured."},
-                "reference_id":{"type":"integer","minimum":0,"description":"The solid or mesh to measure to."},
+                "id":{"type":"integer","x-object":"mesh","minimum":0,"description":"The mesh whose vertices are measured."},
+                "reference_id":{"type":"integer","x-object":["solid","mesh"],"minimum":0,"description":"The solid or mesh to measure to."},
                 "tolerance_mm":{"type":"number","exclusiveMinimum":0,"maximum":1000,"default":0.1,"description":"Distances within this count as in tolerance."},
                 "name":{"type":"string"}
             },
@@ -97,7 +97,7 @@ void addDeviationCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The deviation."},
+                "id":{"type":"integer","x-object":"deviation","minimum":0,"description":"The deviation."},
                 "path":{"type":"string","description":"The .csv file to write."},
                 "bins":{"type":"integer","minimum":2,"maximum":200,"default":20,"description":"Histogram bins from the smallest to the largest distance."}
             },

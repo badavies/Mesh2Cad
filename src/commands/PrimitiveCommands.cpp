@@ -33,7 +33,7 @@ void addPrimitiveCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "selection_id":{"type":"integer","minimum":0},
+                "selection_id":{"type":"integer","x-object":"selection","minimum":0},
                 "kind":{"type":"string","enum":["auto","plane","cylinder","sphere","cone"],"default":"auto"},
                 "max_residual_mm":{"type":"number","exclusiveMinimum":0,"default":0.1,"description":"Largest P95 distance from the region's vertices to the surface."}
             },

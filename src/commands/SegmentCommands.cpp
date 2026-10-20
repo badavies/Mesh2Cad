@@ -62,7 +62,7 @@ void addSegmentCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "max_distance_mm":{"type":"number","exclusiveMinimum":0,"default":0.1,"description":"Largest distance from a face to its region's primitive."},
                 "max_angle_deg":{"type":"number","exclusiveMinimum":0,"maximum":90,"default":10,"description":"Largest angle between a face normal and the primitive's normal there."},
                 "min_area_mm2":{"type":"number","minimum":0,"default":0,"description":"Smaller regions are left organic; 0 = 1% of the mesh's area."},

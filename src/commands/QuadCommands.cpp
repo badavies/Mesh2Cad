@@ -93,7 +93,7 @@ void addQuadCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0},
+                "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "target_faces":{"type":"integer","minimum":8,"maximum":1000000,"default":2000,"description":"Approximate number of quads in the cage."},
                 "crease_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":0,"description":"Align the quads to edges sharper than this; 0 = treat the surface as smooth."},
                 "smooth_iterations":{"type":"integer","minimum":0,"maximum":10,"default":2,"description":"Rounds of smoothing that pull the cage vertices back onto the mesh."},

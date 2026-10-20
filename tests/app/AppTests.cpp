@@ -2,12 +2,15 @@
 // Drives the desktop window the way a person does (mouse strokes in the viewport) and the way an
 // agent does (JSON-RPC on the local socket), and checks both land in the same document.
 
+#include <QAction>
 #include <QApplication>
 #include <QComboBox>
 #include <QElapsedTimer>
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QSurfaceFormat>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -386,6 +389,61 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
     CHECK(c.green() > c.red() + 20);
     CHECK(c.green() > c.blue() + 20);
     screenshot(view, "primitive");
+
+    // A section of the can is listed under it and drawn as a cyan circle over the cylinder.
+    const Json section = run("sketch.section", {{"id", mesh}, {"plane", "xy"}, {"offset_mm", 15}});
+    const auto sketchId = section["id"].get<ObjectId>();
+    auto* tree = window.findChild<QTreeWidget*>();
+    REQUIRE(tree != nullptr);
+    REQUIRE(tree->topLevelItemCount() >= 1);
+    const QTreeWidgetItem* canItem = tree->topLevelItem(0);
+    REQUIRE(canItem->childCount() >= 1);
+    const QTreeWidgetItem* sketchItem = canItem->child(canItem->childCount() - 1);
+    CHECK(sketchItem->text(0) == "Section");
+    CHECK(sketchItem->text(1) == "1 loop");
+    view->fitAll();
+    QApplication::processEvents();
+    const QImage drawn = view->grabFramebuffer();
+    bool cyan = false;
+    for (int y = 0; y < drawn.height() && !cyan; ++y) {
+        for (int x = 0; x < drawn.width() && !cyan; ++x) {
+            const QColor p = drawn.pixelColor(x, y);
+            cyan = p.blue() > 200 && p.green() > 180 && p.red() < 120;
+        }
+    }
+    CHECK(cyan);
+    screenshot(view, "sketch");
+
+    // primitive.solid offers only primitives, the fitted cylinder first; choosing one selects it.
+    QAction* tool = nullptr;
+    for (QAction* a : window.findChildren<QAction*>()) {
+        if (a->text() == "primitive.solid") tool = a;
+    }
+    REQUIRE(tool != nullptr);
+    tool->trigger();
+    auto* form = window.findChild<ParamForm*>();
+    REQUIRE(form != nullptr);
+    auto* id = form->findChild<QComboBox*>("id");
+    REQUIRE(id != nullptr);
+    REQUIRE(id->count() == 2); // "Choose a primitive" and the cylinder
+    CHECK(id->currentData().value<ObjectId>() == fit["id"].get<ObjectId>());
+    id->setCurrentIndex(1);
+    emit id->activated(1);
+    QApplication::processEvents();
+    REQUIRE(tree->currentItem() != nullptr);
+    CHECK(tree->currentItem()->data(0, Qt::UserRole + 1).value<ObjectId>() ==
+          fit["id"].get<ObjectId>());
+
+    // solid.extrude offers the sketch, and follows the document: a deleted sketch goes.
+    for (QAction* a : window.findChildren<QAction*>()) {
+        if (a->text() == "solid.extrude") a->trigger();
+    }
+    id = form->findChild<QComboBox*>("id");
+    REQUIRE(id != nullptr);
+    CHECK(id->currentData().value<ObjectId>() == sketchId);
+    run("object.delete", {{"id", sketchId}});
+    CHECK(waitFor([&] { return id->count() == 1; }));
+    CHECK_FALSE(form->params().has_value()); // id is required
 }
 
 TEST_CASE("Tool forms are generated from command schemas", "[app]") {
@@ -393,8 +451,22 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     CommandRegistry registry;
     REQUIRE(registerBuiltinCommands(registry).has_value());
     ParamForm form;
+    // Object fields are drop-downs of the document's objects of the kinds the schema names.
+    auto snapshot = std::make_shared<DocSnapshot>();
+    snapshot->objects.push_back({.id = 7,
+                                 .name = "scan",
+                                 .data = MeshData{std::make_shared<const TriMesh>(makeCube())},
+                                 .provenance = {}});
+    snapshot->objects.push_back({.id = 8, .name = "other", .data = MeshData{}, .provenance = {}});
+    snapshot->objects.push_back(
+        {.id = 9, .name = "Section", .data = SketchData{}, .provenance = {}});
+    form.setObjects(snapshot);
 
     form.setCommand(registry.find("mesh.simplify"), {{"id", 7}});
+    const auto* mesh = form.findChild<QComboBox*>("id");
+    REQUIRE(mesh != nullptr);
+    CHECK(mesh->count() == 3); // "Choose a mesh", scan and other: no sketch
+    CHECK(mesh->currentText() == "scan (#7)");
     auto params = form.params();
     REQUIRE(params.has_value());
     CHECK(*params == Json{{"id", 7}}); // empty fields are left to the command's defaults
@@ -410,8 +482,8 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     CHECK_FALSE(form.params().has_value());
 
     form.setCommand(registry.find("select.brush"));
-    CHECK_FALSE(form.params().has_value()); // id and radius are required
-    form.findChild<QLineEdit*>("id")->setText("1");
+    CHECK_FALSE(form.params().has_value());               // id and radius are required
+    form.findChild<QComboBox*>("id")->setCurrentIndex(2); // "other"
     form.findChild<QLineEdit*>("radius_mm")->setText("2");
     form.findChild<QLineEdit*>("center")->setText("1, 2.5 3");
     form.findChild<QComboBox*>("mode")->setCurrentText("subtract");
@@ -421,6 +493,12 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     CHECK((*params)["mode"] == "subtract");
     form.findChild<QLineEdit*>("centers")->setText("[[0,0,0],[1,1,1]]");
     CHECK(form.params()->at("centers").size() == 2);
+    CHECK((*params)["id"] == 8);
+
+    // An optional object field starts at None and is left out.
+    form.setCommand(registry.find("sketch.section"), {{"id", 7}});
+    CHECK(form.findChild<QComboBox*>("plane_id")->currentText() == "None");
+    CHECK_FALSE(form.params()->contains("plane_id"));
 }
 
 // The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or

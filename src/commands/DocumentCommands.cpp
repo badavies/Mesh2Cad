@@ -22,7 +22,11 @@ namespace {
 constexpr auto kNoParams = R"({"type":"object","properties":{},"additionalProperties":false})";
 constexpr auto kIdOnly = R"({
     "type":"object",
-    "properties":{"id":{"type":"integer","minimum":0,"description":"Object id."}},
+    "properties":{"id":{"type":"integer","x-object":"any","minimum":0,"description":"Object id."}},
+    "required":["id"],"additionalProperties":false})";
+constexpr auto kMeshIdOnly = R"({
+    "type":"object",
+    "properties":{"id":{"type":"integer","x-object":"mesh","minimum":0,"description":"The mesh."}},
     "required":["id"],"additionalProperties":false})";
 
 Json historyJson(const std::vector<HistoryStep>& steps) {
@@ -111,7 +115,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                               "Rename an object.",
                               R"({
             "type":"object",
-            "properties":{"id":{"type":"integer","minimum":0},"name":{"type":"string"}},
+            "properties":{"id":{"type":"integer","x-object":"any","minimum":0},"name":{"type":"string"}},
             "required":["id","name"],"additionalProperties":false})",
                               true,
                               [](CommandContext& context, const Json& params) -> Result<Json> {
@@ -125,7 +129,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                               "Show or hide an object in the viewport.",
                               R"({
             "type":"object",
-            "properties":{"id":{"type":"integer","minimum":0},"visible":{"type":"boolean"}},
+            "properties":{"id":{"type":"integer","x-object":"any","minimum":0},"visible":{"type":"boolean"}},
             "required":["id","visible"],"additionalProperties":false})",
                               true,
                               [](CommandContext& context, const Json& params) -> Result<Json> {
@@ -162,7 +166,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
         "mesh.info",
         "Report counts, bounds, area, volume and topology problems (holes, non-manifold edges) of "
         "a mesh.",
-        kIdOnly,
+        kMeshIdOnly,
         false,
         [](const CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireMesh(context, params));
@@ -175,7 +179,7 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                     R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"Object id."},
+                "id":{"type":"integer","x-object":"mesh","minimum":0,"description":"Object id."},
                 "path":{"type":"string","description":"Destination file; the extension (.stl, .obj, .ply) selects the format."}
             },
             "required":["id","path"],"additionalProperties":false})",

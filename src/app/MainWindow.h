@@ -44,6 +44,10 @@ private:
     void onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot);
     void refreshTree();
     void onTreeSelection();
+    /// Shows the current mesh and selection in the viewport, and highlights the selected object.
+    void showCurrent() const;
+    /// Selects an object picked in a tool form, in the tree and the viewport.
+    void chooseObject(ObjectId id);
     void showTool(const QString& name) const;
     void runForm();
     void run(const QString& command, const Json& params, Engine::Done done = {}) const;

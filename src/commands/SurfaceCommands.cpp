@@ -79,8 +79,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The quad layout."},
-                "mesh_id":{"type":"integer","minimum":0,"description":"The mesh to fit to; required unless fit is false."},
+                "id":{"type":"integer","x-object":"quad_layout","minimum":0,"description":"The quad layout."},
+                "mesh_id":{"type":"integer","x-object":"mesh","minimum":0,"description":"The mesh to fit to; required unless fit is false."},
                 "fit":{"type":"boolean","default":true,"description":"Fit the cage to the mesh first."},
                 "iterations":{"type":"integer","minimum":1,"maximum":10,"default":3,"description":"Rounds of fitting."},
                 "smoothing":{"type":"number","minimum":0,"maximum":10,"default":0.05,"description":"How strongly the cage keeps its own shape while fitting."},
@@ -179,8 +179,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "primitive_ids":{"type":"array","items":{"type":"integer","minimum":0},"minItems":1,"description":"The primitives to trim."},
-                "mesh_id":{"type":"integer","minimum":0,"description":"The mesh they were fitted to."},
+                "primitive_ids":{"type":"array","items":{"type":"integer","x-object":"primitive","minimum":0},"minItems":1,"description":"The primitives to trim."},
+                "mesh_id":{"type":"integer","x-object":"mesh","minimum":0,"description":"The mesh they were fitted to."},
                 "max_distance_mm":{"type":"number","exclusiveMinimum":0,"default":0.5,"description":"A point of a split face lies on the mesh when it is this close."},
                 "min_coverage":{"type":"number","exclusiveMinimum":0,"maximum":1,"default":0.9,"description":"Share of a split face's area that must lie on the mesh for it to be kept."},
                 "name":{"type":"string"}
@@ -231,8 +231,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The solid to fuse to, cut from or intersect."},
-                "tool_id":{"type":"integer","minimum":0,"description":"The other solid."},
+                "id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid to fuse to, cut from or intersect."},
+                "tool_id":{"type":"integer","x-object":"solid","minimum":0,"description":"The other solid."},
                 "operation":{"type":"string","enum":["fuse","cut","common"]},
                 "fuzzy_mm":{"type":"number","minimum":0,"default":0.001,"description":"Boundaries this close are treated as touching."},
                 "name":{"type":"string"}
@@ -277,7 +277,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The cylinder or sphere primitive."},
+                "id":{"type":"integer","x-object":"primitive","minimum":0,"description":"The cylinder or sphere primitive."},
                 "length_mm":{"type":"number","minimum":0,"default":0,"description":"A cylinder's length; 0 = the length of the region it was fitted to."},
                 "radius_mm":{"type":"number","minimum":0,"default":0,"description":"The solid's radius; 0 = the fitted radius."},
                 "name":{"type":"string"}
@@ -306,7 +306,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "volume, area and bounds.",
         R"({
             "type":"object",
-            "properties":{"id":{"type":"integer","minimum":0,"description":"The solid."}},
+            "properties":{"id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid."}},
             "required":["id"],"additionalProperties":false})",
         false,
         [](const CommandContext& context, const Json& params) -> Result<Json> {
@@ -324,7 +324,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The solid."},
+                "id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid."},
                 "path":{"type":"string","description":"The .step or .stp file to write."},
                 "product_name":{"type":"string","description":"Product name in the file; the object name if omitted."}
             },
@@ -368,7 +368,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The sketch."},
+                "id":{"type":"integer","x-object":"sketch","minimum":0,"description":"The sketch."},
                 "distance_mm":{"type":"number"},
                 "extent":{"type":"string","enum":["one_sided","symmetric","two_sided"],"default":"one_sided"},
                 "back_distance_mm":{"type":"number","minimum":0,"default":0,"description":"two_sided: the distance against the normal."},
@@ -411,7 +411,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","minimum":0,"description":"The sketch."},
+                "id":{"type":"integer","x-object":"sketch","minimum":0,"description":"The sketch."},
                 "axis":{"type":"string","enum":["u","v"],"description":"The sketch plane's u or v axis."},
                 "axis_point":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2},
                 "axis_direction":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2},
