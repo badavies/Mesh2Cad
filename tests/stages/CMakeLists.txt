@@ -6,6 +6,7 @@ add_executable(m2c_stage_tests
     PrimitiveFitStageTests.cpp
     QuadRemeshStageTests.cpp
     RegionFitStageTests.cpp
+    SectionStageTests.cpp
     SegmentStageTests.cpp
     SelectMeasureStageTests.cpp
     SurfaceStageTests.cpp

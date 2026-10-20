@@ -5,9 +5,11 @@
 // turned into Errors.
 
 #include <cstddef>
+#include <vector>
 
 #include "m2c/core/Error.h"
 #include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c::cgal {
 
@@ -76,5 +78,11 @@ struct WrapParams {
 /// 3D alpha wrapping: a watertight, manifold, intersection-free mesh around any input, as a
 /// fallback when surface repair fails.
 [[nodiscard]] Result<TriMesh> shrinkWrap(const TriMesh& input, const WrapParams& params);
+
+/// Where the plane through `point` with normal `normal` cuts the mesh (CGAL's
+/// Polygon_mesh_slicer): one polyline per piece of the cut. A piece that goes all the way round is
+/// closed, its first point repeated last; one that runs into a hole or border is open.
+[[nodiscard]] Result<std::vector<std::vector<Vec3d>>>
+slice(const TriMesh& input, const Vec3d& point, const Vec3d& normal);
 
 } // namespace m2c::cgal

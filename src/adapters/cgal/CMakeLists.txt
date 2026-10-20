@@ -8,6 +8,7 @@ m2c_add_library(cgal
         Repair.cpp
         RegionGrowing.cpp
         Simplify.cpp
+        Slice.cpp
         Wrap.cpp
     DEPS
         Mesh2Cad::core)
