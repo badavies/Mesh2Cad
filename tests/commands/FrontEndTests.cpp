@@ -148,6 +148,15 @@ TEST_CASE("MCP server lists commands as tools and calls them", "[mcp]") {
     CHECK(content[1]["mimeType"] == "image/png");
     CHECK(content[1]["data"].get<std::string>().starts_with("iVBORw0KGgo"));
 
+    // A tool without parameters may be sent null arguments.
+    const Json listed =
+        *mcp.handle(request(7, "tools/call", {{"name", "doc_list"}, {"arguments", nullptr}}));
+    CHECK(listed["result"]["isError"] == false);
+    CHECK(listed["result"]["structuredContent"]["objects"].size() == 1);
+    const Json wrong =
+        *mcp.handle(request(8, "tools/call", {{"name", "doc_list"}, {"arguments", 3}}));
+    CHECK(wrong["result"]["isError"] == true);
+
     const Json failed =
         *mcp.handle(request(4, "tools/call", {{"name", "mesh_info"}, {"arguments", {{"id", 99}}}}));
     CHECK(failed["result"]["isError"] == true);
