@@ -4,6 +4,7 @@ add_executable(m2c_stage_tests
     MeshToolStageTests.cpp
     PatchMergeStageTests.cpp
     PrimitiveFitStageTests.cpp
+    ProfileStageTests.cpp
     QuadRemeshStageTests.cpp
     RegionFitStageTests.cpp
     SectionStageTests.cpp

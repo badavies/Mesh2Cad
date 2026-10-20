@@ -35,6 +35,9 @@ target.
     `SurfacePatch` per ptex face, exact bicubics where the cage is regular and caps fitted to
     OpenSubdiv's Gregory patches (positions and tangent planes along their edges) elsewhere.
   - `tessellateLimit`: the limit surface as triangles, for tests and checks.
+- `m2c/adapters/occt/Profile.h` (namespace `m2c::occt`): `extrudeSketch` and `revolveSketch`, a
+  sketch's profile (largest loop less the holes in it) as a planar face, extruded along the normal
+  (`BRepPrimAPI_MakePrism`) or revolved about an axis in its plane (`BRepPrimAPI_MakeRevol`).
 - `m2c/adapters/occt/Boolean.h` (namespace `m2c::occt`):
   - `booleanSolids` with `BooleanOp`: fuse, cut or common of two solids with fuzzy booleans
     (`BRepAlgoAPI_Fuse`, `BRepAlgoAPI_Cut`, `BRepAlgoAPI_Common`), faces of one surface merged and

@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <utility>
 #include <vector>
@@ -15,11 +16,13 @@
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Step.h"
 #include "m2c/pipeline/Boolean.h"
+#include "m2c/pipeline/Profile.h"
 #include "m2c/pipeline/Surface.h"
 #include "m2c/pipeline/Trim.h"
 
@@ -353,6 +356,110 @@ void addSurfaceCommands(std::vector<Command>& out) {
                           {"face_count", reread->faceCount},
                           {"volume_mm3", reread->volumeMm3},
                           {"volume_error", error}}}};
+        }));
+
+    out.push_back(makeCommand(
+        "solid.extrude",
+        "Extrude a sketch's profile (its largest loop less the loops inside it) along the "
+        "sketch plane's normal into a solid. one_sided goes distance_mm along the normal "
+        "(against it when negative), symmetric distance_mm in all, half each way, and two_sided "
+        "distance_mm along the normal and back_distance_mm against it. Lines and arcs stay "
+        "exact. Adds a solid object; fails for an open profile.",
+        R"({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0,"description":"The sketch."},
+                "distance_mm":{"type":"number"},
+                "extent":{"type":"string","enum":["one_sided","symmetric","two_sided"],"default":"one_sided"},
+                "back_distance_mm":{"type":"number","minimum":0,"default":0,"description":"two_sided: the distance against the normal."},
+                "name":{"type":"string"}
+            },
+            "required":["id","distance_mm"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireObject(context, params, "id", "sketch"));
+            M2C_TRY(distance, optionalNumber(params, "distance_mm", 0.0, -1e6, 1e6));
+            M2C_TRY(back, optionalNumber(params, "back_distance_mm", 0.0, 0.0, 1e6));
+            M2C_TRY(extent, optionalString(params, "extent"));
+            M2C_TRY(name, optionalString(params, "name"));
+            const std::string mode = extent->value_or("one_sided");
+            double forward = std::max(*distance, 0.0), backward = std::max(-*distance, 0.0);
+            if (mode == "symmetric") {
+                forward = backward = *distance / 2.0;
+            } else if (mode == "two_sided") {
+                forward = *distance;
+                backward = *back;
+            } else if (mode != "one_sided") {
+                return fail(ErrorCode::InvalidArgument,
+                            "extent must be one_sided, symmetric or two_sided");
+            }
+            M2C_TRY(solid, extrudeSketch(object->sketch()->sketch, forward, backward));
+            const SolidSummary summary = solid->summary();
+            M2C_TRY(id,
+                    context.document.add(name->value_or(object->name + " extrusion"),
+                                         SolidData{std::move(*solid)},
+                                         context.provenance({object->id})));
+            return Json{{"id", *id}, {"summary", toJson(summary)}};
+        }));
+
+    out.push_back(makeCommand(
+        "solid.revolve",
+        "Revolve a sketch's profile (its largest loop less the loops inside it) by angle_deg "
+        "about an axis in the sketch plane into a solid: the plane's u or v axis through its "
+        "origin, or axis_point and axis_direction in sketch coordinates. Adds a solid object; "
+        "fails for an open profile or one that crosses the axis.",
+        R"({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","minimum":0,"description":"The sketch."},
+                "axis":{"type":"string","enum":["u","v"],"description":"The sketch plane's u or v axis."},
+                "axis_point":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2},
+                "axis_direction":{"type":"array","items":{"type":"number"},"minItems":2,"maxItems":2},
+                "angle_deg":{"type":"number","exclusiveMinimum":0,"maximum":360,"default":360},
+                "name":{"type":"string"}
+            },
+            "required":["id"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireObject(context, params, "id", "sketch"));
+            M2C_TRY(axis, optionalString(params, "axis"));
+            M2C_TRY(angle, optionalNumber(params, "angle_deg", 360.0, 1e-9, 360.0));
+            M2C_TRY(name, optionalString(params, "name"));
+            const bool given = params.contains("axis_point") && params.contains("axis_direction");
+            if (axis->has_value() == given ||
+                params.contains("axis_point") != params.contains("axis_direction")) {
+                return fail(ErrorCode::InvalidArgument,
+                            "give axis, or axis_point with axis_direction");
+            }
+            Vec2d point, direction{1, 0};
+            if (given) {
+                const auto two = [&](const char* key) -> Result<Vec2d> {
+                    const Json& j = params.at(key);
+                    if (!j.is_array() || j.size() != 2 || !j[0].is_number() || !j[1].is_number()) {
+                        return fail(ErrorCode::InvalidArgument,
+                                    std::string(key) + " must be two numbers");
+                    }
+                    return Vec2d{j[0].get<double>(), j[1].get<double>()};
+                };
+                M2C_TRY(p, two("axis_point"));
+                M2C_TRY(d, two("axis_direction"));
+                point = *p;
+                direction = *d;
+            } else if (**axis == "v") {
+                direction = {0, 1};
+            } else if (**axis != "u") {
+                return fail(ErrorCode::InvalidArgument, "axis must be u or v");
+            }
+            M2C_TRY(
+                solid,
+                revolveSketch(
+                    object->sketch()->sketch, point, direction, *angle * std::numbers::pi / 180.0));
+            const SolidSummary summary = solid->summary();
+            M2C_TRY(id,
+                    context.document.add(name->value_or(object->name + " revolution"),
+                                         SolidData{std::move(*solid)},
+                                         context.provenance({object->id})));
+            return Json{{"id", *id}, {"summary", toJson(summary)}};
         }));
 }
 
