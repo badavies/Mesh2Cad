@@ -343,7 +343,7 @@ Open a project file, replacing the current document. Clears the undo history. *(
 
 ### `project.save`
 
-Save every object (meshes, selections, measurements, alignments, quad layouts, solids, deviations and primitives) to a project file (.m2c). *(read-only)*
+Save every object (meshes, selections, measurements, alignments, quad layouts, solids, deviations, primitives and sketches) to a project file (.m2c). *(read-only)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -504,6 +504,24 @@ Split every shell except the main part into its own mesh object. *(changes the d
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | integer | yes |  |
+
+## sketch
+
+### `sketch.section`
+
+Cut a mesh with a plane and add a sketch of the cut: each closed piece becomes a loop of lines, arcs and splines within max_error_mm of the section points (a full circle when it is one). The plane is an origin plane (xy, yz or zx), a fitted plane primitive, or a point and a normal, moved offset_mm along its normal. Pieces that run into a hole or border are left out and counted. Fails, adding nothing, if no piece closes. Sketches are fitted, not constrained. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | integer | yes | The mesh to cut. |
+| `max_error_mm` | number |  | Largest distance from a section point to its curve. Default `0.05`. |
+| `min_curve_points` | integer |  | Smooth runs of lines and arcs that each cover fewer section points become a spline. Default `6`. |
+| `name` | string |  |  |
+| `normal` | array |  |  |
+| `offset_mm` | number |  | Moves the plane along its normal. Default `0`. |
+| `plane` | `xy` \| `yz` \| `zx` |  | An origin plane. |
+| `plane_id` | integer |  | A fitted plane primitive. |
+| `point` | array |  |  |
 
 ## solid
 

@@ -152,6 +152,51 @@ TEST_CASE("Project files keep fitted primitives", "[io][project]") {
     CHECK(p.p95Mm == 0.02);
 }
 
+TEST_CASE("Project files keep sketches", "[io][project]") {
+    const TempDir dir;
+    ProjectData project;
+    project.nextId = 3;
+    Sketch sketch;
+    sketch.plane = {{1, 2, 3}, {0, 1, 0}, {0, 0, 1}};
+    SketchCurve line;
+    line.points = {{0, 0}, {10, 0.1}};
+    SketchCurve arc;
+    arc.kind = CurveKind::Arc;
+    arc.centre = {10, 4.1};
+    arc.radiusMm = 4.0;
+    arc.startRad = -1.0 / 3.0;
+    arc.sweepRad = 2.5;
+    SketchCurve spline;
+    spline.kind = CurveKind::Spline;
+    spline.points = {arc.end(), {3, 7}, {0, 0}};
+    sketch.loops.push_back({{line, arc, spline}});
+    sketch.loops.push_back({});
+    project.objects.push_back({2, "Section", true, sketch, "sketch.section", "{}", {1}});
+    const auto path = dir.path() / "sketch.m2c";
+    REQUIRE(writeProject(project, path).has_value());
+    const auto back = readProject(path);
+    REQUIRE(back.has_value());
+    REQUIRE(back->objects.size() == 1);
+    const auto& b = std::get<Sketch>(back->objects[0].data);
+    CHECK(b.plane.origin == sketch.plane.origin);
+    CHECK(b.plane.u == sketch.plane.u);
+    CHECK(b.plane.v == sketch.plane.v);
+    REQUIRE(b.loops.size() == 2);
+    CHECK(b.loops[1].curves.empty());
+    const auto& curves = b.loops[0].curves;
+    REQUIRE(curves.size() == 3);
+    CHECK(curves[0].kind == CurveKind::Line);
+    CHECK(curves[0].points == line.points);
+    CHECK(curves[1].kind == CurveKind::Arc);
+    CHECK(curves[1].centre == arc.centre);
+    CHECK(curves[1].radiusMm == arc.radiusMm);
+    CHECK(curves[1].startRad == arc.startRad); // bit-exact
+    CHECK(curves[1].sweepRad == arc.sweepRad);
+    CHECK(curves[1].points.empty());
+    CHECK(curves[2].kind == CurveKind::Spline);
+    CHECK(curves[2].points == spline.points);
+}
+
 TEST_CASE("Version 1 project files still open", "[io][project]") {
     const TempDir dir;
     const auto path = dir.path() / "v1.m2c";

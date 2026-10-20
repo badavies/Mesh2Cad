@@ -14,6 +14,7 @@
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/Transform.h"
 #include "m2c/core/TriMesh.h"
@@ -48,7 +49,8 @@ struct ProjectObject {
                  QuadLayout,
                  Solid,
                  ProjectDeviation,
-                 FittedPrimitive>
+                 FittedPrimitive,
+                 Sketch>
         data;
     std::string madeBy;   ///< Provenance: command name.
     std::string madeWith; ///< Provenance: parameters as JSON text.
@@ -65,12 +67,12 @@ struct ProjectData {
 /// Version 2 added quad layouts, solids and deviations; version 1 files hold a subset of it.
 /// Version 3 lets a solid's face cover several cage quads (merged faces with their own breaks).
 /// Version 4 added fitted primitives. Version 5 added solids with no B-spline faces (trimmed
-/// primitives), stored as BREP alone.
-inline constexpr int kProjectFormatVersion = 5;
+/// primitives), stored as BREP alone. Version 6 added sketches.
+inline constexpr int kProjectFormatVersion = 6;
 
 /// Writes a project file: a zip holding manifest.json, meshes as binary PLY (double precision),
 /// selections as bitsets, quad layouts and deviations as little-endian arrays, solids as
-/// Open CASCADE binary BREP with their B-spline faces, and primitives in the manifest
+/// Open CASCADE binary BREP with their B-spline faces, and primitives and sketches in the manifest
 /// (ARCHITECTURE.md section 5). The file is
 /// replaced atomically: it is written next to the target and renamed into place.
 [[nodiscard]] Result<void> writeProject(const ProjectData& project,

@@ -10,6 +10,7 @@ m2c_add_library(commands
         ProjectCommands.cpp
         QuadCommands.cpp
         SegmentCommands.cpp
+        SketchCommands.cpp
         SurfaceCommands.cpp
         SelectionCommands.cpp
         ShellCommands.cpp

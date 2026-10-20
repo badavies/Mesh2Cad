@@ -11,6 +11,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/commands/Command.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/io/MeshIO.h"
 
 #include "TestMeshes.h"
@@ -700,4 +701,75 @@ TEST_CASE("A fuzzy rounded cube is drilled true for a scanned dowel", "[commands
     const auto step = (dir.path() / "drilled.step").string();
     CHECK(s.run("solid.export", {{"id", drilled["id"]}, {"path", step}})["check"]["passed"] ==
           true);
+}
+
+TEST_CASE("sketch.section adds a sketch of a mesh cut by a plane", "[commands][sketch]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId box = s.import(dir, makeBox(20, 10, 6, 4), "box");
+    const std::size_t before = s.document.objects().size();
+
+    const Json level = s.run("sketch.section", {{"id", box}, {"plane", "xy"}, {"offset_mm", 2.3}});
+    REQUIRE(level["loops"].size() == 1);
+    CHECK(level["loops"][0] == Json{{"lines", 4}, {"arcs", 0}, {"splines", 0}});
+    CHECK(level["open_pieces"] == 0);
+    CHECK(level["max_error_mm"].get<double>() < 1e-9);
+    CHECK(level["plane"]["origin"] == Json::array({0.0, 0.0, 2.3}));
+    const auto object = s.document.find(level["id"].get<ObjectId>());
+    REQUIRE(object.has_value());
+    REQUIRE(object->sketch() != nullptr);
+    CHECK(std::string(object->kind()) == "sketch");
+    CHECK(object->name == "Section");
+    CHECK(object->provenance.inputs == std::vector<ObjectId>{box});
+    CHECK(object->sketch()->sketch.loops.front().curves.size() == 4);
+    CHECK(s.document.undoHistory().back().label == "sketch.section");
+
+    // The zx plane has u along z and v along x, so the cut at y = 5 is 6 x 20 in the sketch.
+    const Json side = s.run("sketch.section", {{"id", box}, {"plane", "zx"}, {"offset_mm", 5}});
+    CHECK(side["plane"]["u"] == Json::array({0.0, 0.0, 1.0}));
+    const auto sideSketch = s.document.find(side["id"].get<ObjectId>());
+    REQUIRE(sideSketch.has_value());
+    for (const SketchCurve& c : sideSketch->sketch()->sketch.loops.front().curves) {
+        CHECK(c.start().x >= -1e-9);
+        CHECK(c.start().x <= 6.0 + 1e-9);
+        CHECK(c.start().y <= 20.0 + 1e-9);
+    }
+
+    // A cylinder cut by a point and a normal is one circle.
+    const ObjectId can = s.import(dir, makeCylinder(10.0, 30.0, 256, 6), "can");
+    const Json round = s.run(
+        "sketch.section",
+        {{"id", can}, {"point", {0, 0, 12.3}}, {"normal", {0, 0, 2}}, {"name", "Can section"}});
+    CHECK(round["loops"][0] == Json{{"lines", 0}, {"arcs", 1}, {"splines", 0}});
+    CHECK(s.document.find(round["id"].get<ObjectId>())->name == "Can section");
+
+    // A fitted plane: the can's end cap, moved halfway down the can.
+    const Json regions = s.run("mesh.segment", {{"id", can}})["regions"];
+    REQUIRE(regions[0]["kind"] == "plane");
+    const Json cap = s.run("primitive.fit", {{"selection_id", regions[0]["selection_id"]}});
+    const double offset = (15.0 - cap["point"][2].get<double>()) / cap["normal"][2].get<double>();
+    const Json datum =
+        s.run("sketch.section", {{"id", can}, {"plane_id", cap["id"]}, {"offset_mm", offset}});
+    CHECK(datum["loops"][0]["arcs"] == 1);
+    CHECK_THAT(datum["plane"]["origin"][2].get<double>(), Catch::Matchers::WithinAbs(15.0, 1e-9));
+    CHECK(s.document.find(datum["id"].get<ObjectId>())->provenance.inputs ==
+          std::vector<ObjectId>{can, cap["id"].get<ObjectId>()});
+
+    // Each failure adds nothing.
+    const std::size_t made = s.document.objects().size();
+    CHECK(made == before + 5 + regions.size() + 1); // 4 sketches, the can, its regions, the cap
+    CHECK_FALSE(s.tryRun("sketch.section", {{"id", box}}).has_value());
+    CHECK_FALSE(
+        s.tryRun("sketch.section",
+                 {{"id", box}, {"plane", "xy"}, {"point", {0, 0, 1}}, {"normal", {0, 0, 1}}})
+            .has_value());
+    CHECK_FALSE(s.tryRun("sketch.section", {{"id", box}, {"point", {0, 0, 1}}}).has_value());
+    CHECK_FALSE(
+        s.tryRun("sketch.section", {{"id", box}, {"point", {0, 0, 1}}, {"normal", {0, 0, 0}}})
+            .has_value());
+    CHECK_FALSE(
+        s.tryRun("sketch.section", {{"id", box}, {"plane", "xy"}, {"offset_mm", 50}}).has_value());
+    const Json wall = s.run("primitive.fit", {{"selection_id", regions[2]["selection_id"]}});
+    CHECK_FALSE(s.tryRun("sketch.section", {{"id", can}, {"plane_id", wall["id"]}}).has_value());
+    CHECK(s.document.objects().size() == made + 1); // just the wall's fit
 }

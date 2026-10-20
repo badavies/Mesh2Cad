@@ -27,6 +27,7 @@ const char* DocumentObject::kind() const noexcept {
     if (solid() != nullptr) return "solid";
     if (deviation() != nullptr) return "deviation";
     if (primitive() != nullptr) return "primitive";
+    if (sketch() != nullptr) return "sketch";
     return "measurement";
 }
 

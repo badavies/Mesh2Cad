@@ -27,6 +27,7 @@
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SurfacePatch.h"
 #include "m2c/core/Vec3.h"
@@ -64,6 +65,59 @@ PickedPoint pickedFrom(const Json& j) {
         if (snap == toString(k)) p.snap = k;
     }
     return p;
+}
+
+Json sketchJson(const Sketch& sketch) {
+    const auto point = [](const Vec2d& p) { return Json::array({p.x, p.y}); };
+    Json loops = Json::array();
+    for (const SketchLoop& loop : sketch.loops) {
+        Json curves = Json::array();
+        for (const SketchCurve& c : loop.curves) {
+            Json j{{"type", curveKindName(c.kind)}};
+            if (c.kind == CurveKind::Arc) {
+                j["centre"] = point(c.centre);
+                j["radius_mm"] = c.radiusMm;
+                j["start_rad"] = c.startRad;
+                j["sweep_rad"] = c.sweepRad;
+            } else {
+                j["points"] = Json::array();
+                for (const Vec2d& p : c.points) j["points"].push_back(point(p));
+            }
+            curves.push_back(std::move(j));
+        }
+        loops.push_back(std::move(curves));
+    }
+    const SketchPlane& plane = sketch.plane;
+    return Json{
+        {"plane", {{"origin", vec(plane.origin)}, {"u", vec(plane.u)}, {"v", vec(plane.v)}}},
+        {"loops", std::move(loops)}};
+}
+
+Result<Sketch> sketchFrom(const Json& j) {
+    const auto point = [](const Json& p) {
+        return Vec2d{p.at(0).get<double>(), p.at(1).get<double>()};
+    };
+    Sketch sketch;
+    const Json& plane = j.at("plane");
+    sketch.plane = {vec(plane.at("origin")), vec(plane.at("u")), vec(plane.at("v"))};
+    for (const Json& loop : j.at("loops")) {
+        SketchLoop& out = sketch.loops.emplace_back();
+        for (const Json& c : loop) {
+            const auto kind = curveKindFromName(c.at("type").get<std::string>());
+            if (!kind) return fail(ErrorCode::Parse, "unknown sketch curve type in project");
+            SketchCurve& curve = out.curves.emplace_back();
+            curve.kind = *kind;
+            if (*kind == CurveKind::Arc) {
+                curve.centre = point(c.at("centre"));
+                curve.radiusMm = c.at("radius_mm").get<double>();
+                curve.startRad = c.at("start_rad").get<double>();
+                curve.sweepRad = c.at("sweep_rad").get<double>();
+            } else {
+                for (const Json& p : c.at("points")) curve.points.push_back(point(p));
+            }
+        }
+    }
+    return sketch;
 }
 
 // Binary arrays are stored in the host's byte order, which is little-endian on every platform
@@ -310,6 +364,9 @@ Result<void> writeProject(const ProjectData& project, const std::filesystem::pat
             j["rms_mm"] = primitive->rmsMm;
             j["max_mm"] = primitive->maxMm;
             j["p95_mm"] = primitive->p95Mm;
+        } else if (const auto* sketch = std::get_if<Sketch>(&data)) {
+            j["kind"] = "sketch";
+            j["sketch"] = sketchJson(*sketch);
         } else {
             const auto& [meshId, referenceId, field] = std::get<ProjectDeviation>(data);
             const std::string file = "deviations/" + std::to_string(id) + ".bin";
@@ -487,6 +544,10 @@ Result<ProjectData> readProject(const std::filesystem::path& path) {
                     .rmsMm = j.at("rms_mm").get<double>(),
                     .maxMm = j.at("max_mm").get<double>(),
                     .p95Mm = j.at("p95_mm").get<double>()};
+            } else if (version >= 6 && kind == "sketch") {
+                auto sketch = sketchFrom(j.at("sketch"));
+                if (!sketch) return std::unexpected(sketch.error());
+                o.data = std::move(*sketch);
             } else {
                 return fail(ErrorCode::Parse, "unknown object kind '" + kind + "' in project");
             }

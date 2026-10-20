@@ -2,6 +2,7 @@
 #include "detail/Params.h"
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -16,6 +17,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshStats.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -239,6 +241,11 @@ Json describe(const DocumentObject& object) {
     } else if (const PrimitiveData* p = object.primitive()) {
         j["primitive"] = toJson(p->fit.surface);
         j["p95_mm"] = p->fit.p95Mm;
+    } else if (const SketchData* sketch = object.sketch()) {
+        std::size_t curves = 0;
+        for (const SketchLoop& loop : sketch->sketch.loops) curves += loop.curves.size();
+        j["loop_count"] = sketch->sketch.loops.size();
+        j["curve_count"] = curves;
     }
     if (!object.provenance.command.empty()) {
         j["made_by"] = object.provenance.command;
