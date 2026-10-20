@@ -22,6 +22,7 @@ OpenSubdiv adapter and solids from the Open CASCADE adapter.
 - `m2c/pipeline/Boolean.h`: re-exports the Open CASCADE adapter's `booleanSolids` with `BooleanOp` (fuse, cut or common of two solids into one solid) and `primitiveSolid` (a fitted cylinder or sphere as a solid).
 - `m2c/pipeline/Profile.h`: re-exports the Open CASCADE adapter's `extrudeSketch` and `revolveSketch` (a sketch's profile as a solid).
 - `m2c/pipeline/Section.h`: `sectionMesh` with `SectionParams` returning `SectionResult` (a sketch of the closed pieces where a plane cuts a mesh), and `fitLoop` returning `LoopFit` (lines, arcs and splines fitted to one closed polyline).
+- `m2c/pipeline/PrimitiveFit.h`: `fitRegion` with `RegionFitParams` and `fitPrimitive` returning `PrimitiveFit` (an exact plane, cylinder, sphere or cone fitted to a region), `fitWithDirection` (the same with the normal or axis held) and `alignedDirection` (a direction parallel, perpendicular or at an angle to a reference), plus `regionPoints` and `turnAngle`.
 - `m2c/pipeline/Trim.h`: re-exports the Open CASCADE adapter's `trimPrimitives` with `TrimParams` and `TrimResult` (fitted primitives split against each other, the faces on the scan closed into a solid with sharp edges).
 
 ## Dependencies
