@@ -15,6 +15,7 @@
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/Transform.h"
 #include "m2c/core/TriMesh.h"
@@ -69,13 +70,20 @@ struct PrimitiveData {
     std::shared_ptr<const TriMesh> display; ///< primitiveDisplay(fit); null if it failed.
 };
 
+/// A 2D profile fitted to a section of a mesh (ARCHITECTURE.md section 7, Section sketches). Like
+/// a quad layout it stays when its inputs change; its provenance names them.
+struct SketchData {
+    Sketch sketch;
+};
+
 using ObjectData = std::variant<MeshData,
                                 SelectionData,
                                 MeasurementData,
                                 QuadLayoutData,
                                 SolidData,
                                 DeviationData,
-                                PrimitiveData>;
+                                PrimitiveData,
+                                SketchData>;
 
 /// Which command made an object, with what parameters (a JSON text, so this module needs no JSON
 /// library) and from which inputs. A stage can be re-run from this record.
@@ -109,7 +117,11 @@ struct DocumentObject {
     [[nodiscard]] const PrimitiveData* primitive() const noexcept {
         return std::get_if<PrimitiveData>(&data);
     }
-    /// "mesh", "selection", "measurement", "quad_layout", "solid", "deviation" or "primitive".
+    [[nodiscard]] const SketchData* sketch() const noexcept {
+        return std::get_if<SketchData>(&data);
+    }
+    /// "mesh", "selection", "measurement", "quad_layout", "solid", "deviation", "primitive" or
+    /// "sketch".
     [[nodiscard]] const char* kind() const noexcept;
 };
 

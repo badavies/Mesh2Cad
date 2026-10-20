@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <limits>
 #include <numbers>
+#include <optional>
+#include <string_view>
 
 #include "m2c/core/Vec3.h"
 
@@ -44,6 +46,13 @@ const char* curveKindName(const CurveKind kind) noexcept {
         return "spline";
     }
     return "line";
+}
+
+std::optional<CurveKind> curveKindFromName(const std::string_view name) noexcept {
+    for (const CurveKind kind : {CurveKind::Line, CurveKind::Arc, CurveKind::Spline}) {
+        if (name == curveKindName(kind)) return kind;
+    }
+    return std::nullopt;
 }
 
 Vec2d SketchCurve::start() const noexcept {

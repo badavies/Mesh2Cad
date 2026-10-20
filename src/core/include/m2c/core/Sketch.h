@@ -4,6 +4,8 @@
 // sketches"): closed loops of lines, arcs and splines. Sketches are fitted, not constrained.
 
 #include <cmath>
+#include <optional>
+#include <string_view>
 #include <vector>
 
 #include "m2c/core/Vec3.h"
@@ -72,6 +74,9 @@ enum class CurveKind {
 
 /// "line", "arc" or "spline".
 [[nodiscard]] const char* curveKindName(CurveKind kind) noexcept;
+
+/// The kind curveKindName gives that name, if any.
+[[nodiscard]] std::optional<CurveKind> curveKindFromName(std::string_view name) noexcept;
 
 /// One curve of a loop.
 struct SketchCurve {

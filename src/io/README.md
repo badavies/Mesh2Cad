@@ -29,12 +29,12 @@ and kernel library headers (CGAL, Open CASCADE, OpenSubdiv). Enforced by
 ## Notes
 
 - Open input files in binary mode. STL detection relies on the exact binary size rule.
-- The project file (format 5) is a zip with `manifest.json`, meshes as binary PLY, selections as
+- The project file (format 6) is a zip with `manifest.json`, meshes as binary PLY, selections as
   bitsets, quad layouts and deviations as length-prefixed arrays, solids as Open CASCADE
-  binary BREP (bit-exact) plus their B-spline faces, and fitted primitives in the manifest; a
+  binary BREP (bit-exact) plus their B-spline faces, and fitted primitives and sketches in the manifest; a
   solid's display mesh is rebuilt from its faces. A solid trimmed from primitives has no
   B-spline faces: it is the BREP alone, and its display is the kernel's triangulation again.
-  Format 3 and 4 files hold a subset and open unchanged. Format 2 files (BREP text, one face per cage quad) are migrated on reading; format 1
+  Format 3, 4 and 5 files hold a subset and open unchanged. Format 2 files (BREP text, one face per cage quad) are migrated on reading; format 1
   files hold a subset and open unchanged. The file is written next to the target and renamed
   into place. A newer format version is refused with
   `ErrorCode::Unsupported`; a format change needs a migration and a test.
