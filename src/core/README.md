@@ -18,6 +18,7 @@ millimetres. Errors cross module boundaries as `Result<T>` (`std::expected<T, Er
 - `m2c/core/SpatialIndex.h`: `SpatialIndex` (BVH with `raycast`, `closestPoint`, `facesWithin`), `RayHit`, `ClosestPoint`, `closestPointOnTriangle`.
 - `m2c/core/MeshSelection.h`: `MeshSelection`, a bitset of face indices on one mesh.
 - `m2c/core/Transform.h`: `Transform3d` (rigid rotation plus translation) and `transformMesh`.
+- `m2c/core/Sketch.h`: `Sketch` (a `SketchPlane` and closed `SketchLoop`s of `SketchCurve` lines, arcs and splines), `Vec2d`, `planeThrough`, `curveKindName` and `distanceTo` for a curve.
 - `m2c/core/Measurement.h`: `Measurement`, `PickedPoint` and `SnapKind` for point-to-point distances.
 - `m2c/core/DisplayProxy.h`: `buildDisplayProxy`, a decimated stand-in mesh for drawing while the camera moves.
 

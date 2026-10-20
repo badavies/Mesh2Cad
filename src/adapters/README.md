@@ -15,6 +15,7 @@ target.
   - `simplify` with `SimplifyParams`: Garland-Heckbert edge collapse to a target face count.
   - `remesh` with `RemeshParams`: isotropic remeshing that keeps sharp edges.
   - `shrinkWrap` with `WrapParams`: 3D alpha wrapping to a watertight, manifold mesh.
+  - `slice`: the polylines where a plane cuts a mesh (`Polygon_mesh_slicer`), closed or open.
 - `m2c/adapters/cgal/RegionGrowing.h` (namespace `m2c::cgal`):
   - `growRegions` with `GrowParams` and `GrownRegion`: Shape_detection region growing of planes,
     cylinders or spheres over the free faces of a mesh, for segmentation.
