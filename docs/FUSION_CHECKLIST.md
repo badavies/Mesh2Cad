@@ -32,7 +32,7 @@ open the translated design. Do not use **Insert > Insert Mesh**, which reads mes
 | # | Check | Pass when |
 |---|---|---|
 | 1 | The translation finishes | No translation error in the Data Panel; the design opens. |
-| 2 | Browser tree | Exactly one **Body** under Bodies, and no Surface bodies or extra components. |
+| 2 | Browser tree | Exactly one **Body** under Bodies, and no Surface bodies or extra components (for a file of the solid alone; see below for sketches and planes). |
 | 3 | Solid, not surfaces | The body's icon is the solid icon; **Inspect > Properties** shows a volume. |
 | 4 | Volume | The volume in Properties matches `summary.volume_mm3` within 0.1%. |
 | 5 | Units and size | **Inspect > Measure** across the part gives the scan's size in mm (not inches or metres). |
@@ -42,6 +42,17 @@ open the translated design. Do not use **Insert > Insert Mesh**, which reads mes
 | 9 | Editing | A **Split Body** with an origin plane and a **Shell** of 1 mm both succeed. |
 | 10 | Section | **Inspect > Section Analysis** on an origin plane shows a closed, filled section. |
 | 11 | Responsiveness | Orbit, select and the timeline stay usable (no multi-second pauses). |
+
+## Sketches and planes
+
+When `solid.export` was given `sketch_ids` or `plane_ids` (ADR-034), also check:
+
+| # | Check | Pass when |
+|---|---|---|
+| 12 | Components | One component per exported object, each named after it (the solid's under `product_name` if given). |
+| 13 | Sketch | Each sketch's curves come through as sketch curves (or, if Fusion shows them as 3D curves, as edges that **Project** into a sketch), closed, with arcs as arcs, where the section was cut. |
+| 14 | Plane | Each plane is a surface body lying on the fitted face; **Construct > Plane at Angle** or **Offset Plane** on it gives a construction plane, and a sketch can be started on it. |
+| 15 | Solid | The solid still passes checks 3 to 6. |
 
 ## Recording the result
 

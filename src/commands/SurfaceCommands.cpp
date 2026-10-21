@@ -492,44 +492,100 @@ void addSurfaceCommands(std::vector<Command>& out) {
 
     Command exportStep = makeCommand(
         "solid.export",
-        "Write a solid to a STEP AP242 file in millimetres, then read the file back and check it "
-        "holds one valid closed solid with the same volume (within 0.1%). Fails, writing "
-        "nothing, if the solid is not valid.",
+        "Write a solid, sketches and planes to a STEP AP242 file in millimetres (ADR-034), each a "
+        "product named after its object: a sketch as one wire per loop (Fusion 360 imports the "
+        "curves as a sketch), a plane primitive as a rectangular face around its fitted region "
+        "(a surface body to sketch on or make a construction plane from). Then read the file "
+        "back and check it holds one valid closed solid with the same volume (within 0.1%), or "
+        "none if no solid was given, and as many faces and edges outside it as were written. "
+        "Fails, writing nothing, if the solid is not valid.",
         R"({
             "type":"object",
             "properties":{
-                "id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid."},
+                "id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid; required unless sketch_ids or plane_ids is given."},
+                "sketch_ids":{"type":"array","items":{"type":"integer","x-object":"sketch","minimum":0},"description":"Sketches to write as wires."},
+                "plane_ids":{"type":"array","items":{"type":"integer","x-object":"primitive","minimum":0},"description":"Plane primitives to write as faces."},
                 "path":{"type":"string","x-file-types":["step","stp"],"description":"The .step or .stp file to write."},
-                "product_name":{"type":"string","description":"Product name in the file; the object name if omitted."}
+                "product_name":{"type":"string","description":"The solid's product name in the file; the object name if omitted."}
             },
-            "required":["id","path"],"additionalProperties":false})",
+            "required":["path"],"additionalProperties":false})",
         false,
         [](CommandContext& context, const Json& params) -> Result<Json> {
-            M2C_TRY(object, requireObject(context, params, "id", "solid"));
             M2C_TRY(path, requireString(params, "path"));
             M2C_TRY(product, optionalString(params, "product_name"));
-            const Solid& solid = object->solid()->solid;
             const std::filesystem::path file(*path);
             if (!isStepPath(file)) {
                 return fail(ErrorCode::InvalidArgument, "the path must end in .step or .stp");
             }
-            M2C_TRY(written, writeStep(solid, file, product->value_or(object->name)));
+            const auto ids = [&](const char* key) -> Result<std::vector<Json>> {
+                if (!params.contains(key)) return std::vector<Json>{};
+                if (!params[key].is_array()) {
+                    return fail(ErrorCode::InvalidArgument, std::string(key) + " must list ids");
+                }
+                return std::vector<Json>(params[key].begin(), params[key].end());
+            };
+            M2C_TRY(sketchIds, ids("sketch_ids"));
+            M2C_TRY(planeIds, ids("plane_ids"));
+            if (!params.contains("id") && sketchIds->empty() && planeIds->empty()) {
+                return fail(ErrorCode::InvalidArgument, "give id, sketch_ids or plane_ids");
+            }
+            // The objects stay in this vector while the parts point into them.
+            std::vector<DocumentObject> objects;
+            objects.reserve(1 + sketchIds->size() + planeIds->size());
+            if (params.contains("id")) {
+                M2C_TRY(object, requireObject(context, params, "id", "solid"));
+                objects.push_back(std::move(*object));
+            }
+            for (const Json& id : *sketchIds) {
+                M2C_TRY(object, requireObject(context, Json{{"id", id}}, "id", "sketch"));
+                objects.push_back(std::move(*object));
+            }
+            for (const Json& id : *planeIds) {
+                M2C_TRY(object, requireObject(context, Json{{"id", id}}, "id", "primitive"));
+                if (object->primitive()->fit.surface.kind != PrimitiveKind::Plane) {
+                    return fail(ErrorCode::InvalidArgument,
+                                object->name + " is not a plane; plane_ids takes planes");
+                }
+                objects.push_back(std::move(*object));
+            }
+            std::vector<StepPart> parts;
+            const Solid* solid = nullptr;
+            for (const DocumentObject& object : objects) {
+                if (object.solid() != nullptr) {
+                    solid = &object.solid()->solid;
+                    parts.push_back({.name = product->value_or(object.name), .shape = solid});
+                } else if (object.sketch() != nullptr) {
+                    parts.push_back({.name = object.name, .shape = &object.sketch()->sketch});
+                } else {
+                    parts.push_back({.name = object.name, .shape = &object.primitive()->fit});
+                }
+            }
+            M2C_TRY(written, writeStep(parts, file));
             M2C_TRY(reread, readStep(file));
-            const double expected = solid.summary().volumeMm3;
-            const double error =
-                std::abs(reread->volumeMm3 - expected) / std::max(std::abs(expected), 1e-12);
-            const bool passed = reread->solidCount == 1 && reread->closed && reread->valid &&
-                                error <= kStepVolumeTolerance;
-            return Json{{"id", object->id},
-                        {"path", *path},
+            const SolidSummary& read = reread->solids;
+            const double expected = solid != nullptr ? solid->summary().volumeMm3 : 0.0;
+            const double error = solid != nullptr ? std::abs(read.volumeMm3 - expected) /
+                                                        std::max(std::abs(expected), 1e-12)
+                                                  : 0.0;
+            const bool solidPassed = solid == nullptr
+                                         ? read.solidCount == 0
+                                         : read.solidCount == 1 && read.closed && read.valid &&
+                                               error <= kStepVolumeTolerance;
+            const bool passed = solidPassed && reread->looseFaces == written->looseFaces &&
+                                reread->looseEdges == written->looseEdges;
+            Json result{{"path", *path},
                         {"check",
                          {{"passed", passed},
-                          {"solid_count", reread->solidCount},
-                          {"closed", reread->closed},
-                          {"valid", reread->valid},
-                          {"face_count", reread->faceCount},
-                          {"volume_mm3", reread->volumeMm3},
-                          {"volume_error", error}}}};
+                          {"solid_count", read.solidCount},
+                          {"closed", read.closed},
+                          {"valid", read.valid},
+                          {"face_count", read.faceCount},
+                          {"volume_mm3", read.volumeMm3},
+                          {"volume_error", error},
+                          {"sketch_edge_count", reread->looseEdges},
+                          {"plane_face_count", reread->looseFaces}}}};
+            if (solid != nullptr) result["id"] = objects.front().id;
+            return result;
         });
     exportStep.writesFiles = true;
     out.push_back(std::move(exportStep));

@@ -586,13 +586,15 @@ Combine two solids into a new one: fuse joins them, cut removes tool_id from id,
 
 ### `solid.export`
 
-Write a solid to a STEP AP242 file in millimetres, then read the file back and check it holds one valid closed solid with the same volume (within 0.1%). Fails, writing nothing, if the solid is not valid. *(writes a file)*
+Write a solid, sketches and planes to a STEP AP242 file in millimetres (ADR-034), each a product named after its object: a sketch as one wire per loop (Fusion 360 imports the curves as a sketch), a plane primitive as a rectangular face around its fitted region (a surface body to sketch on or make a construction plane from). Then read the file back and check it holds one valid closed solid with the same volume (within 0.1%), or none if no solid was given, and as many faces and edges outside it as were written. Fails, writing nothing, if the solid is not valid. *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | solid id | yes | The solid. |
+| `id` | solid id |  | The solid; required unless sketch_ids or plane_ids is given. |
 | `path` | string | yes | The .step or .stp file to write. Files: `.step`, `.stp`. |
-| `product_name` | string |  | Product name in the file; the object name if omitted. |
+| `plane_ids` | array |  | Plane primitives to write as faces. |
+| `product_name` | string |  | The solid's product name in the file; the object name if omitted. |
+| `sketch_ids` | array |  | Sketches to write as wires. |
 
 ### `solid.extrude`
 

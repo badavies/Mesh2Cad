@@ -7,6 +7,7 @@
 #include <TopoDS_Shape.hxx>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 
 namespace m2c {
@@ -28,6 +29,11 @@ namespace occt {
 /// Fails with InvalidState, saying `what` (with its verb) "not one valid closed solid", unless the
 /// shape is one valid closed solid of positive volume (defined in Trim.cpp).
 [[nodiscard]] Result<Solid> kernelSolid(const TopoDS_Shape& solid, const std::string& what);
+
+/// The sketch's loops as wires, one per loop, in one compound; lines and arcs exact and splines
+/// interpolated, as extrudeSketch makes them. Fails with InvalidArgument for a sketch with no loop,
+/// an open loop or a curve without its points (defined in Profile.cpp).
+[[nodiscard]] Result<TopoDS_Shape> sketchWires(const Sketch& sketch);
 
 } // namespace occt
 

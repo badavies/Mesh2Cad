@@ -7,6 +7,7 @@
 #include <fstream>
 #include <miniz.h>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -326,6 +327,52 @@ TEST_CASE("solid.export writes a STEP file that reads back as the same solid",
           true);
     CHECK_FALSE(s.tryRun("solid.export",
                          {{"id", solid}, {"path", (dir.path() / "no" / "x.step").string()}}));
+}
+
+TEST_CASE("solid.export writes sketches and planes beside the solid", "[commands][surface]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId can = s.import(dir, makeCylinder(10.0, 30.0, 256, 6), "can");
+    const Json section =
+        s.run("sketch.section", {{"id", can}, {"plane", "xy"}, {"offset_mm", 12}, {"name", "Mid"}});
+    const auto solid = s.run("solid.extrude", {{"id", section["id"]}, {"distance_mm", 5}})["id"];
+    const Json regions = s.run("mesh.segment", {{"id", can}})["regions"];
+    REQUIRE(regions[0]["kind"] == "plane");
+    const Json cap = s.run("primitive.fit", {{"selection_id", regions[0]["selection_id"]}});
+    const auto path = (dir.path() / "can.step").string();
+
+    const Json result = s.run("solid.export",
+                              {{"id", solid},
+                               {"sketch_ids", {section["id"]}},
+                               {"plane_ids", {cap["id"]}},
+                               {"path", path}});
+    CHECK(result["id"] == solid);
+    CHECK(result["check"]["passed"] == true);
+    CHECK(result["check"]["solid_count"] == 1);
+    CHECK(result["check"]["volume_error"].get<double>() < 1e-3);
+    CHECK(result["check"]["sketch_edge_count"] == 1); // the section is one circle
+    CHECK(result["check"]["plane_face_count"] == 1);
+
+    // Sketches alone: no solid in the file.
+    const auto sketches = (dir.path() / "sketch.step").string();
+    const Json alone = s.run("solid.export", {{"sketch_ids", {section["id"]}}, {"path", sketches}});
+    CHECK(alone["check"]["passed"] == true);
+    CHECK(alone["check"]["solid_count"] == 0);
+    CHECK_FALSE(alone.contains("id"));
+
+    // Nothing to write, or a primitive that is not a plane: an error and no file.
+    const auto bad = (dir.path() / "bad.step").string();
+    CHECK_FALSE(s.tryRun("solid.export", {{"path", bad}}));
+    std::optional<Json> wall;
+    for (const Json& r : regions) {
+        if (r["kind"] == "cylinder") {
+            wall = s.run("primitive.fit", {{"selection_id", r["selection_id"]}});
+        }
+    }
+    REQUIRE(wall.has_value());
+    CHECK_FALSE(s.tryRun("solid.export", {{"plane_ids", {(*wall)["id"]}}, {"path", bad}}));
+    CHECK_FALSE(s.tryRun("solid.export", {{"sketch_ids", {solid}}, {"path", bad}}));
+    CHECK_FALSE(std::filesystem::exists(bad));
 }
 
 TEST_CASE("deviation.compute measures a mesh against a solid or a mesh", "[commands][deviation]") {

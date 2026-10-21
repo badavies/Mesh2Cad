@@ -11,9 +11,11 @@
 #include <ios>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <BRepBndLib.hxx>
@@ -26,6 +28,7 @@
 #include <BRep_Tool.hxx>
 #include <BinTools.hxx>
 #include <Bnd_Box.hxx>
+#include <ElSLib.hxx>
 #include <GProp_GProps.hxx>
 #include <Geom_BSplineSurface.hxx>
 #include <IFSelect_ReturnStatus.hxx>
@@ -46,20 +49,29 @@
 #include <Standard_Failure.hxx>
 #include <Standard_Handle.hxx>
 #include <Standard_Version.hxx>
+#include <StepBasic_Product.hxx>
+#include <StepData_StepModel.hxx>
+#include <TCollection_HAsciiString.hxx>
 #include <TopAbs_Orientation.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
+#include <gp_Dir.hxx>
+#include <gp_Pln.hxx>
+#include <gp_Pnt.hxx>
 #include <gp_Pnt2d.hxx>
 #include <gp_Vec.hxx>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Primitive.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/core/SurfacePatch.h"
@@ -245,24 +257,116 @@ Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
     });
 }
 
-Result<void>
-writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name) {
-    return guarded("STEP export", [&]() -> Result<void> {
-        if (!BRepCheck_Analyzer(solid.shape().shape).IsValid()) {
-            return fail(ErrorCode::InvalidState, "the solid is not valid; nothing was written");
+namespace {
+
+/// A face on the plane around its fit's extent: the extent's corners projected onto the plane,
+/// bounded along the plane's own axes.
+Result<TopoDS_Shape> planeFace(const FittedPrimitive& fit) {
+    const Primitive& s = fit.surface;
+    if (s.kind != PrimitiveKind::Plane || !(length(s.direction) > 0.0)) {
+        return fail(ErrorCode::InvalidArgument, "only a plane primitive can be written as a plane");
+    }
+    const gp_Pln plane(gp_Pnt(s.point.x, s.point.y, s.point.z),
+                       gp_Dir(s.direction.x, s.direction.y, s.direction.z));
+    double u0 = Precision::Infinite(), u1 = -Precision::Infinite();
+    double v0 = u0, v1 = u1;
+    for (int c = 0; c < 8; ++c) {
+        const gp_Pnt corner((c & 1) != 0 ? fit.extent.max.x : fit.extent.min.x,
+                            (c & 2) != 0 ? fit.extent.max.y : fit.extent.min.y,
+                            (c & 4) != 0 ? fit.extent.max.z : fit.extent.min.z);
+        double u = 0.0, v = 0.0;
+        ElSLib::Parameters(plane, corner, u, v);
+        u0 = std::min(u0, u);
+        u1 = std::max(u1, u);
+        v0 = std::min(v0, v);
+        v1 = std::max(v1, v);
+    }
+    if (!(u1 - u0 > Precision::Confusion()) || !(v1 - v0 > Precision::Confusion())) {
+        return fail(ErrorCode::InvalidArgument, "the plane's extent is empty");
+    }
+    return TopoDS_Shape(BRepBuilderAPI_MakeFace(plane, u0, u1, v0, v1).Face());
+}
+
+/// The shape's solids summarised together, and counts of what is outside them.
+StepContents contents(const TopoDS_Shape& shape) {
+    TopoDS_Compound solids;
+    BRep_Builder builder;
+    builder.MakeCompound(solids);
+    for (TopExp_Explorer it(shape, TopAbs_SOLID); it.More(); it.Next()) {
+        builder.Add(solids, it.Current());
+    }
+    StepContents out{.solids = summarise(solids)};
+    for (TopExp_Explorer it(shape, TopAbs_FACE, TopAbs_SOLID); it.More(); it.Next()) {
+        ++out.looseFaces;
+    }
+    for (TopExp_Explorer it(shape, TopAbs_EDGE, TopAbs_FACE); it.More(); it.Next()) {
+        ++out.looseEdges;
+    }
+    return out;
+}
+
+} // namespace
+
+Result<StepContents> writeStep(std::span<const StepPart> parts, const std::filesystem::path& path) {
+    if (parts.empty()) return fail(ErrorCode::InvalidArgument, "there is nothing to write");
+    return guarded("STEP export", [&]() -> Result<StepContents> {
+        std::vector<TopoDS_Shape> shapes;
+        for (const StepPart& part : parts) {
+            Result<TopoDS_Shape> shape = TopoDS_Shape();
+            if (const auto* solid = std::get_if<const Solid*>(&part.shape)) {
+                if (!BRepCheck_Analyzer((*solid)->shape().shape).IsValid()) {
+                    return fail(ErrorCode::InvalidState,
+                                "the solid is not valid; nothing was written");
+                }
+                shape = (*solid)->shape().shape;
+            } else if (const auto* sketch = std::get_if<const Sketch*>(&part.shape)) {
+                shape = sketchWires(**sketch);
+            } else {
+                shape = planeFace(*std::get<const FittedPrimitive*>(part.shape));
+            }
+            if (!shape) return std::unexpected(shape.error());
+            shapes.push_back(std::move(*shape));
         }
         STEPControl_Writer writer; // initialises the STEP parameters set below
         Interface_Static::SetCVal("write.step.schema", "AP242DIS");
         Interface_Static::SetCVal("write.step.unit", "MM");
-        Interface_Static::SetCVal("write.step.product.name", name.c_str());
-        if (writer.Transfer(solid.shape().shape, STEPControl_AsIs) != IFSelect_RetDone) {
-            return fail(ErrorCode::Internal, "Open CASCADE could not convert the solid to STEP");
+        // No assembly splitting: a sketch of several loops is one product, not one per loop.
+        Interface_Static::SetIVal("write.step.assembly", 0);
+        for (std::size_t k = 0; k < parts.size(); ++k) {
+            const int before = writer.Model()->NbEntities();
+            if (writer.Transfer(shapes[k], STEPControl_AsIs) != IFSelect_RetDone) {
+                return fail(ErrorCode::Internal,
+                            "Open CASCADE could not convert " + parts[k].name + " to STEP");
+            }
+            // The transfer's product, which Open CASCADE names with a number after it.
+            const opencascade::handle<TCollection_HAsciiString> name =
+                new TCollection_HAsciiString(parts[k].name.c_str());
+            for (int i = before + 1; i <= writer.Model()->NbEntities(); ++i) {
+                const auto product =
+                    opencascade::handle<StepBasic_Product>::DownCast(writer.Model()->Value(i));
+                if (!product.IsNull()) {
+                    product->SetId(name);
+                    product->SetName(name);
+                }
+            }
         }
         if (writer.Write(utf8(path).c_str()) != IFSelect_RetDone) {
             return fail(ErrorCode::Io, "could not write " + utf8(path));
         }
-        return {};
+        TopoDS_Compound all;
+        BRep_Builder builder;
+        builder.MakeCompound(all);
+        for (const TopoDS_Shape& shape : shapes) builder.Add(all, shape);
+        return contents(all);
     });
+}
+
+Result<void>
+writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name) {
+    const StepPart part{.name = name, .shape = &solid};
+    auto written = writeStep(std::span(&part, 1), path);
+    if (!written) return std::unexpected(written.error());
+    return {};
 }
 
 Result<std::string> writeBrep(const Solid& solid, const BrepFormat format) {
@@ -395,14 +499,14 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
     });
 }
 
-Result<SolidSummary> readStep(const std::filesystem::path& path) {
-    return guarded("STEP import", [&]() -> Result<SolidSummary> {
+Result<StepContents> readStep(const std::filesystem::path& path) {
+    return guarded("STEP import", [&]() -> Result<StepContents> {
         STEPControl_Reader reader;
         if (reader.ReadFile(utf8(path).c_str()) != IFSelect_RetDone) {
             return fail(ErrorCode::Parse, "could not read " + utf8(path) + " as STEP");
         }
         reader.TransferRoots();
-        return summarise(reader.OneShape());
+        return contents(reader.OneShape());
     });
 }
 

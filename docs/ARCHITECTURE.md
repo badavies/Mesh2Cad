@@ -247,13 +247,13 @@ Prismatic parts are a first-class case, not an add-on. For a cube or bracket, ev
 
 | Format | Target | Implementation | Key settings |
 | --- | --- | --- | --- |
-| STEP AP242 | Fusion 360 (primary) | OCCT STEP writer | Units mm, one solid per body, validity check before writing |
+| STEP AP242 | Fusion 360 (primary) | OCCT STEP writer | Units mm, one solid per body, validity check before writing; sketches as wires and fitted planes as faces beside it, each a named product (ADR-034) |
 | glTF / GLB | Blender | OCCT tessellation, then OCCT glTF writer | Chord deviation and angle, in mm and degrees |
 | OBJ | Blender, general | OCCT tessellation, then OCCT OBJ writer | Same tessellation settings |
 | STL | 3D printing | OCCT tessellation, then STL writer | Binary by default |
 | PLY / OBJ (raw mesh) | Exporting the repaired scan itself | Own writer from `TriMesh` | Unchanged mesh data |
 
-**Export acceptance.** Every STEP export is re-imported by OCCT in the test suite and must pass `BRepCheck_Analyzer` as one closed solid. At each milestone gate, the golden-set STEP files are also opened in Fusion 360 by hand, using a written checklist.
+**Export acceptance.** Every STEP export is re-imported by OCCT in the test suite and must pass `BRepCheck_Analyzer` as one closed solid, with as many sketch edges and plane faces outside it as were written. At each milestone gate, the golden-set STEP files are also opened in Fusion 360 by hand, using a written checklist.
 
 IGES is a backlog item. Parasolid is a non-goal.
 
@@ -501,6 +501,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-031 | Commands that write files say so (`writesFiles`) and path parameters name their file types (`x-file-types`) | Accepted | The app logs file writes and builds its file dialogs from the schema; MCP stops calling them read-only; see `docs/adr/0031-file-writing-commands-and-file-types.md` |
 | ADR-032 | Flat areas are held on their plane inside the cage fit | Accepted | A scanned flat face comes out flat without trimming it as a primitive; see `docs/adr/0032-flat-areas-in-the-cage-fit.md` |
 | ADR-033 | Scanned fillets are reconstructed exactly, at a radius fitted to the scan | Accepted | Constant-radius fillets between analytic faces with Open CASCADE's `BRepFilletAPI_MakeFillet`; fillet modelling stays a non-goal; see `docs/adr/0033-fitted-fillets.md` |
+| ADR-034 | Sketches and planes go into the STEP file as named products beside the solid | Accepted | `solid.export` writes sketches as wires and plane primitives as bounded faces, each its own product; the readback counts them; see `docs/adr/0034-sketches-and-planes-in-the-step-file.md` |
 
 ## 15. Review log
 

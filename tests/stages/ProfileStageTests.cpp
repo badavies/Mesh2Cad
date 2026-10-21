@@ -2,19 +2,29 @@
 // Sketch profiles extruded and revolved into solids.
 
 #include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <numbers>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "m2c/adapters/occt/Brep.h"
+#include "m2c/core/Error.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/pipeline/Profile.h"
 
+#include "TestMeshes.h"
+
 using namespace m2c;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+using m2c::test::TempDir;
 
 namespace {
 
@@ -162,4 +172,69 @@ TEST_CASE("Profiles that are open, outside, or across the axis fail", "[stages][
     CHECK_FALSE(revolveSketch(square, {5, 0}, {0, 0}, kPi).has_value());
     CHECK_FALSE(revolveSketch(square, {5, 0}, {0, 1}, 0.0).has_value());
     CHECK_FALSE(revolveSketch(square, {5, 0}, {0, 1}, 7.0).has_value());
+}
+
+TEST_CASE("A solid, a sketch and a plane go to one STEP file as named products",
+          "[stages][profile][step]") {
+    Sketch sketch;
+    sketch.loops.push_back(rectangle(0, 0, 30, 20));
+    sketch.loops.push_back(circle({15, 10}, 4.0));
+    const auto box = extrudeSketch(sketch, 10.0, 0.0);
+    REQUIRE(box.has_value());
+    Sketch section = sketch;
+    section.plane = planeThrough({0, 0, 5}, {0, 0, 1});
+    const FittedPrimitive top{
+        .surface = {.kind = PrimitiveKind::Plane, .point = {0, 0, 10}, .direction = {0, 0, 1}},
+        .extent = {.min = {0, 0, 9.9}, .max = {30, 20, 10.1}}};
+    const std::vector<occt::StepPart> parts{{.name = "Plate", .shape = &*box},
+                                            {.name = "Mid section", .shape = &section},
+                                            {.name = "Top plane", .shape = &top}};
+    const TempDir dir;
+    const auto file = dir.path() / "plate.step";
+    const auto written = occt::writeStep(parts, file);
+    REQUIRE(written.has_value());
+    CHECK(written->looseEdges == 5); // four lines and a full circle
+    CHECK(written->looseFaces == 1);
+
+    const auto read = occt::readStep(file);
+    REQUIRE(read.has_value());
+    CHECK(read->solids.solidCount == 1);
+    CHECK(read->solids.closed);
+    CHECK(read->solids.valid);
+    CHECK_THAT(read->solids.volumeMm3, WithinRel(box->summary().volumeMm3, 1e-9));
+    CHECK(read->looseEdges == 5);
+    CHECK(read->looseFaces == 1);
+
+    std::ifstream in(file);
+    const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    CHECK(text.find("PRODUCT('Plate'") != std::string::npos);
+    CHECK(text.find("PRODUCT('Mid section'") != std::string::npos);
+    CHECK(text.find("PRODUCT('Top plane'") != std::string::npos);
+    // One product each: a sketch is not split into a product per loop.
+    std::size_t products = 0;
+    for (auto at = text.find("= PRODUCT("); at != std::string::npos;
+         at = text.find("= PRODUCT(", at + 1)) {
+        ++products;
+    }
+    CHECK(products == 3);
+}
+
+TEST_CASE("STEP export rejects nothing, a primitive that is no plane and an open sketch",
+          "[stages][profile][step]") {
+    const TempDir dir;
+    const auto file = dir.path() / "bad.step";
+    CHECK(occt::writeStep(std::vector<occt::StepPart>{}, file).error().code ==
+          ErrorCode::InvalidArgument);
+    const FittedPrimitive rod{.surface = {.kind = PrimitiveKind::Cylinder,
+                                          .point = {0, 0, 0},
+                                          .direction = {0, 0, 1},
+                                          .radiusMm = 2.0},
+                              .extent = {.min = {-2, -2, 0}, .max = {2, 2, 10}}};
+    const std::vector<occt::StepPart> cylinder{{.name = "Rod", .shape = &rod}};
+    CHECK(occt::writeStep(cylinder, file).error().code == ErrorCode::InvalidArgument);
+    Sketch open;
+    open.loops.push_back({{line({0, 0}, {10, 0}), line({10, 0}, {10, 10})}});
+    const std::vector<occt::StepPart> sketch{{.name = "Open", .shape = &open}};
+    CHECK(occt::writeStep(sketch, file).error().code == ErrorCode::InvalidArgument);
+    CHECK_FALSE(std::filesystem::exists(file));
 }

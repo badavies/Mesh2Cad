@@ -54,8 +54,10 @@ target.
   - `makeSolid` with `SewParams`: B-spline faces (knots where pieces join with C2 continuity
     removed), sewing, an outward solid (`ShapeFix_Solid`) and the kernel's checker; fails unless
     the result is one valid closed solid.
-  - `writeStep` (AP242, millimetres, checks the solid first) and `readStep`, which summarises
-    a STEP file as a `SolidSummary`.
+  - `writeStep` (AP242, millimetres, checks the solid first; a list of `StepPart`s writes a
+    solid, sketches as wires and fitted planes as bounded faces, each a named product, ADR-034)
+    and `readStep`, which reads a STEP file as `StepContents`: a `SolidSummary` of its solids and
+    counts of the faces and edges outside them.
 - `m2c/adapters/occt/Surface.h` (namespace `m2c::occt`):
   - `surfaceDistances`: distances from points to a fitted primitive made as an unbounded Open
     CASCADE surface (`Geom_Plane`, `Geom_CylindricalSurface`, `Geom_SphericalSurface`,
