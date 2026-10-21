@@ -23,7 +23,7 @@ The app turns 3D scans of any shape, from a plain cube or machined bracket to or
 
 - Parasolid (.x\_t) export. It requires a proprietary kernel that cannot ship in a GPL app.
 - IGES export. Deferred; STEP covers both target applications.
-- A general parametric CAD modeller: fillets, assemblies, drawings, full constraint sketching. Fusion does this after import.
+- A general parametric CAD modeller: fillets (beyond reconstructing a scanned constant-radius fillet, ADR-033), assemblies, drawings, full constraint sketching. Fusion does this after import.
 - Raw point-cloud processing, scan registration and scanner drivers. v1 assumes the input is already a mesh.
 - Plugin systems, an embedded scripting language, cloud features and collaboration. The command API (section 8) is the automation surface.
 
@@ -500,6 +500,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-030 | Agents see the document through a software-rendered PNG (`view.render`) | Accepted | A rasteriser in `core` and miniz PNG; the MCP server returns the picture as an image; see `docs/adr/0030-software-render-for-agents.md` |
 | ADR-031 | Commands that write files say so (`writesFiles`) and path parameters name their file types (`x-file-types`) | Accepted | The app logs file writes and builds its file dialogs from the schema; MCP stops calling them read-only; see `docs/adr/0031-file-writing-commands-and-file-types.md` |
 | ADR-032 | Flat areas are held on their plane inside the cage fit | Accepted | A scanned flat face comes out flat without trimming it as a primitive; see `docs/adr/0032-flat-areas-in-the-cage-fit.md` |
+| ADR-033 | Scanned fillets are reconstructed exactly, at a radius fitted to the scan | Accepted | Constant-radius fillets between analytic faces with Open CASCADE's `BRepFilletAPI_MakeFillet`; fillet modelling stays a non-goal; see `docs/adr/0033-fitted-fillets.md` |
 
 ## 15. Review log
 
