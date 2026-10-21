@@ -502,6 +502,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-032 | Flat areas are held on their plane inside the cage fit | Accepted | A scanned flat face comes out flat without trimming it as a primitive; see `docs/adr/0032-flat-areas-in-the-cage-fit.md` |
 | ADR-033 | Scanned fillets are reconstructed exactly, at a radius fitted to the scan | Accepted | Constant-radius fillets between analytic faces with Open CASCADE's `BRepFilletAPI_MakeFillet`; fillet modelling stays a non-goal; see `docs/adr/0033-fitted-fillets.md` |
 | ADR-034 | Sketches and planes go into the STEP file as named products beside the solid | Accepted | `solid.export` writes sketches as wires and plane primitives as bounded faces, each its own product; the readback counts them; see `docs/adr/0034-sketches-and-planes-in-the-step-file.md` |
+| ADR-035 | Deviation hotspots: out-of-tolerance faces clustered by sign | Accepted | `deviation.compute` reports connected out-of-tolerance patches, largest first, and can make them selections; see `docs/adr/0035-deviation-hotspots.md` |
 
 ## 15. Review log
 
