@@ -156,33 +156,17 @@ void addPrimitiveCommands(std::vector<Command>& out) {
             }
             M2C_TRY(limit, optionalNumber(params, "max_residual_mm", 0.1, 1e-9, 1e6));
             p.maxResidualMm = *limit;
-            const std::vector<std::uint32_t> faces = sel->faces->indices();
-            M2C_TRY(fit, fitRegion(*mesh->mesh, faces, p));
-            FittedPrimitive fitted{.surface = fit->primitive,
-                                   .rmsMm = fit->rmsMm,
-                                   .maxMm = fit->maxMm,
-                                   .p95Mm = fit->p95Mm};
-            const std::vector<Vec3d> points = regionPoints(*mesh->mesh, faces);
-            Aabb& box = fitted.extent;
-            box = {.min = points.front(), .max = points.front()};
-            for (const Vec3d& q : points) {
-                box.min = {
-                    std::min(box.min.x, q.x), std::min(box.min.y, q.y), std::min(box.min.z, q.z)};
-                box.max = {
-                    std::max(box.max.x, q.x), std::max(box.max.y, q.y), std::max(box.max.z, q.z)};
-            }
-            std::string name = primitiveKindName(fitted.surface.kind);
-            name[0] = static_cast<char>(name[0] - 'a' + 'A');
+            M2C_TRY(fitted, fitRegionPrimitive(*mesh->mesh, sel->faces->indices(), p));
             M2C_TRY(id,
-                    context.document.add(name + " fit",
-                                         primitiveData(fitted),
+                    context.document.add(fittedName(fitted->surface.kind),
+                                         primitiveData(*fitted),
                                          context.provenance({sel->id, mesh->id})));
-            Json report = toJson(fitted.surface);
+            Json report = toJson(fitted->surface);
             report["id"] = *id;
-            report["rms_mm"] = fitted.rmsMm;
-            report["max_mm"] = fitted.maxMm;
-            report["p95_mm"] = fitted.p95Mm;
-            report["extent"] = toJson(fitted.extent);
+            report["rms_mm"] = fitted->rmsMm;
+            report["max_mm"] = fitted->maxMm;
+            report["p95_mm"] = fitted->p95Mm;
+            report["extent"] = toJson(fitted->extent);
             return report;
         }));
 

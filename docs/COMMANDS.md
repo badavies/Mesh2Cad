@@ -238,10 +238,11 @@ Clean up a mesh: merge duplicate vertices, remove degenerate and duplicate faces
 
 ### `mesh.segment`
 
-Split a mesh into spheres, cylinders and planes (CGAL region growing, in that order, each region refit by least squares) and the organic rest. Each region becomes a selection; the result lists each region's kind, area, fit and primitive. A region is kept only when its area reaches min_area_mm2 and its RMS distance to the primitive is within max_distance_mm. Run it on an even mesh at working density (mesh.remesh): the normals of a raw scan's small triangles are too noisy for the angle limit. The mesh is unchanged; it must be manifold (mesh.repair). *(changes the document)*
+Split a mesh into spheres, cylinders and planes (CGAL region growing, in that order, each region refit by least squares) and the organic rest. Each region becomes a selection; the result lists each region's kind, area, fit and primitive. A region is kept only when its area reaches min_area_mm2 and its RMS distance to the primitive is within max_distance_mm. Run it on an even mesh at working density (mesh.remesh): the normals of a raw scan's small triangles are too noisy for the angle limit. The mesh is unchanged; it must be manifold (mesh.repair). With create_primitives each region also becomes a primitive, fitted as primitive.fit fits its selection. covered_area_fraction (region area over the mesh's) and unclassified_face_count say how much of the part is analytic: high coverage suits primitive.trim, low coverage surface.build. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
+| `create_primitives` | boolean |  | Also add each region's primitive, as primitive.fit on its selection would. Default `false`. |
 | `id` | mesh id | yes |  |
 | `kinds` | array |  | The primitives to look for. Default `["plane", "cylinder"]`. |
 | `max_angle_deg` | number |  | Largest angle between a face normal and the primitive's normal there. Default `10`. |

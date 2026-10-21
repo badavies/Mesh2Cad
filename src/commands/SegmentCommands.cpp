@@ -14,8 +14,10 @@
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/MeshTopology.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/document/Document.h"
+#include "m2c/pipeline/PrimitiveFit.h"
 #include "m2c/pipeline/Segment.h"
 
 #include "detail/Params.h"
@@ -58,7 +60,10 @@ void addSegmentCommands(std::vector<Command>& out) {
         "kept only when its area reaches min_area_mm2 and its RMS distance to the primitive is "
         "within max_distance_mm. Run it on an even mesh at working density (mesh.remesh): the "
         "normals of a raw scan's small triangles are too noisy for the angle limit. The mesh is "
-        "unchanged; it must be manifold (mesh.repair).",
+        "unchanged; it must be manifold (mesh.repair). With create_primitives each region also "
+        "becomes a primitive, fitted as primitive.fit fits its selection. covered_area_fraction "
+        "(region area over the mesh's) and unclassified_face_count say how much of the part is "
+        "analytic: high coverage suits primitive.trim, low coverage surface.build.",
         R"({
             "type":"object",
             "properties":{
@@ -66,7 +71,8 @@ void addSegmentCommands(std::vector<Command>& out) {
                 "max_distance_mm":{"type":"number","exclusiveMinimum":0,"default":0.1,"description":"Largest distance from a face to its region's primitive."},
                 "max_angle_deg":{"type":"number","exclusiveMinimum":0,"maximum":90,"default":10,"description":"Largest angle between a face normal and the primitive's normal there."},
                 "min_area_mm2":{"type":"number","minimum":0,"default":0,"description":"Smaller regions are left organic; 0 = 1% of the mesh's area."},
-                "kinds":{"type":"array","items":{"type":"string","enum":["plane","cylinder","sphere"]},"default":["plane","cylinder"],"description":"The primitives to look for."}
+                "kinds":{"type":"array","items":{"type":"string","enum":["plane","cylinder","sphere"]},"default":["plane","cylinder"],"description":"The primitives to look for."},
+                "create_primitives":{"type":"boolean","default":false,"description":"Also add each region's primitive, as primitive.fit on its selection would."}
             },
             "required":["id"],"additionalProperties":false})",
         true,
@@ -100,7 +106,12 @@ void addSegmentCommands(std::vector<Command>& out) {
                     }
                 }
             }
+            M2C_TRY(createPrimitives, optionalBool(params, "create_primitives", false));
             M2C_TRY(result, segmentMesh(*mesh->mesh, p));
+            double meshArea = 0.0;
+            for (std::size_t f = 0; f < mesh->mesh->faceCount(); ++f)
+                meshArea += faceArea(*mesh->mesh, f);
+            double coveredArea = 0.0;
             Json regions = Json::array();
             std::array<std::size_t, 3> counts{};
             for (const SegmentRegion& r : result->regions) {
@@ -112,11 +123,25 @@ void addSegmentCommands(std::vector<Command>& out) {
                             context, *mesh, r.faces, name + " " + std::to_string(++counts.at(k))));
                 Json j = regionJson(r);
                 j["selection_id"] = *id;
+                coveredArea += r.areaMm2;
+                if (*createPrimitives) {
+                    // As primitive.fit on the selection with the region's kind, with no residual
+                    // limit: segmentation already kept the region.
+                    const RegionFitParams fit{.kind = r.primitive.kind, .maxResidualMm = 1e18};
+                    M2C_TRY(fitted, fitRegionPrimitive(*mesh->mesh, r.faces, fit));
+                    M2C_TRY(primitive,
+                            context.document.add(fittedName(fitted->surface.kind),
+                                                 primitiveData(*fitted),
+                                                 context.provenance({*id, mesh->id})));
+                    j["primitive_id"] = *primitive;
+                }
                 regions.push_back(std::move(j));
             }
             Json report{{"id", mesh->id},
                         {"regions", std::move(regions)},
-                        {"organic_face_count", result->organicFaces.size()}};
+                        {"organic_face_count", result->organicFaces.size()},
+                        {"unclassified_face_count", result->organicFaces.size()},
+                        {"covered_area_fraction", meshArea > 0.0 ? coveredArea / meshArea : 0.0}};
             if (!result->organicFaces.empty()) {
                 M2C_TRY(id, addSelection(context, *mesh, result->organicFaces, "Organic"));
                 report["organic_selection_id"] = *id;

@@ -14,6 +14,7 @@
 #include "m2c/commands/Command.h"
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/pipeline/PrimitiveFit.h"
 
 /// Evaluates a Result-returning expression and returns its error from the enclosing handler.
 #define M2C_TRY(var, expr)                                                                         \
@@ -64,6 +65,15 @@ struct SelectionRef {
 
 /// A primitive object's data, with its display mesh.
 [[nodiscard]] PrimitiveData primitiveData(const FittedPrimitive& fit);
+
+/// A primitive fitted to faces of a mesh as primitive.fit records it: the fit, its residuals and
+/// the region's bounding box.
+[[nodiscard]] Result<FittedPrimitive> fitRegionPrimitive(const TriMesh& mesh,
+                                                         const std::vector<std::uint32_t>& faces,
+                                                         const RegionFitParams& params);
+
+/// The name primitive.fit gives a fitted primitive: "Plane fit", "Cylinder fit", ...
+[[nodiscard]] std::string fittedName(PrimitiveKind kind);
 
 /// The selection object named by params[key]. With `meshId`, it must belong to that mesh.
 [[nodiscard]] Result<SelectionRef> requireSelection(const CommandContext& context,
