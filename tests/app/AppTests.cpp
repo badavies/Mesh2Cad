@@ -739,6 +739,107 @@ TEST_CASE("Sketches show curve kinds, the normal and open chain ends", "[app]") 
     CHECK(hidden["line"] == 0);
 }
 
+TEST_CASE("Hovering reads the deviation, and markers show its extremes", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    // The scan, and the same box 0.25 mm lower as the reference: the scan's top lies 0.25 mm
+    // outside it.
+    const TriMesh scan = makeBox(30, 20, 10, 4);
+    std::vector<Vec3d> lowered = scan.positions();
+    for (Vec3d& p : lowered) p.z -= 0.25;
+    const auto reference = TriMesh::create(lowered, scan.indices());
+    REQUIRE(reference.has_value());
+    const auto scanPath = dir.path() / "scan.stl";
+    const auto referencePath = dir.path() / "reference.stl";
+    REQUIRE(writeMesh(scan, scanPath).has_value());
+    REQUIRE(writeMesh(*reference, referencePath).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(scanPath.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    window.openFiles({QString::fromStdString(referencePath.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 2; }));
+    const ObjectId scanId = engine.snapshot()->objects[0].id;
+    const ObjectId referenceId = engine.snapshot()->objects[1].id;
+    const auto run = [&](const char* command, const Json& params) {
+        Json out;
+        bool done = false;
+        engine.run(command, params, [&](const Result<Json>& r) {
+            if (r) out = *r;
+            done = true;
+        });
+        REQUIRE(waitFor([&] { return done && !engine.busy(); }));
+        return out;
+    };
+    const auto deviationId =
+        run("deviation.compute", {{"id", scanId}, {"reference_id", referenceId}})["id"]
+            .get<ObjectId>();
+    run("object.show", {{"id", referenceId}, {"visible", false}});
+    const DeviationField field = engine.snapshot()->find(deviationId)->deviation()->field;
+    const std::vector<double>& d = field.distances();
+
+    Viewport* view = window.viewport();
+    view->setMode(Mode::Measure);
+    view->setStandardView(-45, 35.264);
+    view->fitAll();
+    QApplication::processEvents();
+    view->grabFramebuffer();
+    QString hovered;
+    QObject::connect(view, &Viewport::hoverChanged, [&](const QString& t) { hovered = t; });
+    // Hovers the vertex at `p` (the widget position it projects to, as Viewport::project).
+    const auto hover = [&](const Vec3d& p) {
+        const Mat4d vp = view->viewProjection();
+        const double x = vp.at(0, 0) * p.x + vp.at(0, 1) * p.y + vp.at(0, 2) * p.z + vp.at(0, 3);
+        const double y = vp.at(1, 0) * p.x + vp.at(1, 1) * p.y + vp.at(1, 2) * p.z + vp.at(1, 3);
+        const double w = vp.at(3, 0) * p.x + vp.at(3, 1) * p.y + vp.at(3, 2) * p.z + vp.at(3, 3);
+        hovered.clear();
+        mouse(view,
+              QEvent::MouseMove,
+              QPointF((x / w + 1.0) * 0.5 * view->width(), (1.0 - y / w) * 0.5 * view->height()),
+              Qt::NoButton);
+    };
+
+    // A vertex in the middle of the top, where it and its neighbours are all 0.25 mm out.
+    const auto& positions = scan.positions();
+    const auto top = static_cast<std::size_t>(std::ranges::find(positions, Vec3d{15, 10, 10}) -
+                                              positions.begin());
+    REQUIRE(top < positions.size());
+    hover(positions[top]);
+    INFO(hovered.toStdString());
+    CHECK(hovered.endsWith(QString::asprintf(" | dev: %+.3f mm", d[top])));
+    CHECK(hovered.endsWith(" | dev: +0.250 mm"));
+
+    // The markers sit at the first vertices with the largest and the smallest distance.
+    const auto largest = static_cast<std::size_t>(std::ranges::max_element(d) - d.begin());
+    const auto smallest = static_cast<std::size_t>(std::ranges::min_element(d) - d.begin());
+    std::vector<DeviationMarker> markers = view->deviationMarkers();
+    REQUIRE(markers.size() == 2);
+    CHECK(markers[0].largest);
+    CHECK(markers[0].vertex == largest);
+    CHECK(markers[0].point == positions[largest]);
+    CHECK(markers[0].valueMm == d[largest]);
+    CHECK_FALSE(markers[1].largest);
+    CHECK(markers[1].vertex == smallest);
+    CHECK(markers[1].point == positions[smallest]);
+    CHECK(markers[1].valueMm == d[smallest]);
+    screenshot(view, "deviation-markers");
+
+    // With the deviation hidden: no markers, and no deviation in the hover text.
+    run("object.show", {{"id", deviationId}, {"visible", false}});
+    QApplication::processEvents();
+    view->grabFramebuffer();
+    CHECK(view->deviationMarkers().empty());
+    hover(positions[top]);
+    CHECK(hovered.startsWith("Object"));
+    CHECK_FALSE(hovered.contains("dev:"));
+}
+
 TEST_CASE("Selecting rows in the Objects list fills the open form", "[app][fit]") {
     application();
     const TempDir dir;

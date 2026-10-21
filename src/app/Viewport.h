@@ -42,6 +42,15 @@ struct Hit {
     ObjectId objectId{0}; ///< The object hit, mesh or not.
 };
 
+/// A marker at a mesh's most outside or most inside vertex under its shown deviation.
+struct DeviationMarker {
+    ObjectId meshId{0};
+    std::uint32_t vertex{0};
+    Vec3d point;
+    double valueMm{0.0};
+    bool largest{false}; ///< The largest (most positive) distance, else the smallest.
+};
+
 /// What the viewport draws for a sketch: its curves as segments, each coloured by kind (lines,
 /// arcs and splines), an arrow along the plane normal from the plane origin (the side a positive
 /// solid.extrude goes), and a dot at both ends of every open chain (where a curve does not start
@@ -71,6 +80,7 @@ struct SketchScene {
 /// - Meshes over two million faces get a coarse proxy built in the background; it is drawn
 ///   while the camera moves.
 /// - Picking for brushing and hovering uses the mesh's own BVH at full resolution.
+/// - The hover text gives the shown deviation at the point, and markers show its extremes.
 /// - Solids draw shaded from their display mesh, quad layouts as their edges and sketches as
 ///   their curves (SketchScene), over everything else. A visible deviation colours its mesh per
 ///   vertex, with a legend (DeviationColors.h).
@@ -115,6 +125,11 @@ public:
     /// The nearest visible mesh, solid or primitive under a widget position. The selection tools
     /// pick meshes only.
     [[nodiscard]] std::optional<Hit> pickObject(const QPointF& pos) const;
+
+    /// The markers at the extremes of each visible mesh's shown deviation (the newest visible
+    /// one, which colours it): its largest and smallest distance, each at the first vertex with
+    /// it. Drawn over everything, so a worst point on the back or in a hole still shows.
+    [[nodiscard]] std::vector<DeviationMarker> deviationMarkers() const;
 
     /// True once every drawn mesh that needs a coarse proxy (see above) has one on the GPU, so
     /// camera moves draw the proxy. Used by the frame-rate test.
@@ -172,6 +187,7 @@ private:
         std::pair<const DeviationField*, bool> colorKey{nullptr, false}; ///< (field, colour-blind)
         GLuint colorBuffer{0};
         bool hasColors{false};
+        std::vector<DeviationMarker> markers;
         // Coarse proxy for fast camera moves on huge meshes.
         std::shared_ptr<const TriMesh> proxy;
         GLuint pvao{0}, pvbo{0}, pebo{0};
@@ -192,6 +208,9 @@ private:
                 GLsizei& count);
     void syncSelection(GpuMesh& gpu, const DocumentObject& mesh);
     void syncColors(GpuMesh& gpu, const DocumentObject& mesh);
+    /// The hover text for a hit: the object, face and point, and the deviation there when the
+    /// mesh shows one.
+    [[nodiscard]] QString hoverText(const Hit& hit) const;
     /// The deviation whose legend is shown: on the current mesh if it has one, else the first.
     [[nodiscard]] const DocumentObject* legendDeviation() const;
     void drawLegend(QPainter& painter, const DocumentObject& deviation) const;

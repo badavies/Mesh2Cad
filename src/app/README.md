@@ -50,6 +50,9 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
 - Solids draw from their display mesh, quad layouts as orange edges. A mesh with a visible
   deviation object is coloured by its newest one (green within tolerance, warm outward, cold
   inward; **View > Colour-blind-safe deviation colours** switches to grey, orange and purple),
-  with a legend in the top right corner.
+  with a legend in the top right corner. Rings mark its largest (red) and smallest (blue)
+  distance, drawn over everything so a worst point on the back still shows, and the hover text
+  of the Measure, Brush and Crease tools ends with the distance at the cursor
+  (`| dev: +0.234 mm`).
 - `--screenshot out.png FILE` renders and quits (CI smoke test). `--no-agent-socket` turns the
   local socket off.
