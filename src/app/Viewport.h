@@ -18,6 +18,9 @@
 #include <QOpenGLFunctions_3_3_Core>
 #include <QVector3D>
 
+#include "m2c/core/Sketch.h"
+#include "m2c/core/Vec3.h"
+
 #include "Camera.h"
 #include "Engine.h"
 
@@ -39,6 +42,24 @@ struct Hit {
     ObjectId objectId{0}; ///< The object hit, mesh or not.
 };
 
+/// What the viewport draws for a sketch: its curves as segments, each coloured by kind (lines,
+/// arcs and splines), an arrow along the plane normal from the plane origin (the side a positive
+/// solid.extrude goes), and a dot at both ends of every open chain (where a curve does not start
+/// within 1e-6 mm of where the one before it ends, as solid.extrude requires).
+struct SketchScene {
+    std::vector<Vec3d> points;
+    std::vector<std::uint32_t> segments; ///< Pairs of point indices.
+    std::vector<QVector3D> colors;       ///< One per point.
+    Vec3d arrowTail;                     ///< The plane origin.
+    Vec3d arrowTip;              ///< 0.3 times the curves' bounding diagonal along the normal.
+    std::vector<Vec3d> openEnds; ///< Two per open chain.
+};
+
+[[nodiscard]] SketchScene buildSketchScene(const Sketch& sketch);
+
+/// The colour a sketch draws a curve of this kind in.
+[[nodiscard]] QVector3D sketchCurveColor(CurveKind kind) noexcept;
+
 /// OpenGL 3.3 view of the document snapshot (ARCHITECTURE.md section 9).
 ///
 /// - Meshes are uploaded once per mesh version, as floats relative to their own bounding-box
@@ -51,8 +72,8 @@ struct Hit {
 ///   while the camera moves.
 /// - Picking for brushing and hovering uses the mesh's own BVH at full resolution.
 /// - Solids draw shaded from their display mesh, quad layouts as their edges and sketches as
-///   their curves, over everything else. A visible deviation colours its mesh per vertex, with a
-///   legend (DeviationColors.h).
+///   their curves (SketchScene), over everything else. A visible deviation colours its mesh per
+///   vertex, with a legend (DeviationColors.h).
 ///
 /// The viewport never changes the document: tools emit signals that the main window turns into
 /// commands, so everything a person does here is a command an agent could also send.
@@ -156,6 +177,8 @@ private:
         GLuint pvao{0}, pvbo{0}, pebo{0};
         GLsizei proxyIndexCount{0};
         bool proxyRequested{false};
+        // A sketch's open chain ends, drawn as dots over the view.
+        std::vector<Vec3d> openEnds;
     };
 
     void cleanupGl();

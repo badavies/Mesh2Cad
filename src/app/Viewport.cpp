@@ -87,6 +87,7 @@ uniform vec3 selectionColors[128];
 out vec4 fragColor;
 void main() {
     if (lineMode == 1) { fragColor = vec4(lineColor, 1.0); return; }
+    if (lineMode == 2) { fragColor = vec4(vertexColor, 1.0); return; }
     // Flat shading: the face normal from screen-space derivatives of the view position.
     vec3 n = normalize(cross(dFdx(viewPos), dFdy(viewPos)));
     vec3 toEye = normalize(-viewPos);
@@ -168,6 +169,61 @@ Aabb drawnBounds(const DocumentObject& o) {
 }
 
 } // namespace
+
+QVector3D sketchCurveColor(CurveKind kind) noexcept {
+    switch (kind) {
+    case CurveKind::Line:
+        return {0.75f, 0.95f, 0.30f};
+    case CurveKind::Arc:
+        return {0.30f, 0.85f, 0.95f};
+    case CurveKind::Spline:
+        return {0.95f, 0.45f, 0.85f};
+    }
+    return {0.30f, 0.85f, 0.95f};
+}
+
+SketchScene buildSketchScene(const Sketch& sketch) {
+    SketchScene scene;
+    const auto append = [&](const SketchLines& lines, const QVector3D& color) {
+        const auto first = static_cast<std::uint32_t>(scene.points.size());
+        scene.points.insert(scene.points.end(), lines.points.begin(), lines.points.end());
+        scene.colors.insert(scene.colors.end(), lines.points.size(), color);
+        for (const std::uint32_t i : lines.segments) scene.segments.push_back(first + i);
+    };
+    constexpr double kGapMm = 1e-6;
+    for (const SketchLoop& loop : sketch.loops) {
+        for (std::size_t i = 0; i < loop.curves.size(); ++i) {
+            const SketchCurve& curve = loop.curves[i];
+            append(sketchLines(Sketch{.plane = sketch.plane, .loops = {SketchLoop{{curve}}}}),
+                   sketchCurveColor(curve.kind));
+            // A gap after this curve ends one chain and starts the next: a dot on each side.
+            const SketchCurve& next = loop.curves[(i + 1) % loop.curves.size()];
+            if (length(next.start() - curve.end()) > kGapMm) {
+                scene.openEnds.push_back(sketch.plane.toWorld(curve.end()));
+                scene.openEnds.push_back(sketch.plane.toWorld(next.start()));
+            }
+        }
+    }
+    // The arrow: a shaft from the origin and a two-stroke head, in the plane of normal and u.
+    // The plane's axes are unit length, so its normal is too.
+    const Vec3d n = sketch.plane.normal();
+    const Vec3d u = sketch.plane.u;
+    double size = 1.0;
+    if (!scene.points.empty()) {
+        const auto [min, max] = pointBounds(scene.points);
+        size = std::max(0.3 * length(max - min), 1e-3);
+    }
+    scene.arrowTail = sketch.plane.origin;
+    scene.arrowTip = sketch.plane.origin + n * size;
+    const Vec3d back = scene.arrowTip - n * (0.25 * size);
+    SketchLines arrow{.points = {scene.arrowTail,
+                                 scene.arrowTip,
+                                 back + u * (0.12 * size),
+                                 back - u * (0.12 * size)},
+                      .segments = {0, 1, 1, 2, 1, 3}};
+    append(arrow, QVector3D(0.95f, 0.95f, 0.95f));
+    return scene;
+}
 
 Viewport::Viewport(QWidget* parent) : QOpenGLWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
@@ -460,13 +516,27 @@ void Viewport::syncGpu() {
         if (isSketch(o)) {
             // A sketch never changes once made, so it is uploaded once.
             if (gpu.vao != 0) continue;
-            auto lines = std::make_shared<const SketchLines>(sketchLines(o.sketch()->sketch));
-            const auto [min, max] = pointBounds(lines->points);
+            auto scene = std::make_shared<const SketchScene>(buildSketchScene(o.sketch()->sketch));
+            const auto [min, max] = pointBounds(scene->points);
             gpu.offset = (min + max) * 0.5;
             gpu.lines = true;
-            gpu.source = lines.get();
-            upload(gpu, lines->points, lines->segments, gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
-            gpu.keepAlive = std::move(lines);
+            gpu.source = scene.get();
+            upload(gpu, scene->points, scene->segments, gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
+            // Colours per point, as deviation colours are (syncColors).
+            static_assert(sizeof(QVector3D) == 3 * sizeof(float));
+            glBindVertexArray(gpu.vao);
+            glGenBuffers(1, &gpu.colorBuffer);
+            glBindBuffer(GL_ARRAY_BUFFER, gpu.colorBuffer);
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(scene->colors.size() * sizeof(QVector3D)),
+                         scene->colors.data(),
+                         GL_STATIC_DRAW);
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(QVector3D), nullptr);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+            gpu.openEnds = scene->openEnds;
+            gpu.keepAlive = std::move(scene);
             continue;
         }
         if (o.solid() != nullptr || o.quadLayout() != nullptr || o.primitive() != nullptr) {
@@ -598,11 +668,10 @@ void Viewport::paintGL() {
             program_.setUniformValue("mvp", toQt(projection * mv));
             const bool highlighted = o.id == highlight_;
             if (gpu.lines) {
-                program_.setUniformValue("lineMode", 1);
+                // A sketch draws in its per-curve colours unless it is highlighted.
+                program_.setUniformValue("lineMode", isSketch(o) && !highlighted ? 2 : 1);
                 program_.setUniformValue("lineColor",
-                                         highlighted   ? highlight
-                                         : isSketch(o) ? QVector3D(0.30f, 0.85f, 0.95f)
-                                                       : QVector3D(0.95f, 0.60f, 0.20f));
+                                         highlighted ? highlight : QVector3D(0.95f, 0.60f, 0.20f));
                 if (isSketch(o)) glDisable(GL_DEPTH_TEST);
                 glBindVertexArray(gpu.vao);
                 glDrawElements(GL_LINES, gpu.indexCount, GL_UNSIGNED_INT, nullptr);
@@ -707,6 +776,20 @@ void Viewport::drawOverlay() {
             painter.drawRoundedRect(box.translated(mid), 3, 3);
             painter.setPen(QColor(255, 230, 120));
             painter.drawText(mid, label);
+        }
+    }
+
+    // The ends of visible sketches' open chains.
+    if (snapshot_) {
+        painter.setPen(QPen(QColor(20, 20, 24), 1.0));
+        painter.setBrush(QColor(235, 60, 60));
+        for (const DocumentObject& o : snapshot_->objects) {
+            if (!o.visible || !isSketch(o)) continue;
+            const auto it = gpu_.find(o.id);
+            if (it == gpu_.end()) continue;
+            for (const Vec3d& p : it->second.openEnds) {
+                if (const auto c = project(p)) painter.drawEllipse(*c, 4.0, 4.0);
+            }
         }
     }
 

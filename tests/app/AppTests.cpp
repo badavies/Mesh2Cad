@@ -19,14 +19,18 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <numbers>
 #include <set>
+#include <string>
 #include <thread>
 #include <utility>
 
 #include "m2c/core/SelectionColors.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/io/MeshIO.h"
 #include "m2c/rpc/Session.h"
 
@@ -34,6 +38,7 @@
 #include "MainWindow.h"
 #include "ParamForm.h"
 #include "TestMeshes.h"
+#include "Viewport.h"
 
 using namespace m2c;
 using namespace m2c::app;
@@ -625,6 +630,113 @@ TEST_CASE("The viewport colours each selection", "[app]") {
         if (id != current && n > 200) ++others;
     }
     CHECK(others >= 2); // at least two other faces of the box are in view
+}
+
+namespace {
+
+SketchCurve line(Vec2d a, Vec2d b) {
+    return SketchCurve{.kind = CurveKind::Line, .points = {a, b}};
+}
+
+/// A closed loop of a line, an arc, a spline and a line, on a tilted plane; with `open`, also
+/// an open chain of two lines.
+Sketch kindsSketch(bool open) {
+    Sketch sketch{.plane = planeThrough({1, 2, 3}, {1, 1, 2}), .loops = {}};
+    sketch.loops.push_back(SketchLoop{{
+        line({0, 0}, {20, 0}),
+        SketchCurve{.kind = CurveKind::Arc,
+                    .points = {},
+                    .centre = {20, 10},
+                    .radiusMm = 10,
+                    .startRad = -std::numbers::pi / 2,
+                    .sweepRad = std::numbers::pi},
+        SketchCurve{.kind = CurveKind::Spline, .points = {{20, 20}, {10, 25}, {0, 20}}},
+        line({0, 20}, {0, 0}),
+    }});
+    if (open) sketch.loops.push_back(SketchLoop{{line({30, 0}, {40, 0}), line({40, 0}, {40, 10})}});
+    return sketch;
+}
+
+std::shared_ptr<const DocSnapshot> sketchSnapshot(const Sketch& sketch, bool visible) {
+    auto snapshot = std::make_shared<DocSnapshot>();
+    snapshot->objects.push_back(DocumentObject{.id = 1,
+                                               .name = "Sketch",
+                                               .visible = visible,
+                                               .data = SketchData{sketch},
+                                               .provenance = {}});
+    snapshot->revision = visible ? 1 : 2;
+    return snapshot;
+}
+
+} // namespace
+
+TEST_CASE("Sketches show curve kinds, the normal and open chain ends", "[app]") {
+    const Sketch sketch = kindsSketch(true);
+    const SketchScene scene = buildSketchScene(sketch);
+    REQUIRE(scene.colors.size() == scene.points.size());
+    REQUIRE(scene.segments.size() % 2 == 0);
+
+    // Each kind its own colour, the arrow (its last three segments) another.
+    std::set<std::array<float, 3>> curveColors;
+    for (std::size_t s = 0; s + 6 < scene.segments.size(); s += 2) {
+        const QVector3D& a = scene.colors[scene.segments[s]];
+        CHECK(a == scene.colors[scene.segments[s + 1]]);
+        curveColors.insert({a.x(), a.y(), a.z()});
+    }
+    CHECK(curveColors.size() == 3);
+    for (const CurveKind kind : {CurveKind::Line, CurveKind::Arc, CurveKind::Spline}) {
+        const QVector3D c = sketchCurveColor(kind);
+        CHECK(curveColors.contains({c.x(), c.y(), c.z()}));
+    }
+    const QVector3D arrowColor = scene.colors[scene.segments.back()];
+    CHECK_FALSE(curveColors.contains({arrowColor.x(), arrowColor.y(), arrowColor.z()}));
+
+    // Two dots for the open chain, at its ends; none for the closed loop.
+    REQUIRE(scene.openEnds.size() == 2);
+    const auto near = [](const Vec3d& a, const Vec3d& b) { return length(a - b) < 1e-9; };
+    CHECK(near(scene.openEnds[0], sketch.plane.toWorld({40, 10})));
+    CHECK(near(scene.openEnds[1], sketch.plane.toWorld({30, 0})));
+    CHECK(buildSketchScene(kindsSketch(false)).openEnds.empty());
+
+    // The arrow points along the plane normal, from the origin.
+    const Vec3d arrow = scene.arrowTip - scene.arrowTail;
+    CHECK(near(scene.arrowTail, sketch.plane.origin));
+    CHECK(dot(arrow * (1.0 / length(arrow)), sketch.plane.normal()) > 0.999);
+
+    // Drawn: the arrow, the dots and the curves show while the sketch is visible, none of them
+    // once it is hidden.
+    application();
+    Viewport view;
+    view.resize(800, 600);
+    view.show();
+    REQUIRE(waitFor([&] { return view.isVisible(); }));
+    const auto count = [&] {
+        view.fitAll();
+        QApplication::processEvents();
+        const QImage frame = view.grabFramebuffer();
+        std::map<std::string, int> n;
+        for (int y = 0; y < frame.height(); ++y) {
+            for (int x = 0; x < frame.width(); ++x) {
+                if (x < 120 && y > frame.height() - 120) continue; // the axis triad
+                const QColor p = frame.pixelColor(x, y);
+                if (p.red() > 200 && p.green() < 90 && p.blue() < 90) ++n["dot"];
+                if (p.red() > 225 && p.green() > 225 && p.blue() > 225) ++n["arrow"];
+                if (p.green() > 200 && p.red() > 150 && p.blue() < 110) ++n["line"];
+            }
+        }
+        return n;
+    };
+    view.setSnapshot(sketchSnapshot(sketch, true));
+    std::map<std::string, int> shown = count();
+    screenshot(&view, "sketch-kinds");
+    CHECK(shown["dot"] > 20);
+    CHECK(shown["arrow"] > 10);
+    CHECK(shown["line"] > 10);
+    view.setSnapshot(sketchSnapshot(sketch, false));
+    std::map<std::string, int> hidden = count();
+    CHECK(hidden["dot"] == 0);
+    CHECK(hidden["arrow"] == 0);
+    CHECK(hidden["line"] == 0);
 }
 
 TEST_CASE("Selecting rows in the Objects list fills the open form", "[app][fit]") {

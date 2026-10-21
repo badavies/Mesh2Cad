@@ -43,7 +43,10 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
 - The log panel shows every command that changes the document or writes a file (with the path),
   from any source. An agent's command still running after two seconds gets a "running" line,
   and its finishing line gives the time taken.
-- Sketches are listed under the mesh they were cut from and drawn as cyan lines over everything.
+- Sketches are listed under the mesh they were cut from and drawn over everything: lines green,
+  arcs cyan and splines pink, with a white arrow from the plane origin along the normal (the side a
+  positive `solid.extrude` distance goes) and a red dot at both ends of any open chain (the gap
+  `solid.extrude` would fail on).
 - Solids draw from their display mesh, quad layouts as orange edges. A mesh with a visible
   deviation object is coloured by its newest one (green within tolerance, warm outward, cold
   inward; **View > Colour-blind-safe deviation colours** switches to grey, orange and purple),
