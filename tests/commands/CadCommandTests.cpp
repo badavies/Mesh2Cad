@@ -231,6 +231,52 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK_FALSE(unfitted.contains("fit"));
 }
 
+TEST_CASE("surface.build holds a selected flat area on its fitted plane", "[commands][surface]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId box = s.import(dir, addNoise(makeRoundedCube(10.0, 8.0, 4), 0.03), "box");
+    const ObjectId ball = s.import(dir, makeSphere(5.0, 3), "ball");
+    const auto cage = s.run("quad.remesh", {{"id", box}, {"target_faces", 300}})["id"];
+    const auto top = s.run(
+        "select.brush",
+        {{"id", box}, {"centers", Json::array({{0, 0, 10}})}, {"radius_mm", 5.0}})["selection_id"];
+    const auto plane = s.run("primitive.fit", {{"selection_id", top}, {"kind", "plane"}})["id"];
+    const Json flat = Json::array({{{"selection_id", top}, {"plane_id", plane}}});
+
+    const Json built = s.run("surface.build", {{"id", cage}, {"mesh_id", box}, {"flat", flat}});
+    CHECK(built["summary"]["valid"] == true);
+    REQUIRE(built["fit"]["held_vertices"].size() == 1);
+    CHECK(built["fit"]["held_vertices"][0].get<int>() > 0);
+    const auto object = s.document.find(built["id"].get<ObjectId>());
+    REQUIRE(object);
+    CHECK(object->provenance.inputs ==
+          std::vector<ObjectId>{
+              cage.get<ObjectId>(), box, top.get<ObjectId>(), plane.get<ObjectId>()});
+    CHECK(s.run("surface.build", {{"id", cage}, {"mesh_id", box}})["fit"]["held_vertices"] ==
+          Json::array());
+
+    // The area must be a selection of the mesh fitted to, held by a plane, while fitting.
+    const auto everything = s.run("select.all", {{"id", ball}})["selection_id"];
+    const auto sphere =
+        s.run("primitive.fit", {{"selection_id", everything}, {"kind", "sphere"}})["id"];
+    const std::size_t objects = s.document.objects().size();
+    const auto fails = [&](const Json& params) {
+        const auto r = s.tryRun("surface.build", params);
+        REQUIRE_FALSE(r);
+        CHECK(r.error().code == ErrorCode::InvalidArgument);
+    };
+    fails({{"id", cage},
+           {"mesh_id", box},
+           {"flat", Json::array({{{"selection_id", everything}, {"plane_id", plane}}})}});
+    fails({{"id", cage},
+           {"mesh_id", box},
+           {"flat", Json::array({{{"selection_id", top}, {"plane_id", sphere}}})}});
+    fails({{"id", cage}, {"mesh_id", box}, {"fit", false}, {"flat", flat}});
+    fails({{"id", cage}, {"fit", false}, {"flat", flat}});
+    fails({{"id", cage}, {"mesh_id", box}, {"flat", Json::array({{{"selection_id", top}}})}});
+    CHECK(s.document.objects().size() == objects);
+}
+
 TEST_CASE("A scanned sheet becomes a solid wall", "[commands][surface]") {
     Session s;
     const TempDir dir;

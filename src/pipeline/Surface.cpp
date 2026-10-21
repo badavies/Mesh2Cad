@@ -16,8 +16,10 @@
 
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
+#include "m2c/core/SpatialIndex.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 #include "m2c/pipeline/PatchMerge.h"
@@ -25,6 +27,12 @@
 namespace m2c {
 
 namespace {
+
+std::vector<std::size_t> heldCounts(const std::vector<HeldPlane>& held) {
+    std::vector<std::size_t> counts;
+    for (const HeldPlane& plane : held) counts.push_back(plane.vertices.size());
+    return counts;
+}
 
 constexpr int kSeamSamples = 8;           // samples per face edge for the seam report
 constexpr double kSeamToleranceMm = 1e-2; // edge samples closer than this are the same point
@@ -209,12 +217,37 @@ Result<QuadLayout> thickenCage(const QuadLayout& sheet, const double thicknessMm
     return QuadLayout::create(std::move(positions), std::move(starts), std::move(vertices));
 }
 
+Result<std::vector<HeldPlane>>
+heldPlanes(const QuadLayout& cage, const TriMesh& scan, const std::vector<FlatArea>& areas) {
+    std::vector<HeldPlane> held;
+    for (const FlatArea& area : areas) {
+        if (!area.faces || area.faces->size() != scan.faceCount() ||
+            std::abs(length(area.normal) - 1.0) > 1e-9) {
+            return fail(ErrorCode::InvalidArgument,
+                        "a flat area needs a selection of the scan's faces and a unit normal");
+        }
+        held.push_back(HeldPlane{.point = area.point, .normal = area.normal, .vertices = {}});
+    }
+    if (areas.empty()) return held;
+    const SpatialIndex& index = scan.spatialIndex();
+    for (std::uint32_t v = 0; v < cage.vertexCount(); ++v) {
+        const std::uint32_t face = index.closestPoint(cage.positions()[v]).face;
+        for (std::size_t a = 0; a < areas.size(); ++a) {
+            if (areas[a].faces->test(face)) held[a].vertices.push_back(v);
+        }
+    }
+    return held;
+}
+
 Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                                         const TriMesh* scan,
                                         const SurfaceBuildParams& params,
                                         const Progress& progress) {
     if (params.fit && scan == nullptr) {
         return fail(ErrorCode::InvalidArgument, "fitting needs a scan");
+    }
+    if (!params.flat.empty() && !params.fit) {
+        return fail(ErrorCode::InvalidArgument, "flat areas are held while fitting; turn fit on");
     }
     if (!(params.maxSeamAngleDeg > 0.0) || !(params.maxFoldAngleDeg > 0.0) || params.fitTries < 1 ||
         !(params.refineToMm >= 0.0) || !(params.thicknessMm >= 0.0)) {
@@ -249,6 +282,9 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
             report(progress,
                    "fitting the cage (" + std::to_string(start.faceCount()) + " quads, fit " +
                        std::to_string(tries + 1) + ")");
+            auto held = heldPlanes(start, *scan, params.flat);
+            if (!held) return std::unexpected(held.error());
+            fitting.held = std::move(*held);
             auto fitted = fitCage(start, *scan, fitting);
             if (!fitted) return std::unexpected(fitted.error());
             fit = std::move(*fitted);
@@ -322,7 +358,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                                   .facesBeforeMerge = before,
                                   .mergedFaces = mergedCount,
                                   .unmergedQuads = unmergedCount,
-                                  .p95BeforeRefinementMm = std::move(p95BeforeRefinement)};
+                                  .p95BeforeRefinementMm = std::move(p95BeforeRefinement),
+                                  .heldVertices = heldCounts(fitting.held)};
     }
 }
 

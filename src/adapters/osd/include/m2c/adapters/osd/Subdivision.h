@@ -12,8 +12,17 @@
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/SurfacePatch.h"
 #include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c::osd {
+
+/// Cage vertices held on a plane while fitting: where all of a patch's control points are held,
+/// the limit surface there is that plane.
+struct HeldPlane {
+    Vec3d point;  ///< On the plane.
+    Vec3d normal; ///< Unit.
+    std::vector<std::uint32_t> vertices;
+};
 
 struct CageFitParams {
     unsigned iterations{3};        ///< Rounds of closest-point parameters and least squares.
@@ -25,6 +34,9 @@ struct CageFitParams {
     double maxSampleDistanceMm{0.0};
     /// Accept an open cage (a sheet with a boundary) as well as a closed one.
     bool open{false};
+    /// Vertices kept on planes: a stiff term in each solve, then an exact projection. A vertex on
+    /// two planes ends up on (or near, for planes far from perpendicular) their intersection.
+    std::vector<HeldPlane> held{};
 };
 
 struct CageFitResult {
@@ -41,7 +53,8 @@ struct CageFitResult {
 /// closest point of the current limit surface, then the vertices solve one sparse least-squares
 /// problem (distance to the sample's tangent plane, plus a little of the distance to the sample),
 /// with a smoothing term on how far neighbouring vertices move apart. The best round is kept.
-/// The cage must be closed, or open with params.open. Deterministic.
+/// Held vertices (params.held) start and stay on their planes. The cage must be closed, or open
+/// with params.open. Deterministic.
 [[nodiscard]] Result<CageFitResult>
 fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params);
 

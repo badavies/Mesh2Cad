@@ -4,12 +4,16 @@
 // Catmull-Clark limit surface into B-spline faces (OpenSubdiv adapter) and sew them into a solid
 // (Open CASCADE adapter).
 
+#include <cstddef>
+#include <memory>
 #include <vector>
 
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/adapters/osd/Subdivision.h"
+#include "m2c/core/MeshSelection.h"
 #include "m2c/core/Progress.h"
 #include "m2c/core/Solid.h"
+#include "m2c/core/Vec3.h"
 #include "m2c/pipeline/PatchMerge.h"
 
 namespace m2c {
@@ -18,11 +22,27 @@ using osd::CageFitParams;
 using osd::CageFitResult;
 using osd::extractPatches;
 using osd::fitCage;
+using osd::HeldPlane;
 using osd::limitNormals;
 using osd::PatchParams;
 using osd::PatchResult;
 using osd::subdivideCage;
 using osd::tessellateLimit;
+
+/// An area of the scan that is flat: the cage over it is held on the plane while fitting, so the
+/// surface there is that plane (scan noise and bumps are not followed) and blends into the rest
+/// at the area's edge.
+struct FlatArea {
+    Vec3d point;                                ///< On the plane.
+    Vec3d normal;                               ///< Unit.
+    std::shared_ptr<const MeshSelection> faces; ///< Faces of the scan the area covers.
+};
+
+/// The vertices of `cage` held by each area: those whose closest scan face is in its selection.
+/// Fails with InvalidArgument for a selection of another size than the scan or a normal that is
+/// not a unit vector.
+[[nodiscard]] Result<std::vector<HeldPlane>>
+heldPlanes(const QuadLayout& cage, const TriMesh& scan, const std::vector<FlatArea>& areas);
 
 struct SurfaceBuildParams {
     bool fit{true};        ///< Fit the cage to the scan first; off = use the cage as it is.
@@ -47,6 +67,9 @@ struct SurfaceBuildParams {
     /// Merge rectangles of cage quads into one face each (patch merging; mergeFaces()).
     bool merge{true};
     int displayGrid{4}; ///< Display triangles: 2 n^2 per face.
+    /// Flat areas held on their planes (heldPlanes()), worked out again for each cage fitted, so
+    /// they survive refinement. Needs fit.
+    std::vector<FlatArea> flat{};
 };
 
 struct SurfaceBuildResult {
@@ -65,6 +88,7 @@ struct SurfaceBuildResult {
     std::size_t unmergedQuads{0};    ///< Quads left single because their region was no rectangle.
     /// The fit's 95th-percentile distance before each refinement; empty when none was made.
     std::vector<double> p95BeforeRefinementMm;
+    std::vector<std::size_t> heldVertices; ///< Per flat area, cage vertices held in the last fit.
 };
 
 /// Closes an open cage (an oriented manifold sheet) into a wall: a copy of every vertex moved
