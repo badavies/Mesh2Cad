@@ -573,6 +573,22 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     CHECK(form.params()->at("centers").size() == 2);
     CHECK((*params)["id"] == 8);
 
+    // A list of ids is typed as numbers, with or without brackets; a list of objects shows one.
+    form.setCommand(registry.find("primitive.trim"));
+    auto* ids = form.findChild<QLineEdit*>("primitive_ids");
+    REQUIRE(ids != nullptr);
+    CHECK(ids->placeholderText().startsWith("primitive ids"));
+    form.findChild<QComboBox*>("mesh_id")->setCurrentIndex(1);
+    ids->setText("12, 13 14");
+    CHECK(form.params()->at("primitive_ids") == Json::array({12, 13, 14}));
+    ids->setText("[12,13]");
+    CHECK(form.params()->at("primitive_ids") == Json::array({12, 13}));
+    ids->setText("12, top");
+    CHECK_FALSE(form.params().has_value());
+    form.setCommand(registry.find("surface.build"));
+    CHECK(form.findChild<QLineEdit*>("flat")->placeholderText() ==
+          R"(JSON, e.g. [{"plane_id":1,"selection_id":1}])");
+
     // An optional object field starts at None and is left out.
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});
     CHECK(form.findChild<QComboBox*>("plane_id")->currentText() == "None");

@@ -53,7 +53,7 @@ signals:
 
 private:
     struct Field {
-        std::string type; ///< integer, number, boolean, string, enum, vec3, json, object
+        std::string type; ///< integer, number, boolean, string, enum, vec3, ids, json, object
         QWidget* editor{nullptr};
         bool required{false};
         std::vector<std::string> kinds; ///< object: the kinds offered; empty for any

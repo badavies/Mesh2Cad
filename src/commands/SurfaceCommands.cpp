@@ -140,10 +140,14 @@ void addSurfaceCommands(std::vector<Command>& out) {
             } else if (p.fit) {
                 return fail(ErrorCode::InvalidArgument, "mesh_id is required when fit is true");
             }
-            if (params.contains("flat") && !params["flat"].is_array()) {
-                return fail(ErrorCode::InvalidArgument, "flat must list areas");
-            }
+            const auto badFlat = [] {
+                return fail(
+                    ErrorCode::InvalidArgument,
+                    R"(flat must list areas, as [{"selection_id": 5, "plane_id": 12}, ...])");
+            };
+            if (params.contains("flat") && !params["flat"].is_array()) return badFlat();
             for (const Json& area : params.value("flat", Json::array())) {
+                if (!area.is_object()) return badFlat();
                 if (!scan) return fail(ErrorCode::InvalidArgument, "flat areas need mesh_id");
                 M2C_TRY(selection, requireSelection(context, area, "selection_id", inputs[1]));
                 M2C_TRY(plane, requireObject(context, area, "plane_id", "primitive"));

@@ -53,6 +53,20 @@ QString valueText(const Json& v) {
     return QString::fromStdString(v.dump());
 }
 
+/// One item of a list of objects, with each property's ids as 1, for a placeholder:
+/// [{"plane_id":1,"selection_id":1}].
+QString example(const Json& items) {
+    Json item = Json::object();
+    for (const auto& [key, prop] : items["properties"].items()) {
+        const std::string type = prop.value("type", "");
+        item[key] = type == "integer" || type == "number" ? Json(1)
+                    : type == "boolean"                   ? Json(true)
+                    : type == "array"                     ? Json::array()
+                                                          : Json("…");
+    }
+    return QString::fromStdString(Json::array({item}).dump());
+}
+
 } // namespace
 
 ParamForm::ParamForm(QWidget* parent) : QWidget(parent) {
@@ -154,9 +168,24 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
                        prop["items"].value("type", "") == "number") {
                 field.type = "vec3";
                 if (placeholder.isEmpty()) edit->setPlaceholderText(QStringLiteral("x, y, z"));
+            } else if (type == "array" && prop.contains("items") &&
+                       prop["items"].contains("x-object")) {
+                // A list of objects by id, typed as their numbers: "12, 13, 14".
+                field.type = "ids";
+                const Json& x = prop["items"]["x-object"];
+                const QString kind =
+                    x.is_string() && x != "any"
+                        ? QString::fromStdString(x.get<std::string>()).replace('_', ' ')
+                        : tr("object");
+                const QString hint = tr("%1 ids, e.g. 3, 4, 5").arg(kind);
+                edit->setPlaceholderText(field.required ? hint : tr("optional: %1").arg(hint));
             } else {
                 field.type = "json";
-                if (placeholder.isEmpty() || placeholder == tr("optional")) {
+                if (type == "array" && prop.contains("items") &&
+                    prop["items"].contains("properties")) {
+                    // A list of objects: show one, so the shape to type is plain.
+                    edit->setPlaceholderText(tr("JSON, e.g. %1").arg(example(prop["items"])));
+                } else if (placeholder.isEmpty() || placeholder == tr("optional")) {
                     edit->setPlaceholderText(tr("JSON"));
                 }
             }
@@ -268,6 +297,15 @@ Result<Json> ParamForm::params() const {
             out[key] = v;
         } else if (field.type == "string") {
             out[key] = text.toStdString();
+        } else if (field.type == "ids") {
+            Json list = Json::array();
+            for (const QString& part :
+                 text.split(QRegularExpression("[\\[\\],\\s]+"), Qt::SkipEmptyParts)) {
+                const long long v = part.toLongLong(&ok);
+                if (!ok || v < 0) return bad(tr("expected object ids separated by commas"));
+                list.push_back(v);
+            }
+            out[key] = list;
         } else if (field.type == "vec3") {
             Json list = Json::array();
             for (const QString& part :
