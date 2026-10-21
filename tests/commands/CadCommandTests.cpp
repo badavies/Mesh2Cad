@@ -2,6 +2,7 @@
 // The M2 commands (scan to CAD) run end to end through the registry.
 
 #include <algorithm>
+#include <cmath>
 #include <fstream>
 #include <miniz.h>
 #include <numbers>
@@ -667,6 +668,75 @@ TEST_CASE("primitive.solid makes a fitted cylinder a solid that cuts a true hole
     CHECK(flat.error().code == ErrorCode::InvalidArgument);
     CHECK_FALSE(s.tryRun("primitive.solid", {{"id", plate}}));
     CHECK(s.document.objects().size() == before + 1);
+}
+
+TEST_CASE("primitive.box fits a box to a selection or makes one from its size", "[commands][box]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId scan = s.import(dir, addNoise(makeBox(30, 20, 10, 8), 0.02), "block");
+    const auto all = s.run("select.all", {{"id", scan}})["selection_id"];
+    const Json fitted = s.run("primitive.box", {{"selection_id", all}});
+    CHECK(fitted["summary"]["valid"] == true);
+    CHECK(fitted["summary"]["face_count"] == 6);
+    CHECK_THAT(fitted["size_mm"][0].get<double>(), Catch::Matchers::WithinAbs(30.0, 0.05));
+    CHECK_THAT(fitted["size_mm"][1].get<double>(), Catch::Matchers::WithinAbs(20.0, 0.05));
+    CHECK_THAT(fitted["size_mm"][2].get<double>(), Catch::Matchers::WithinAbs(10.0, 0.05));
+    CHECK_THAT(fitted["center"][2].get<double>(), Catch::Matchers::WithinAbs(5.0, 0.05));
+    CHECK(fitted["fit"]["p95_mm"].get<double>() < 0.05);
+    CHECK(fitted["fit"]["size_mm"] == fitted["size_mm"]);
+    const auto object = s.document.find(fitted["id"].get<ObjectId>());
+    REQUIRE(object);
+    CHECK(object->name == "Box fit");
+    CHECK(object->provenance.inputs == std::vector<ObjectId>{all.get<ObjectId>(), scan});
+
+    // Sizes snapped to nominal values keep the fitted centre and axes.
+    const Json snapped = s.run("primitive.box", {{"selection_id", all}, {"size_mm", {30, 20, 10}}});
+    CHECK_THAT(snapped["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinAbs(6000.0, 1e-6));
+    CHECK(snapped["center"] == fitted["center"]);
+    CHECK(snapped["fit"]["size_mm"] == fitted["size_mm"]);
+
+    // Without a selection: a size, a centre and axes turned 45 degrees about z.
+    const Json made = s.run("primitive.box",
+                            {{"size_mm", {10, 10, 10}},
+                             {"center", {0, 0, 10}},
+                             {"axes", {{1, 1, 0}, {-1, 1, 0}, {0, 0, 1}}},
+                             {"name", "die"}});
+    CHECK_FALSE(made.contains("fit"));
+    CHECK_THAT(made["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinAbs(1000.0, 1e-6));
+    CHECK_THAT(made["summary"]["bounds"]["max"][0].get<double>(),
+               Catch::Matchers::WithinAbs(5.0 * std::sqrt(2.0), 1e-6));
+    CHECK_THAT(made["summary"]["bounds"]["min"][2].get<double>(),
+               Catch::Matchers::WithinAbs(5.0, 1e-6));
+    CHECK(s.document.find(made["id"].get<ObjectId>())->name == "die");
+    // The box is a solid like any other: cut a corner out of the block with it.
+    const Json cut = s.run("solid.boolean",
+                           {{"id", snapped["id"]}, {"tool_id", made["id"]}, {"operation", "cut"}});
+    CHECK(cut["summary"]["valid"] == true);
+    CHECK_THAT(cut["summary"]["volume_mm3"].get<double>(),
+               Catch::Matchers::WithinAbs(6000.0 - 100.0 * 5.0 / 4.0,
+                                          2.0)); // the fitted centre is off by up to 0.05 mm
+
+    // Failures add nothing.
+    const ObjectId ball = s.import(dir, makeSphere(10.0, 3), "ball");
+    const auto round = s.run("select.all", {{"id", ball}})["selection_id"];
+    const std::size_t before = s.document.objects().size();
+    const auto fails = [&](const Json& params, ErrorCode code) {
+        const auto r = s.tryRun("primitive.box", params);
+        REQUIRE_FALSE(r);
+        CHECK(r.error().code == code);
+    };
+    fails(Json::object(), ErrorCode::InvalidArgument);
+    fails({{"selection_id", round}}, ErrorCode::InvalidState);
+    fails({{"size_mm", {10, 0, 10}}}, ErrorCode::InvalidArgument);
+    fails({{"size_mm", {10, 10, 10}}, {"axes", {{1, 0, 0}, {1, 1, 0}, {0, 0, 1}}}},
+          ErrorCode::InvalidArgument);
+    fails({{"size_mm", {10, 10, 10}}, {"axes", {{1, 0, 0}, {0, 1, 0}, {0, 0, -1}}}},
+          ErrorCode::InvalidArgument);
+    fails({{"size_mm", {10, 10, 10}}, {"axes", {{1, 0, 0}, {0, 1, 0}}}},
+          ErrorCode::InvalidArgument);
+    CHECK(s.document.objects().size() == before);
 }
 
 TEST_CASE("A fuzzy rounded cube is drilled true for a scanned dowel", "[commands][boolean]") {

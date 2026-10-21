@@ -23,6 +23,7 @@
 #include "m2c/document/Document.h"
 #include "m2c/io/Step.h"
 #include "m2c/pipeline/Boolean.h"
+#include "m2c/pipeline/BoxFit.h"
 #include "m2c/pipeline/Profile.h"
 #include "m2c/pipeline/Surface.h"
 #include "m2c/pipeline/Trim.h"
@@ -329,6 +330,87 @@ void addSurfaceCommands(std::vector<Command>& out) {
                                          SolidData{std::move(*solid)},
                                          context.provenance({object->id})));
             return Json{{"id", *id}, {"summary", toJson(summary)}};
+        }));
+
+    out.push_back(makeCommand(
+        "primitive.box",
+        "Make an exact box solid: fitted to the faces of a selection (six planes, opposite ones "
+        "parallel and neighbouring ones perpendicular, nearest to the selected vertices, from the "
+        "faces' normals and then Gauss-Newton steps), or from a size, centre and axes. Given with "
+        "a selection, size_mm, center and axes replace the fitted ones, for example to snap the "
+        "sizes to nominal values. Sides the selection does not reach stay at its extent. Adds a "
+        "solid object, which solid.boolean can fuse or cut and solid.export can write; fails, "
+        "adding nothing, when the fit's P95 distance is above max_residual_mm.",
+        R"({
+            "type":"object",
+            "properties":{
+                "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"Faces to fit the box to; required unless size_mm is given."},
+                "size_mm":{"type":"array","items":{"type":"number","exclusiveMinimum":0},"minItems":3,"maxItems":3,"description":"Edge lengths along the three axes."},
+                "center":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,"description":"The box's centre; default the origin, or the fitted one."},
+                "axes":{"type":"array","items":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"minItems":3,"maxItems":3,"description":"Three perpendicular, right-handed directions (scaled to unit length); default the world axes, or the fitted ones."},
+                "max_residual_mm":{"type":"number","exclusiveMinimum":0,"default":0.1,"description":"Largest P95 distance from the selected vertices to the fitted box."},
+                "name":{"type":"string"}
+            },
+            "additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(sel, optionalSelection(context, params, "selection_id"));
+            if (!*sel && !params.contains("size_mm")) {
+                return fail(ErrorCode::InvalidArgument, "give selection_id, size_mm or both");
+            }
+            M2C_TRY(limit, optionalNumber(params, "max_residual_mm", 0.1, 1e-9, 1e6));
+            M2C_TRY(name, optionalString(params, "name"));
+            OrientedBox box;
+            Json result;
+            std::vector<ObjectId> inputs;
+            if (*sel) {
+                M2C_TRY(mesh, requireMesh(context, Json{{"id", (*sel)->meshId}}));
+                report(context.progress, "fitting the box");
+                M2C_TRY(fit,
+                        fitBox(*mesh->mesh,
+                               (*sel)->faces->indices(),
+                               BoxFitParams{.maxResidualMm = *limit}));
+                box = fit->box;
+                result["fit"] = Json{{"rms_mm", fit->rmsMm},
+                                     {"max_mm", fit->maxMm},
+                                     {"p95_mm", fit->p95Mm},
+                                     {"size_mm", toJson(fit->box.sizeMm)}};
+                inputs = {(*sel)->id, mesh->id};
+            }
+            if (params.contains("size_mm")) {
+                M2C_TRY(size, requireVec3(params, "size_mm"));
+                box.sizeMm = *size;
+            }
+            if (params.contains("center")) {
+                M2C_TRY(center, requireVec3(params, "center"));
+                box.center = *center;
+            }
+            if (params.contains("axes")) {
+                const Json& axes = params["axes"];
+                if (!axes.is_array() || axes.size() != 3) {
+                    return fail(ErrorCode::InvalidArgument, "axes must be three directions");
+                }
+                for (std::size_t k = 0; k < 3; ++k) {
+                    M2C_TRY(axis, requireVec3(Json{{"axis", axes[k]}}, "axis"));
+                    if (!(length(*axis) > 0.0)) {
+                        return fail(ErrorCode::InvalidArgument, "an axis has no direction");
+                    }
+                    box.axes[k] = *axis * (1.0 / length(*axis));
+                }
+            }
+            M2C_TRY(solid, boxSolid(box));
+            const SolidSummary summary = solid->summary();
+            M2C_TRY(id,
+                    context.document.add(name->value_or(*sel ? "Box fit" : "Box"),
+                                         SolidData{std::move(*solid)},
+                                         context.provenance(std::move(inputs))));
+            result["id"] = *id;
+            result["summary"] = toJson(summary);
+            result["center"] = toJson(box.center);
+            result["axes"] =
+                Json::array({toJson(box.axes[0]), toJson(box.axes[1]), toJson(box.axes[2])});
+            result["size_mm"] = toJson(box.sizeMm);
+            return result;
         }));
 
     out.push_back(makeCommand(

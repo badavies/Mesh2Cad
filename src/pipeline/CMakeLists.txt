@@ -1,6 +1,7 @@
 m2c_add_library(pipeline
     SOURCES
         Align.cpp
+        BoxFit.cpp
         Deviation.cpp
         Measure.cpp
         MeshTools.cpp

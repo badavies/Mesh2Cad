@@ -46,6 +46,7 @@ target.
     the shape fixed (`ShapeFix_Shape`); fails unless the result is one valid closed solid.
   - `primitiveSolid`: a fitted cylinder (bounded along its axis) or sphere as a solid
     (`BRepPrimAPI_MakeCylinder`, `BRepPrimAPI_MakeSphere`).
+  - `boxSolid`: an `OrientedBox` as a solid of six exact planes (`BRepPrimAPI_MakeBox`).
 - `m2c/adapters/occt/Brep.h` (namespace `m2c::occt`):
   - `makeSolid` with `SewParams`: B-spline faces (knots where pieces join with C2 continuity
     removed), sewing, an outward solid (`ShapeFix_Solid`) and the kernel's checker; fails unless

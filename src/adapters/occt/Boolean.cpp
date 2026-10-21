@@ -3,6 +3,7 @@
 #include "m2c/adapters/occt/Boolean.h"
 
 #include <algorithm>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
@@ -13,6 +14,7 @@
 #include <BRepAlgoAPI_Common.hxx>
 #include <BRepAlgoAPI_Cut.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <NCollection_List.hxx>
@@ -163,6 +165,29 @@ Result<Solid> primitiveSolid(const FittedPrimitive& fit, const double lengthMm) 
         const gp_Ax2 frame(gp_Pnt(base.x, base.y, base.z), gp_Dir(axis.x, axis.y, axis.z));
         return kernelSolid(BRepPrimAPI_MakeCylinder(frame, s.radiusMm, span).Shape(),
                            "the cylinder is");
+    });
+}
+
+Result<Solid> boxSolid(const OrientedBox& box) {
+    const auto& [a, b, c] = box.axes;
+    constexpr double kTolerance = 1e-6;
+    const bool unit = std::abs(length(a) - 1.0) < kTolerance &&
+                      std::abs(length(b) - 1.0) < kTolerance &&
+                      std::abs(length(c) - 1.0) < kTolerance;
+    if (!unit || std::abs(dot(a, b)) > kTolerance || std::abs(dot(b, c)) > kTolerance ||
+        std::abs(dot(a, c)) > kTolerance || dot(cross(a, b), c) < 0.0) {
+        return fail(ErrorCode::InvalidArgument,
+                    "a box's axes must be unit, perpendicular and right-handed");
+    }
+    const Vec3d& s = box.sizeMm;
+    if (!(s.x > 0.0) || !(s.y > 0.0) || !(s.z > 0.0)) {
+        return fail(ErrorCode::InvalidArgument, "a box's sizes must be positive");
+    }
+    return guarded("making the box", [&]() -> Result<Solid> {
+        const Vec3d corner = box.center - a * (s.x / 2.0) - b * (s.y / 2.0) - c * (s.z / 2.0);
+        const gp_Ax2 frame(
+            gp_Pnt(corner.x, corner.y, corner.z), gp_Dir(c.x, c.y, c.z), gp_Dir(a.x, a.y, a.z));
+        return kernelSolid(BRepPrimAPI_MakeBox(frame, s.x, s.y, s.z).Shape(), "the box is");
     });
 }
 

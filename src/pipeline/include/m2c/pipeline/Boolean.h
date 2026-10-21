@@ -9,6 +9,7 @@ namespace m2c {
 
 using occt::BooleanOp;
 using occt::booleanSolids;
+using occt::boxSolid;
 using occt::primitiveSolid;
 
 } // namespace m2c
