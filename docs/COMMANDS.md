@@ -119,6 +119,21 @@ Delete the faces of a selection from its mesh. *(changes the document)*
 | --- | --- | --- | --- |
 | `selection_id` | selection id | yes |  |
 
+## fillet
+
+### `fillet.fit`
+
+Round edges of a solid with the constant-radius fillet a scan shows (ADR-033): the edge nearest each of edge_points (between two planes, cylinders, cones or spheres, as primitive.trim, primitive.box and solid.boolean make them) gets a rolling-ball fillet whose radius brings the solid closest to the selected band of the mesh, found by rounding at trial radii (about 25 tries). radius_mm rounds at that radius instead, for example a nominal value. Adds a solid object; the solid is unchanged. Fails, adding nothing, when the band's P95 distance to the rounded solid is above max_residual_mm or Open CASCADE cannot round the edges (a radius too large for the faces either side). *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `edge_points` | array | yes | A point near each edge to round, such as a click on it. |
+| `max_residual_mm` | number |  | Largest P95 distance from the band to the rounded solid. Default `0.1`. |
+| `name` | string |  |  |
+| `radius_mm` | number |  | Round at this radius instead of fitting one. |
+| `selection_id` | selection id | yes | The fillet's band on the mesh. |
+| `solid_id` | solid id | yes | The solid with the sharp edges. |
+
 ## holes
 
 ### `holes.fill`

@@ -24,6 +24,8 @@
 #include "m2c/io/Step.h"
 #include "m2c/pipeline/Boolean.h"
 #include "m2c/pipeline/BoxFit.h"
+#include "m2c/pipeline/FilletFit.h"
+#include "m2c/pipeline/PrimitiveFit.h"
 #include "m2c/pipeline/Profile.h"
 #include "m2c/pipeline/Surface.h"
 #include "m2c/pipeline/Trim.h"
@@ -411,6 +413,65 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 Json::array({toJson(box.axes[0]), toJson(box.axes[1]), toJson(box.axes[2])});
             result["size_mm"] = toJson(box.sizeMm);
             return result;
+        }));
+
+    out.push_back(makeCommand(
+        "fillet.fit",
+        "Round edges of a solid with the constant-radius fillet a scan shows (ADR-033): the "
+        "edge nearest each of edge_points (between two planes, cylinders, cones or spheres, as "
+        "primitive.trim, primitive.box and solid.boolean make them) gets a rolling-ball fillet "
+        "whose radius brings the solid closest to the selected band of the mesh, found by "
+        "rounding at trial radii (about 25 tries). radius_mm rounds at that radius instead, for "
+        "example a nominal value. Adds a solid object; the solid is unchanged. Fails, adding "
+        "nothing, when the band's P95 distance to the rounded solid is above max_residual_mm or "
+        "Open CASCADE cannot round the edges (a radius too large for the faces either side).",
+        R"({
+            "type":"object",
+            "properties":{
+                "solid_id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid with the sharp edges."},
+                "edge_points":{"type":"array","items":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3},"minItems":1,"description":"A point near each edge to round, such as a click on it."},
+                "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"The fillet's band on the mesh."},
+                "radius_mm":{"type":"number","exclusiveMinimum":0,"description":"Round at this radius instead of fitting one."},
+                "max_residual_mm":{"type":"number","exclusiveMinimum":0,"default":0.1,"description":"Largest P95 distance from the band to the rounded solid."},
+                "name":{"type":"string"}
+            },
+            "required":["solid_id","edge_points","selection_id"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireObject(context, params, "solid_id", "solid"));
+            M2C_TRY(sel, requireSelection(context, params, "selection_id"));
+            M2C_TRY(mesh, requireMesh(context, Json{{"id", sel->meshId}}));
+            const Json& points = params.value("edge_points", Json::array());
+            if (!points.is_array() || points.empty()) {
+                return fail(ErrorCode::InvalidArgument, "edge_points must list points");
+            }
+            std::vector<Vec3d> edges;
+            for (const Json& point : points) {
+                M2C_TRY(p, requireVec3(Json{{"point", point}}, "point"));
+                edges.push_back(*p);
+            }
+            FilletFitParams p;
+            M2C_TRY(limit, optionalNumber(params, "max_residual_mm", 0.1, 1e-9, 1e6));
+            p.maxResidualMm = *limit;
+            if (params.contains("radius_mm")) {
+                M2C_TRY(radius, optionalNumber(params, "radius_mm", 1.0, 1e-9, 1e6));
+                p.radiusMm = *radius;
+            }
+            M2C_TRY(name, optionalString(params, "name"));
+            const std::vector<Vec3d> band = regionPoints(*mesh->mesh, sel->faces->indices());
+            M2C_TRY(fit, fitFillet(object->solid()->solid, edges, band, p, context.progress));
+            const SolidSummary summary = fit->solid.summary();
+            M2C_TRY(id,
+                    context.document.add(name->value_or(object->name + " (filleted)"),
+                                         SolidData{std::move(fit->solid)},
+                                         context.provenance({object->id, sel->id, mesh->id})));
+            return Json{{"id", *id},
+                        {"summary", toJson(summary)},
+                        {"radius_mm", fit->radiusMm},
+                        {"rms_mm", fit->rmsMm},
+                        {"max_mm", fit->maxMm},
+                        {"p95_mm", fit->p95Mm},
+                        {"builds", fit->builds}};
         }));
 
     out.push_back(makeCommand(
