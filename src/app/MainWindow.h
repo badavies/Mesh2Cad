@@ -65,6 +65,7 @@ private:
     void onBrushStroke(ObjectId mesh, const std::vector<Vec3d>& centers, bool subtract, bool add);
     void onLasso(const QPolygonF& ndc, bool subtract, bool add);
     void onFaceClicked(Hit hit, bool subtract, bool add);
+    void onObjectClicked(Hit hit);
     void onMeasured(Hit a, Hit b);
     /// Where a selection tool's result goes: into the current selection of that mesh (replace,
     /// add with Shift, subtract with Ctrl) or a new selection.

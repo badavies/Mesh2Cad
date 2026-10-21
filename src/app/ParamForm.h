@@ -40,6 +40,9 @@ public:
     /// of their kinds one each, id first and then by name (so solid.boolean's id, then tool_id).
     /// A field none of the selected objects fits is left as it is.
     void setSelectedObjects(const std::vector<ObjectId>& ids);
+    /// Adds a point to a list-of-points field (fillet.fit's edge_points), as a click in the
+    /// viewport does. False when the form has no such field.
+    bool appendPoint(const std::string& key, const Vec3d& point);
 
     /// Reads the fields. Fails with a message naming the bad field.
     [[nodiscard]] Result<Json> params() const;
@@ -58,7 +61,8 @@ signals:
 
 private:
     struct Field {
-        std::string type; ///< integer, number, boolean, string, enum, vec3, ids, json, object
+        std::string
+            type; ///< integer, number, boolean, string, enum, vec3, ids, points, json, object
         QWidget* editor{nullptr};
         bool required{false};
         std::vector<std::string> kinds; ///< object, ids: the kinds offered; empty for any

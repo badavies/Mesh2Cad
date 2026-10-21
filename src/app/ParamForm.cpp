@@ -182,6 +182,26 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
                         : tr("object");
                 const QString hint = tr("%1 ids, e.g. 3, 4, 5").arg(kind);
                 edit->setPlaceholderText(field.required ? hint : tr("optional: %1").arg(hint));
+            } else if (type == "array" && prop.contains("items") &&
+                       prop["items"].value("type", "") == "array") {
+                // A list of points, typed as JSON or picked in the viewport, with a Clear button.
+                field.type = "points";
+                edit->setPlaceholderText(tr("click in the view, or JSON [[x, y, z], ...]"));
+                edit->setObjectName(QString::fromStdString(key));
+                auto* row = new QWidget;
+                auto* h = new QHBoxLayout(row);
+                h->setContentsMargins(0, 0, 0, 0);
+                auto* clear = new QToolButton;
+                clear->setText(tr("Clear"));
+                clear->setObjectName(QStringLiteral("clear"));
+                connect(clear, &QToolButton::clicked, edit, &QLineEdit::clear);
+                h->addWidget(edit, 1);
+                h->addWidget(clear);
+                field.editor = edit;
+                fields_->addRow(label(key) + (field.required ? " *" : ""), row);
+                row->setToolTip(tip);
+                editors_[key] = field;
+                continue;
             } else {
                 field.type = "json";
                 if (type == "array" && prop.contains("items") &&
@@ -279,6 +299,17 @@ void ParamForm::setSelectedObjects(const std::vector<ObjectId>& ids) {
             }
         }
     }
+}
+
+bool ParamForm::appendPoint(const std::string& key, const Vec3d& point) {
+    const auto it = editors_.find(key);
+    if (it == editors_.end() || it->second.type != "points") return false;
+    auto* edit = static_cast<QLineEdit*>(it->second.editor);
+    Json points = Json::parse(edit->text().toStdString(), nullptr, false);
+    if (!points.is_array()) points = Json::array();
+    points.push_back(Json::array({point.x, point.y, point.z}));
+    edit->setText(QString::fromStdString(points.dump()));
+    return true;
 }
 
 void ParamForm::fillObjects(const Field& field, const ObjectId chosen) const {
