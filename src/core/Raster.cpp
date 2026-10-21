@@ -9,6 +9,8 @@
 #include <limits>
 #include <span>
 
+#include "m2c/core/SelectionColors.h"
+
 namespace m2c {
 
 namespace {
@@ -28,8 +30,6 @@ Rgb scaled(const Rgb& c, double s) {
 std::uint8_t channel(double v) {
     return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0, 1.0) * 255.0));
 }
-
-constexpr Rgb kSelection{1.0, 0.50, 0.10}; // the app's selected faces
 
 } // namespace
 
@@ -98,7 +98,8 @@ void Raster::triangles(const std::span<const Vec3d> positions,
                        const Rgb back,
                        const std::span<const Rgb> vertexColors,
                        const std::span<const std::uint8_t> marks,
-                       const double biasMm) {
+                       const double biasMm,
+                       const std::span<const Rgb> markColors) {
     for (std::size_t f = 0; f + 2 < indices.size(); f += 3) {
         const std::array<std::uint32_t, 3> v{indices[f], indices[f + 1], indices[f + 2]};
         const Vec3d n = cross(positions[v[1]] - positions[v[0]], positions[v[2]] - positions[v[0]]);
@@ -114,8 +115,11 @@ void Raster::triangles(const std::span<const Vec3d> positions,
             } else if (!vertexColors.empty()) {
                 color[k] = vertexColors[v[k]];
             }
-            if (f / 3 < marks.size() && marks[f / 3] != 0)
-                color[k] = mix(color[k], kSelection, 0.8);
+            if (const std::size_t m = f / 3 < marks.size() ? marks[f / 3] : 0; m != 0) {
+                color[k] = mix(color[k],
+                               m <= markColors.size() ? markColors[m - 1] : kCurrentSelectionColor,
+                               0.8);
+            }
         }
         const std::array<Screen, 3> s{
             project(positions[v[0]]), project(positions[v[1]]), project(positions[v[2]])};

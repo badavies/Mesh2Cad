@@ -7,6 +7,7 @@
 #include <QPolygonF>
 #include <QTimer>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -15,6 +16,7 @@
 #include <vector>
 
 #include <QOpenGLFunctions_3_3_Core>
+#include <QVector3D>
 
 #include "Camera.h"
 #include "Engine.h"
@@ -42,7 +44,8 @@ struct Hit {
 ///   centre so large coordinates keep their precision; the camera matrix is built in doubles.
 /// - Flat shading comes from screen-space derivatives, so no normals are stored or uploaded.
 /// - Selections are a per-face byte buffer read by the fragment shader (gl_PrimitiveID), so
-///   changing a selection uploads one byte per face, not the mesh.
+///   changing a selection uploads one byte per face, not the mesh. The current selection is
+///   orange, every other visible one its own colour (SelectionColors.h), as view.render draws it.
 /// - Meshes over two million faces get a coarse proxy built in the background; it is drawn
 ///   while the camera moves.
 /// - Picking for brushing and hovering uses the mesh's own BVH at full resolution.
@@ -115,6 +118,16 @@ protected:
     void leaveEvent(QEvent* event) override;
 
 private:
+    /// Selections a mesh's overlay was built from.
+    struct SelectionKey {
+        const MeshSelection* faces{nullptr};
+        ObjectId id{0};
+        bool current{false};
+        bool operator==(const SelectionKey&) const = default;
+    };
+    /// Selection colours the shader holds per mesh (selectionColors in Viewport.cpp).
+    static constexpr std::size_t kSelectionSlots = 128;
+
     struct GpuMesh {
         const void* source{nullptr}; ///< Identity of the uploaded version.
         std::shared_ptr<const void> keepAlive;
@@ -123,7 +136,8 @@ private:
         GLuint vao{0}, vbo{0}, ebo{0};
         GLsizei indexCount{0};
         // Selection overlay.
-        std::vector<std::pair<const MeshSelection*, bool>> selectionKey; ///< (faces, is current)
+        std::vector<SelectionKey> selectionKey;
+        std::vector<QVector3D> selectionColors; ///< Of values 2 onwards in the buffer.
         GLuint selBuffer{0}, selTexture{0};
         bool hasSelection{false};
         // Deviation colours, one per vertex.
