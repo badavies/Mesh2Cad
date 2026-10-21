@@ -81,6 +81,14 @@ Signed distance from every vertex of a mesh to a solid (exact, onto its B-spline
 | `reference_id` | solid or mesh id | yes | The solid or mesh to measure to. |
 | `tolerance_mm` | number |  | Distances within this count as in tolerance. Default `0.1`. |
 
+### `deviation.info`
+
+Describe a deviation: the mesh it measures and the statistics deviation.compute returned. *(read-only)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | deviation id | yes | The deviation. |
+
 ### `deviation.report`
 
 Write a deviation's statistics and a histogram of its distances to a CSV file. *(writes a file)*

@@ -93,6 +93,25 @@ void addDeviationCommands(std::vector<Command>& out) {
             return Json{{"id", *id}, {"stats", toJson(stats)}};
         }));
 
+    out.push_back(makeCommand(
+        "deviation.info",
+        "Describe a deviation: the mesh it measures and the statistics deviation.compute "
+        "returned.",
+        R"({
+            "type":"object",
+            "properties":{"id":{"type":"integer","x-object":"deviation","minimum":0,"description":"The deviation."}},
+            "required":["id"],"additionalProperties":false})",
+        false,
+        [](const CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireObject(context, params, "id", "deviation"));
+            const DeviationData& d = *object->deviation();
+            return Json{{"id", object->id},
+                        {"name", object->name},
+                        {"mesh_id", d.meshId},
+                        {"reference_id", d.referenceId},
+                        {"stats", toJson(d.field.stats())}};
+        }));
+
     Command report = makeCommand(
         "deviation.report",
         "Write a deviation's statistics and a histogram of its distances to a CSV file.",
