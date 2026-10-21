@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Sketch.h"
@@ -277,6 +278,15 @@ TEST_CASE("surface.build holds a selected flat area on its fitted plane", "[comm
     fails({{"id", cage}, {"mesh_id", box}, {"fit", false}, {"flat", flat}});
     fails({{"id", cage}, {"fit", false}, {"flat", flat}});
     fails({{"id", cage}, {"mesh_id", box}, {"flat", Json::array({{{"selection_id", top}}})}});
+    // A list of bare ids, or one area without its list, says what to give.
+    for (const Json& flatWrong :
+         {Json::array({top, plane}), Json{{"selection_id", top}, {"plane_id", plane}}}) {
+        const auto r =
+            s.tryRun("surface.build", {{"id", cage}, {"mesh_id", box}, {"flat", flatWrong}});
+        REQUIRE_FALSE(r);
+        CHECK_THAT(r.error().message,
+                   Catch::Matchers::ContainsSubstring(R"([{"selection_id": 5, "plane_id": 12})"));
+    }
     CHECK(s.document.objects().size() == objects);
 }
 

@@ -13,7 +13,7 @@ Headers live in this folder (no `m2c/app/` prefix); everything is in namespace `
 - `Engine.h`: `Engine` (owns the `Document` and `CommandRegistry`, runs commands in order on one worker thread, serves the local socket and writes the session file) and `DocSnapshot`.
 - `MainWindow.h`: `MainWindow`, the window and menus; `openFiles` imports meshes or opens a project.
 - `Viewport.h`: `Viewport` (OpenGL 3.3 view of a `DocSnapshot`), interaction `Mode` and `Hit`.
-- `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema.
+- `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema: drop-downs for objects, comma-separated numbers for points and id lists, and JSON (with an example) for lists of objects.
 - `Camera.h`: `Camera` (orbit camera, +Z up) and `Mat4d` (double-precision 4x4 matrix).
 - `DeviationColors.h`: `deviationColor` and `deviationRange`, the deviation colour scale.
 
