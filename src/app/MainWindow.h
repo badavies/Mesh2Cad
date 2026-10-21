@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <memory>
+#include <vector>
 
 #include "Engine.h"
 #include "Viewport.h"
@@ -48,6 +49,8 @@ private:
     void onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot);
     void refreshTree();
     void onTreeSelection();
+    /// The rows a row's action applies to: every selected row if it is one of them, else itself.
+    [[nodiscard]] std::vector<ObjectId> rowsFor(ObjectId id) const;
     /// Shows the current mesh and selection in the viewport, and highlights the selected object.
     void showCurrent() const;
     /// Selects an object picked in a tool form, in the tree and the viewport.
@@ -94,7 +97,8 @@ private:
     QActionGroup* modes_{nullptr};
     QString projectPath_;
     std::uint64_t savedRevision_{0};
-    ObjectId selected_{0}; ///< Object picked in the tree.
+    ObjectId selected_{0};              ///< Object picked in the tree; the first of selectedIds_.
+    std::vector<ObjectId> selectedIds_; ///< Rows selected in the tree, in selection order.
     bool updatingTree_{false};
     bool brushSized_{false}; ///< The brush follows the first mesh's size until the user sets it.
 };

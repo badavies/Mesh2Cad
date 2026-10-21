@@ -779,6 +779,32 @@ TEST_CASE("Measurements snap to meshes and are saved objects", "[commands][measu
     CHECK(s.run("doc.list")["objects"].empty());
 }
 
+TEST_CASE("object.show and object.delete take several objects as one step", "[commands]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId box = s.import(dir, makeBox(30, 20, 10, 4), "box");
+    const ObjectId ball = s.import(dir, makeSphere(5.0, 2), "ball");
+    const Json regions = s.run("mesh.segment", {{"id", box}})["regions"];
+    const auto steps = s.document.undoHistory().size();
+    s.run("object.show", {{"ids", {box, ball}}, {"visible", false}});
+    CHECK(s.document.undoHistory().size() == steps + 1);
+    CHECK_FALSE(s.document.find(box)->visible);
+    CHECK_FALSE(s.document.find(ball)->visible);
+    CHECK_FALSE(s.tryRun("object.show", {{"visible", true}}));
+    CHECK_FALSE(s.tryRun("object.show", {{"id", box}, {"ids", {ball}}, {"visible", true}}));
+    const auto missing = s.tryRun("object.show", {{"ids", {box, 999}}, {"visible", true}});
+    REQUIRE_FALSE(missing);
+    CHECK(missing.error().code == ErrorCode::NotFound);
+    CHECK_FALSE(s.document.find(box)->visible); // nothing changed
+
+    // The box takes its selections with it, so listing one after it is fine.
+    s.run("object.delete", {{"ids", {box, regions[0]["selection_id"], ball}}});
+    CHECK(s.document.objects().empty());
+    CHECK(s.document.undoHistory().size() == steps + 2);
+    REQUIRE(s.document.undo());
+    CHECK(s.document.objects().size() == 2 + regions.size());
+}
+
 TEST_CASE("Projects save and reopen the whole document", "[commands][project]") {
     Session s;
     const TempDir dir;

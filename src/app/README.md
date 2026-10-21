@@ -31,7 +31,10 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
   into commands. Never add a UI-only code path; add a command instead.
 - Tool forms show each object parameter (`x-object` in its schema, ADR-029) as a drop-down of
   the document's objects of that kind. Choosing one selects it in the Objects list and
-  highlights it in the viewport.
+  highlights it in the viewport. The other way round, rows selected in the Objects list (Ctrl or
+  Shift for several) fill the open form: id lists get the selected ids of their kinds in the
+  order they were picked, single object fields one each (`ParamForm::setSelectedObjects`).
+  Showing, hiding or deleting one of several selected rows acts on all of them, as one step.
 - A path field's browse button filters on the parameter's `x-file-types` and opens a Save dialog
   when the command writes files, an Open dialog otherwise (ADR-031).
 - The log panel shows every command that changes the document or writes a file (with the path),

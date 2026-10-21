@@ -173,6 +173,9 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
                 // A list of objects by id, typed as their numbers: "12, 13, 14".
                 field.type = "ids";
                 const Json& x = prop["items"]["x-object"];
+                for (const Json& kind : x.is_array() ? x : Json::array({x})) {
+                    if (kind != "any") field.kinds.push_back(kind.get<std::string>());
+                }
                 const QString kind =
                     x.is_string() && x != "any"
                         ? QString::fromStdString(x.get<std::string>()).replace('_', ' ')
@@ -231,6 +234,49 @@ void ParamForm::setObjects(std::shared_ptr<const DocSnapshot> snapshot) {
         if (field.type == "object") {
             fillObjects(field,
                         static_cast<QComboBox*>(field.editor)->currentData().value<ObjectId>());
+        }
+    }
+}
+
+void ParamForm::setSelectedObjects(const std::vector<ObjectId>& ids) {
+    if (!snapshot_) return;
+    const auto fits = [this](const Field& field, ObjectId id) {
+        const DocumentObject* o = snapshot_->find(id);
+        return o != nullptr && (field.kinds.empty() ||
+                                std::ranges::find(field.kinds, o->kind()) != field.kinds.end());
+    };
+    // Single fields in order: id first, then the rest by name (the schema's own order is lost,
+    // as JSON objects here keep their keys sorted).
+    std::vector<std::string> keys;
+    if (editors_.contains("id")) keys.emplace_back("id");
+    for (const std::string& key : std::views::keys(editors_)) {
+        if (key != "id") keys.push_back(key);
+    }
+    // Fields of named kinds take their objects before a field of any kind; of those only id is
+    // filled (focus_id, highlight_id and the like are left to the person).
+    std::ranges::stable_partition(
+        keys, [this](const std::string& key) { return !editors_.at(key).kinds.empty(); });
+    std::vector<ObjectId> used;
+    for (const std::string& key : keys) {
+        const Field& field = editors_.at(key);
+        if (field.type == "object" && field.kinds.empty() && key != "id") continue;
+        if (field.type == "ids") {
+            QStringList matching;
+            for (const ObjectId id : ids) {
+                if (fits(field, id)) matching << QString::number(id);
+            }
+            if (!matching.isEmpty())
+                static_cast<QLineEdit*>(field.editor)->setText(matching.join(QStringLiteral(", ")));
+        } else if (field.type == "object") {
+            for (const ObjectId id : ids) {
+                if (!fits(field, id) || std::ranges::find(used, id) != used.end()) continue;
+                auto* combo = static_cast<QComboBox*>(field.editor);
+                if (const int index = combo->findData(QVariant::fromValue(id)); index >= 0) {
+                    combo->setCurrentIndex(index);
+                    used.push_back(id);
+                    break;
+                }
+            }
         }
     }
 }

@@ -627,6 +627,100 @@ TEST_CASE("The viewport colours each selection", "[app]") {
     CHECK(others >= 2); // at least two other faces of the box are in view
 }
 
+TEST_CASE("Selecting rows in the Objects list fills the open form", "[app][fit]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto can = dir.path() / "can.stl";
+    REQUIRE(writeMesh(makeCylinder(10.0, 30.0, 96, 30), can).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(can.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    const auto run = [&](const char* command, const Json& params) {
+        Json out;
+        bool done = false;
+        engine.run(command, params, [&](const Result<Json>& r) {
+            if (r) out = *r;
+            done = true;
+        });
+        REQUIRE(waitFor([&] { return done && !engine.busy(); }, 120000));
+        return out;
+    };
+    const Json regions =
+        run("mesh.segment", {{"id", mesh}, {"create_primitives", true}})["regions"];
+    REQUIRE(regions.size() == 3);
+    std::vector<ObjectId> primitives;
+    for (const Json& r : regions) primitives.push_back(r["primitive_id"].get<ObjectId>());
+    const auto first = run("primitive.solid", {{"id", primitives[2]}})["id"].get<ObjectId>();
+    const auto second = run("primitive.solid", {{"id", primitives[2]}})["id"].get<ObjectId>();
+
+    auto* tree = window.findChild<QTreeWidget*>();
+    REQUIRE(tree != nullptr);
+    const auto row = [&](ObjectId id) -> QTreeWidgetItem* {
+        for (QTreeWidgetItemIterator it(tree); *it != nullptr; ++it) {
+            if ((*it)->data(0, Qt::UserRole + 1).value<ObjectId>() == id) return *it;
+        }
+        return nullptr;
+    };
+    // Selects rows one after another, as Ctrl+click does.
+    const auto select = [&](const std::vector<ObjectId>& ids) {
+        tree->clearSelection();
+        for (const ObjectId id : ids) {
+            QTreeWidgetItem* item = row(id);
+            REQUIRE(item != nullptr);
+            item->setSelected(true);
+        }
+        QApplication::processEvents();
+    };
+    const auto open = [&](const char* tool) {
+        for (QAction* a : window.findChildren<QAction*>()) {
+            if (a->text() == tool) a->trigger();
+        }
+        return window.findChild<ParamForm*>();
+    };
+
+    // primitive.trim takes the primitives in the order they were picked.
+    ParamForm* form = open("primitive.trim");
+    REQUIRE(form != nullptr);
+    select({primitives[2], primitives[0], primitives[1]});
+    auto* ids = form->findChild<QLineEdit*>("primitive_ids");
+    REQUIRE(ids != nullptr);
+    CHECK(ids->text() ==
+          QStringLiteral("%1, %2, %3").arg(primitives[2]).arg(primitives[0]).arg(primitives[1]));
+    const auto params = form->params();
+    REQUIRE(params.has_value());
+    CHECK(params->at("primitive_ids") ==
+          Json::array({primitives[2], primitives[0], primitives[1]}));
+    // A mesh fills the mesh field and leaves the primitives alone.
+    const QString before = ids->text();
+    select({mesh});
+    CHECK(ids->text() == before);
+    CHECK(form->findChild<QComboBox*>("mesh_id")->currentData().value<ObjectId>() == mesh);
+
+    // solid.boolean takes the first solid as id and the second as tool_id.
+    form = open("solid.boolean");
+    select({second, first});
+    CHECK(form->findChild<QComboBox*>("id")->currentData().value<ObjectId>() == second);
+    CHECK(form->findChild<QComboBox*>("tool_id")->currentData().value<ObjectId>() == first);
+
+    // Hiding one of three selected rows hides all three, as one step.
+    select({primitives[0], primitives[1], primitives[2]});
+    const auto steps = engine.snapshot()->undo.size();
+    row(primitives[1])->setCheckState(0, Qt::Unchecked);
+    REQUIRE(waitFor([&] { return !engine.busy() && engine.snapshot()->undo.size() == steps + 1; }));
+    for (const ObjectId id : primitives) CHECK_FALSE(engine.snapshot()->find(id)->visible);
+    CHECK(engine.snapshot()->undo.back().label == "object.show");
+    // The selection survives the rebuilt list.
+    CHECK(tree->selectedItems().size() == 3);
+}
+
 TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     application();
     CommandRegistry registry;

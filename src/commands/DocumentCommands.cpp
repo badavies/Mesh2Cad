@@ -20,14 +20,33 @@ namespace m2c::cmd {
 namespace {
 
 constexpr auto kNoParams = R"({"type":"object","properties":{},"additionalProperties":false})";
-constexpr auto kIdOnly = R"({
-    "type":"object",
-    "properties":{"id":{"type":"integer","x-object":"any","minimum":0,"description":"Object id."}},
-    "required":["id"],"additionalProperties":false})";
 constexpr auto kMeshIdOnly = R"({
     "type":"object",
     "properties":{"id":{"type":"integer","x-object":"mesh","minimum":0,"description":"The mesh."}},
     "required":["id"],"additionalProperties":false})";
+
+/// The objects named by params "id" or, several at once, "ids" (exactly one of them).
+Result<std::vector<ObjectId>> idOrIds(const CommandContext& context, const Json& params) {
+    if (params.contains("id") == params.contains("ids"))
+        return fail(ErrorCode::InvalidArgument, "give id or ids");
+    std::vector<ObjectId> ids;
+    if (params.contains("id")) {
+        M2C_TRY(id, requireId(params, "id"));
+        ids.push_back(*id);
+    } else {
+        if (!params["ids"].is_array() || params["ids"].empty())
+            return fail(ErrorCode::InvalidArgument, "ids must list objects");
+        for (const Json& id : params["ids"]) {
+            M2C_TRY(one, requireId(Json{{"id", id}}, "id"));
+            ids.push_back(*one);
+        }
+    }
+    for (const ObjectId id : ids) {
+        if (!context.document.find(id))
+            return fail(ErrorCode::NotFound, "no object with id " + std::to_string(id));
+    }
+    return ids;
+}
 
 Json historyJson(const std::vector<HistoryStep>& steps) {
     Json out = Json::array();
@@ -103,13 +122,25 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
 
     out.push_back(makeCommand(
         "object.delete",
-        "Delete an object. Deleting a mesh also deletes its selections and measurements.",
-        kIdOnly,
+        "Delete an object, or several (ids) as one undo step. Deleting a mesh also deletes its "
+        "selections and measurements.",
+        R"({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","x-object":"any","minimum":0,"description":"Object id."},
+                "ids":{"type":"array","items":{"type":"integer","x-object":"any","minimum":0},"minItems":1,"description":"Several objects, instead of id."}
+            },
+            "additionalProperties":false})",
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {
-            M2C_TRY(id, requireId(params, "id"));
-            M2C_TRY(done, context.document.remove(*id));
-            return Json{{"id", *id}};
+            M2C_TRY(ids, idOrIds(context, params));
+            for (const ObjectId id : *ids) {
+                // An earlier one may have taken this with it (a mesh its selections).
+                if (!context.document.find(id)) continue;
+                M2C_TRY(done, context.document.remove(id));
+            }
+            if (params.contains("id")) return Json{{"id", ids->front()}};
+            return Json{{"ids", *ids}};
         }));
 
     out.push_back(makeCommand("object.rename",
@@ -126,19 +157,28 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                                   return Json{{"id", *id}, {"name", *name}};
                               }));
 
-    out.push_back(makeCommand("object.show",
-                              "Show or hide an object in the viewport.",
-                              R"({
+    out.push_back(
+        makeCommand("object.show",
+                    "Show or hide an object in the viewport, or several (ids) as one undo step.",
+                    R"({
             "type":"object",
-            "properties":{"id":{"type":"integer","x-object":"any","minimum":0},"visible":{"type":"boolean"}},
-            "required":["id","visible"],"additionalProperties":false})",
-                              true,
-                              [](CommandContext& context, const Json& params) -> Result<Json> {
-                                  M2C_TRY(id, requireId(params, "id"));
-                                  M2C_TRY(visible, optionalBool(params, "visible", true));
-                                  M2C_TRY(done, context.document.setVisible(*id, *visible));
-                                  return Json{{"id", *id}, {"visible", *visible}};
-                              }));
+            "properties":{
+                "id":{"type":"integer","x-object":"any","minimum":0},
+                "ids":{"type":"array","items":{"type":"integer","x-object":"any","minimum":0},"minItems":1,"description":"Several objects, instead of id."},
+                "visible":{"type":"boolean"}
+            },
+            "required":["visible"],"additionalProperties":false})",
+                    true,
+                    [](CommandContext& context, const Json& params) -> Result<Json> {
+                        M2C_TRY(ids, idOrIds(context, params));
+                        M2C_TRY(visible, optionalBool(params, "visible", true));
+                        for (const ObjectId id : *ids) {
+                            M2C_TRY(done, context.document.setVisible(id, *visible));
+                        }
+                        if (params.contains("id"))
+                            return Json{{"id", ids->front()}, {"visible", *visible}};
+                        return Json{{"ids", *ids}, {"visible", *visible}};
+                    }));
 
     out.push_back(makeCommand(
         "mesh.import",
