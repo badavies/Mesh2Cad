@@ -15,8 +15,9 @@ Headers live in this folder (no `m2c/mcp/` prefix).
   `view.render`'s does) also carries the picture as an image content block.
   A tool call whose request carries `_meta.progressToken` gets a `notifications/progress` every
   two seconds until it returns (through the optional `Notify` callback): the progress is the
-  seconds spent, since commands cannot yet say how far along they are. Tools whose command
-  writes a file are not marked read-only.
+  seconds spent, and the message names the latest stage the command reported, which the engine
+  sends as `rpc.progress` and `engineEvent` takes in ("surface.build: making the faces, 12 s").
+  Tools whose command writes a file are not marked read-only.
 
 The executable (`main.cpp`) chooses the engine:
 

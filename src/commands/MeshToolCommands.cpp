@@ -14,6 +14,7 @@
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
 #include "m2c/pipeline/Measure.h"
@@ -170,6 +171,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             } // else only the error limit stops it
             p.preserveBorders = *borders;
             p.maxErrorMm = *maxError;
+            report(context.progress, "simplifying the mesh");
             M2C_TRY(simplified, simplifyMesh(*object->mesh, p));
             Json report{{"faces_before", before}, {"faces_after", simplified->faceCount()}};
             M2C_TRY(done, commitMesh(context, *object, std::move(*simplified)));
@@ -201,6 +203,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             p.targetEdgeMm = *edge;
             p.iterations = static_cast<unsigned>(*iterations);
             p.sharpAngleDeg = *angle;
+            report(context.progress, "remeshing");
             M2C_TRY(remeshed, remeshMesh(*object->mesh, p));
             M2C_TRY(done, commitMesh(context, *object, std::move(*remeshed)));
             return afterEdit(context, object->id, Json::object());

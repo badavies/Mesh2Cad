@@ -160,7 +160,13 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     Session s;
     const TempDir dir;
     const ObjectId mesh = s.import(dir, makeSphere(20.0, 4), "ball");
+    // Both long commands say what stage they are at, so a front end can show it.
+    std::vector<std::string> stages;
+    s.context.progress = [&stages](std::string_view stage, double) { stages.emplace_back(stage); };
     const auto cage = s.run("quad.remesh", {{"id", mesh}, {"target_faces", 300}})["id"];
+    REQUIRE(stages.size() == 3);
+    CHECK(stages.front() == "remeshing into quads");
+    stages.clear();
 
     // The mesh is needed for fitting.
     CHECK_FALSE(s.tryRun("surface.build", {{"id", cage}}));
@@ -168,6 +174,10 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
 
     const Json result = s.run("surface.build", {{"id", cage}, {"mesh_id", mesh}});
     const auto solid = result["id"].get<ObjectId>();
+    REQUIRE(stages.size() == 4);
+    CHECK(stages[0].starts_with("fitting the cage ("));
+    CHECK(stages[1] == "making the faces");
+    CHECK(stages.back() == "sewing the solid");
     CHECK(result["summary"]["valid"] == true);
     CHECK(result["summary"]["free_edges"] == 0);
     CHECK(result["summary"]["closed"] == true);

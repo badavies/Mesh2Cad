@@ -2,6 +2,7 @@
 #include "McpServer.h"
 
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstddef>
 #include <expected>
@@ -74,9 +75,12 @@ McpServer::McpServer(EngineCall call, Notify notify, const std::chrono::millisec
 Result<Json>
 McpServer::callReporting(const std::string& command, const Json& arguments, const Json& token) {
     if (!notify_ || token.is_null()) return call_(command, arguments);
-    // The engine call blocks this thread; a second one reports the seconds spent until it returns.
-    // Commands cannot say how far along they are yet (that comes with long jobs), so the
-    // progress is the elapsed time and there is no total.
+    // The engine call blocks this thread; a second one reports the seconds spent until it returns,
+    // with the latest stage the command reported (engineEvent). There is no total.
+    {
+        const std::scoped_lock lock(stageMutex_);
+        stage_.clear();
+    }
     std::mutex mutex;
     std::condition_variable_any tick;
     std::jthread heartbeat([&](const std::stop_token& stop) {
@@ -87,17 +91,36 @@ McpServer::callReporting(const std::string& command, const Json& arguments, cons
             if (stop.stop_requested()) return;
             const double seconds =
                 std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
+            std::string stage;
+            {
+                const std::scoped_lock stageLock(stageMutex_);
+                stage = stage_;
+            }
             notify_(Json{{"jsonrpc", "2.0"},
                          {"method", "notifications/progress"},
                          {"params",
                           {{"progressToken", token},
                            {"progress", seconds},
                            {"message",
-                            command + " running, " +
+                            command + (stage.empty() ? " running" : ": " + stage) + ", " +
                                 std::to_string(static_cast<long long>(seconds)) + " s"}}}});
         }
     });
     return call_(command, arguments); // the heartbeat stops and is joined on return
+}
+
+void McpServer::engineEvent(const Json& notification) {
+    if (!notification.is_object() || notification.value("method", Json()) != "rpc.progress" ||
+        !notification.contains("params") || !notification["params"].is_object()) {
+        return;
+    }
+    const Json& p = notification["params"];
+    std::string stage = p.value("stage", std::string());
+    if (p.contains("fraction") && p["fraction"].is_number()) {
+        stage += " (" + std::to_string(std::lround(p["fraction"].get<double>() * 100.0)) + "%)";
+    }
+    const std::scoped_lock lock(stageMutex_);
+    stage_ = std::move(stage);
 }
 
 std::string McpServer::toolName(const std::string& command) {

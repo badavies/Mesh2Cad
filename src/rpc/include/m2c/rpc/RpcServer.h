@@ -21,6 +21,8 @@ namespace m2c {
 ///   may also name the client ({"source": "mcp"}); undo steps and the session log record it.
 /// - After a request that changes the document, a `doc.changed` notification with the new
 ///   revision is sent through the event callback.
+/// - While a request runs, each stage its command reports goes out through the event callback
+///   as `rpc.progress` {"id", "command", "stage", "fraction"?} before the response.
 class RpcServer {
 public:
     using EventSink = std::function<void(const Json& notification)>;

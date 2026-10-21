@@ -209,8 +209,10 @@ Result<QuadLayout> thickenCage(const QuadLayout& sheet, const double thicknessMm
     return QuadLayout::create(std::move(positions), std::move(starts), std::move(vertices));
 }
 
-Result<SurfaceBuildResult>
-buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildParams& params) {
+Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
+                                        const TriMesh* scan,
+                                        const SurfaceBuildParams& params,
+                                        const Progress& progress) {
     if (params.fit && scan == nullptr) {
         return fail(ErrorCode::InvalidArgument, "fitting needs a scan");
     }
@@ -244,11 +246,15 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
                           .p95DistanceMm = 0.0,
                           .rmsBeforeRoundMm = {}};
         if (params.fit) {
+            report(progress,
+                   "fitting the cage (" + std::to_string(start.faceCount()) + " quads, fit " +
+                       std::to_string(tries + 1) + ")");
             auto fitted = fitCage(start, *scan, fitting);
             if (!fitted) return std::unexpected(fitted.error());
             fit = std::move(*fitted);
         }
         ++tries;
+        report(progress, "making the faces");
         auto patches = extractPatches(fit.cage, PatchParams{fitting.isolationLevel, sheet});
         if (!patches) return std::unexpected(patches.error());
         auto seams = measureSeams(patches->faces, kSeamSamples, kSeamToleranceMm, patches->caps);
@@ -281,6 +287,7 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
             if (!wall) return std::unexpected(wall.error());
             used = std::move(*wall);
         }
+        report(progress, "merging faces");
         auto faces = sheet ? wallFaces(used,
                                        fit.cage.faceCount(),
                                        PatchParams{fitting.isolationLevel, true},
@@ -296,6 +303,7 @@ buildSurface(const QuadLayout& cage, const TriMesh* scan, const SurfaceBuildPara
                             std::to_string(std::lround(faceSeams.maxNormalAngleDeg)) +
                             " degrees; the thickness is more than the sheet's tightest bend");
         }
+        report(progress, "sewing the solid");
         auto display = tessellate(faceSet.faces, params.displayGrid);
         if (!display) return std::unexpected(display.error());
         auto solid = occt::makeSolid(std::move(faceSet.faces),

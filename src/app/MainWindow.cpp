@@ -125,6 +125,9 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
             log_->appendPlainText(line);
         }
     });
+    connect(&engine_, &Engine::progressChanged, this, [this](const QString& text) {
+        status_->setText(tr("Running %1…").arg(text));
+    });
     connect(&engine_, &Engine::busyChanged, this, [this](const bool busy, const QString& command) {
         form_->setBusy(busy);
         status_->setText(busy ? tr("Running %1…").arg(command) : QString());

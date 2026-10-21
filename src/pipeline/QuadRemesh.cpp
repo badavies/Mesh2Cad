@@ -538,10 +538,14 @@ closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& par
     return cage;
 }
 
-Result<QuadRemeshResult>
-quadRemesh(const TriMesh& scan, const QuadRemeshParams& params, const CageCloseParams& close) {
+Result<QuadRemeshResult> quadRemesh(const TriMesh& scan,
+                                    const QuadRemeshParams& params,
+                                    const CageCloseParams& close,
+                                    const Progress& progress) {
+    report(progress, "remeshing into quads");
     auto raw = quad::remesh(scan, params);
     if (!raw) return std::unexpected(raw.error());
+    report(progress, "closing the cage");
     CageCleanup cleanup;
     auto cage = closeCage(*raw, cleanup, close);
     if (!cage) return std::unexpected(cage.error());
@@ -550,6 +554,7 @@ quadRemesh(const TriMesh& scan, const QuadRemeshParams& params, const CageCloseP
         if (!cage) return std::unexpected(cage.error());
     }
 
+    report(progress, "measuring the cage against the scan");
     const SpatialIndex& index = scan.spatialIndex();
     double maxDistance = 0.0;
     double sum = 0.0;

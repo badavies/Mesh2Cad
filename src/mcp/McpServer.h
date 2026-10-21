@@ -4,6 +4,7 @@
 #include <chrono>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -34,6 +35,10 @@ public:
     /// Handles one MCP message; returns the response, or nothing for notifications.
     [[nodiscard]] std::optional<Json> handle(const Json& message);
 
+    /// A notification from the engine while `call` runs. The latest rpc.progress stage goes into
+    /// the progress messages ("surface.build: making the faces, 12 s"); the rest is dropped.
+    void engineEvent(const Json& notification);
+
     /// "mesh.import" -> "mesh_import": MCP clients only accept [A-Za-z0-9_-] in tool names.
     [[nodiscard]] static std::string toolName(const std::string& command);
 
@@ -47,6 +52,8 @@ private:
     EngineCall call_;
     Notify notify_;
     std::chrono::milliseconds progressEvery_;
+    std::mutex stageMutex_; ///< Guards stage_: written by engineEvent, read by the heartbeat.
+    std::string stage_;     ///< The running command's latest stage, or empty.
     std::map<std::string, std::string> commandForTool_;
 };
 
