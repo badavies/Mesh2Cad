@@ -1,20 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Sketch profiles extruded and revolved into solids.
+// Sketch profiles extruded and revolved into solids, and written to STEP with solids.
 
 #include <cmath>
+#include <cstddef>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <numbers>
+#include <string>
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include "m2c/adapters/occt/Brep.h"
+#include "m2c/core/Error.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/pipeline/Profile.h"
 
+#include "TestMeshes.h"
+
 using namespace m2c;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+using m2c::test::TempDir;
 
 namespace {
 
@@ -162,4 +172,55 @@ TEST_CASE("Profiles that are open, outside, or across the axis fail", "[stages][
     CHECK_FALSE(revolveSketch(square, {5, 0}, {0, 0}, kPi).has_value());
     CHECK_FALSE(revolveSketch(square, {5, 0}, {0, 1}, 0.0).has_value());
     CHECK_FALSE(revolveSketch(square, {5, 0}, {0, 1}, 7.0).has_value());
+}
+
+TEST_CASE("Solids and sketches go to one STEP file as named bodies", "[stages][profile]") {
+    // A sketch on the plane z = 4: a square with a square hole holding a round
+    // island, and a separate small square. The island and the separate square are faces of their
+    // own, so three faces in all, of exact lines and circles.
+    Sketch sketch;
+    sketch.plane = planeThrough({0, 0, 4}, {0, 0, 1});
+    sketch.loops.push_back(rectangle(0, 0, 30, 30));
+    sketch.loops.push_back(rectangle(5, 5, 25, 25));
+    sketch.loops.push_back(circle({15, 15}, 3.0));
+    sketch.loops.push_back(rectangle(40, 0, 50, 10));
+    Sketch block;
+    block.loops.push_back(rectangle(0, 0, 30, 20));
+    const auto box = extrudeSketch(block, 10.0, 0.0);
+    REQUIRE(box.has_value());
+
+    const TempDir dir;
+    const auto file = dir.path() / "bodies.step";
+    const auto faces = occt::writeStep(
+        {{.name = "Block", .shape = *box}, {.name = "Section A", .shape = sketch}}, file);
+    REQUIRE(faces.has_value());
+    CHECK(*faces == std::vector<std::size_t>{6, 3});
+
+    const auto bodies = occt::readStepBodies(file);
+    REQUIRE(bodies.has_value());
+    REQUIRE(bodies->size() == 2);
+    CHECK((*bodies)[0].solidCount == 1);
+    CHECK((*bodies)[0].closed);
+    CHECK_THAT((*bodies)[0].volumeMm3, WithinRel(6000.0, 1e-9));
+    CHECK((*bodies)[1].solidCount == 0);
+    CHECK((*bodies)[1].faceCount == 3);
+    CHECK((*bodies)[1].valid);
+    CHECK_THAT((*bodies)[1].areaMm2, WithinRel(900.0 - 400.0 + kPi * 9.0 + 100.0, 1e-6));
+    CHECK_THAT((*bodies)[1].bounds.min.z, WithinAbs(4.0, 1e-6));
+    CHECK_THAT((*bodies)[1].bounds.max.z, WithinAbs(4.0, 1e-6));
+
+    // Each body is a product named after it, which Fusion 360 shows as the component's name.
+    std::ifstream in(file);
+    const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    CHECK(text.find("PRODUCT('Block'") != std::string::npos);
+    CHECK(text.find("PRODUCT('Section A'") != std::string::npos);
+
+    // Nothing is written for an open loop, or for no bodies.
+    Sketch open;
+    open.loops.push_back({{line({0, 0}, {10, 0}), line({10, 0}, {10, 10})}});
+    const auto bad = dir.path() / "bad.step";
+    CHECK(occt::writeStep({{.name = "Open", .shape = open}}, bad).error().code ==
+          ErrorCode::InvalidArgument);
+    CHECK_FALSE(occt::writeStep(std::vector<occt::StepBody>{}, bad).has_value());
+    CHECK_FALSE(std::filesystem::exists(bad));
 }

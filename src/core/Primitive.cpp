@@ -9,10 +9,12 @@
 #include <limits>
 #include <numbers>
 #include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -178,6 +180,39 @@ Result<TriMesh> primitiveDisplay(const FittedPrimitive& fit, const int cells) {
         return fail(ErrorCode::InvalidState, "the primitive does not cross its extent");
     }
     return TriMesh::create(std::move(positions), std::move(indices));
+}
+
+Result<Sketch> planeOutline(const FittedPrimitive& fit) {
+    const Primitive& s = fit.surface;
+    if (s.kind != PrimitiveKind::Plane) {
+        return fail(ErrorCode::InvalidArgument,
+                    std::string("only a plane can be bounded for export, not a ") +
+                        primitiveKindName(s.kind));
+    }
+    Sketch out{.plane = planeThrough(s.point, s.direction), .loops = {}};
+    const double m = 0.01 * length(fit.extent.max - fit.extent.min);
+    Vec2d lo{std::numeric_limits<double>::max(), std::numeric_limits<double>::max()};
+    Vec2d hi{std::numeric_limits<double>::lowest(), std::numeric_limits<double>::lowest()};
+    for (int c = 0; c < 8; ++c) {
+        const Vec3d corner{(c & 1) != 0 ? fit.extent.max.x : fit.extent.min.x,
+                           (c & 2) != 0 ? fit.extent.max.y : fit.extent.min.y,
+                           (c & 4) != 0 ? fit.extent.max.z : fit.extent.min.z};
+        const Vec2d p = out.plane.toPlane(corner);
+        lo = {std::min(lo.x, p.x - m), std::min(lo.y, p.y - m)};
+        hi = {std::max(hi.x, p.x + m), std::max(hi.y, p.y + m)};
+    }
+    if (!(hi.x - lo.x > 0.0) || !(hi.y - lo.y > 0.0)) {
+        return fail(ErrorCode::InvalidArgument, "the plane's fitted extent is empty");
+    }
+    // Anticlockwise about the normal, from the corner nearest -u and -v.
+    const std::array<Vec2d, 4> corners{lo, Vec2d{hi.x, lo.y}, hi, Vec2d{lo.x, hi.y}};
+    SketchLoop loop;
+    for (std::size_t k = 0; k < 4; ++k) {
+        loop.curves.push_back(
+            {.kind = CurveKind::Line, .points = {corners.at(k), corners.at((k + 1) % 4)}});
+    }
+    out.loops.push_back(std::move(loop));
+    return out;
 }
 
 } // namespace m2c

@@ -627,6 +627,17 @@ Revolve a sketch's profile (its largest loop less the loops inside it) by angle_
 | `id` | sketch id | yes | The sketch. |
 | `name` | string |  |  |
 
+## step
+
+### `step.export`
+
+Write solids, sketches and fitted planes to one STEP AP242 file in millimetres, each as its own body named after its object (Fusion 360 makes each a named component). Fusion leaves loose curves out of a STEP file, so a sketch becomes flat faces bounded by its loops (lines and arcs exact, a loop inside another a hole), and a plane a flat rectangle over the region it was fitted to: surface bodies to sketch on, project from or build construction planes on. Then reads the file back and checks every body. Fails, writing nothing, if a solid is not valid, a sketch has an open loop or a primitive is not a plane. *(writes a file)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `ids` | array | yes | The solids, sketches and plane primitives, in the order they are written. |
+| `path` | string | yes | The .step or .stp file to write. Files: `.step`, `.stp`. |
+
 ## surface
 
 ### `surface.build`

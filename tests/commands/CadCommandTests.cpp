@@ -3,8 +3,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <miniz.h>
 #include <numbers>
 #include <string>
@@ -326,6 +329,60 @@ TEST_CASE("solid.export writes a STEP file that reads back as the same solid",
           true);
     CHECK_FALSE(s.tryRun("solid.export",
                          {{"id", solid}, {"path", (dir.path() / "no" / "x.step").string()}}));
+}
+
+TEST_CASE("step.export writes solids, sketches and planes as named bodies", "[commands][step]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId mesh = s.import(dir, makeBox(30, 20, 10, 8), "block");
+    const Json regions = s.run("mesh.segment", {{"id", mesh}})["regions"];
+    REQUIRE(regions.size() == 6);
+    Json planes = Json::array();
+    for (const Json& r : regions) {
+        planes.push_back(s.run("primitive.fit", {{"selection_id", r["selection_id"]}})["id"]);
+    }
+    const auto solid =
+        s.run("primitive.trim", {{"primitive_ids", planes}, {"mesh_id", mesh}})["id"];
+    const auto sketch =
+        s.run("sketch.section", {{"id", mesh}, {"plane", "xy"}, {"offset_mm", 4}})["id"];
+    const auto path = (dir.path() / "block.step").string();
+    const std::size_t steps = s.document.undoHistory().size();
+
+    const Json result = s.run("step.export", {{"ids", {solid, sketch, planes[0]}}, {"path", path}});
+    CHECK(result["check"]["passed"] == true);
+    CHECK(result["check"]["body_count"] == 3);
+    CHECK(result["check"]["volume_error"].get<double>() < 1e-3);
+    const Json& bodies = result["bodies"];
+    REQUIRE(bodies.size() == 3);
+    CHECK(bodies[0]["kind"] == "solid");
+    CHECK(bodies[0]["face_count"] == 6);
+    CHECK(bodies[1]["kind"] == "sketch");
+    CHECK(bodies[1]["face_count"] == 1);
+    CHECK(bodies[2]["kind"] == "plane");
+    CHECK(bodies[2]["face_count"] == 1);
+    CHECK(s.document.undoHistory().size() == steps); // the document is unchanged
+
+    // Each body is a product named after its object.
+    std::ifstream in(path);
+    const std::string text{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    for (const Json& b : bodies) {
+        CHECK(text.find("PRODUCT('" + b["name"].get<std::string>() + "'") != std::string::npos);
+    }
+
+    // Nothing is written for a mesh, an object listed twice, a primitive that is no plane, an
+    // unknown id or a path that is not STEP.
+    const ObjectId ball = s.import(dir, makeSphere(10.0, 3), "ball");
+    const auto all = s.run("select.all", {{"id", ball}})["selection_id"];
+    const auto sphere = s.run("primitive.fit", {{"selection_id", all}, {"kind", "sphere"}})["id"];
+    const auto other = (dir.path() / "other.step").string();
+    CHECK_FALSE(s.tryRun("step.export", {{"ids", {solid, mesh}}, {"path", other}}));
+    CHECK_FALSE(s.tryRun("step.export", {{"ids", {solid, solid}}, {"path", other}}));
+    CHECK_FALSE(s.tryRun("step.export", {{"ids", {sketch, sphere}}, {"path", other}}));
+    CHECK_FALSE(s.tryRun("step.export", {{"ids", {999}}, {"path", other}}));
+    CHECK_FALSE(s.tryRun("step.export", {{"ids", Json::array()}, {"path", other}}));
+    CHECK_FALSE(std::filesystem::exists(other));
+    CHECK_FALSE(
+        s.tryRun("step.export", {{"ids", {sketch}}, {"path", (dir.path() / "s.stl").string()}}));
 }
 
 TEST_CASE("deviation.compute measures a mesh against a solid or a mesh", "[commands][deviation]") {

@@ -8,6 +8,7 @@
 #include <string_view>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -71,5 +72,10 @@ struct OrientedBox {
 /// cylinder, cone or sphere), keeping the triangles inside it, each facing the way normalAt
 /// does. Fails if no triangle is inside.
 [[nodiscard]] Result<TriMesh> primitiveDisplay(const FittedPrimitive& fit, int cells = 64);
+
+/// A fitted plane bounded for export: one loop of four lines on the plane (planeThrough its point
+/// and normal), the rectangle in the plane's u and v that holds the fit's extent grown by 1% of
+/// its diagonal, as primitiveDisplay grows it. Fails with InvalidArgument for any other kind.
+[[nodiscard]] Result<Sketch> planeOutline(const FittedPrimitive& fit);
 
 } // namespace m2c

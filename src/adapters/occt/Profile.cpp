@@ -162,8 +162,9 @@ wire(const SketchPlane& plane, const SketchLoop& loop, bool anticlockwise, doubl
     return (signedArea > 0.0) == anticlockwise ? out : TopoDS::Wire(out.Reversed());
 }
 
-/// The profile as one planar face: the loop of largest area, less the others inside it.
-Result<TopoDS_Face> profileFace(const Sketch& sketch) {
+/// Each loop as a polygon (polygon()), after checking every loop is closed and its curves have
+/// points.
+Result<std::vector<std::vector<Vec2d>>> loopPolygons(const Sketch& sketch) {
     if (sketch.loops.empty()) return fail(ErrorCode::InvalidArgument, "the sketch has no loop");
     std::vector<std::vector<Vec2d>> polygons;
     for (const SketchLoop& loop : sketch.loops) {
@@ -184,6 +185,37 @@ Result<TopoDS_Face> profileFace(const Sketch& sketch) {
         }
         polygons.push_back(polygon(loop));
     }
+    return polygons;
+}
+
+/// A planar face on the sketch's plane bounded by loop `outer`, less the loops `holes` (which
+/// must lie inside it).
+Result<TopoDS_Face> planarFace(const Sketch& sketch,
+                               const std::vector<std::vector<Vec2d>>& polygons,
+                               std::size_t outer,
+                               const std::vector<std::size_t>& holes) {
+    const SketchPlane& plane = sketch.plane;
+    // The outer wire runs anticlockwise about the normal and the holes clockwise, so the face's
+    // material is inside the one and outside the others.
+    auto outerWire = wire(plane, sketch.loops[outer], true, signedArea(polygons[outer]));
+    if (!outerWire) return std::unexpected(outerWire.error());
+    BRepBuilderAPI_MakeFace maker(
+        gp_Pln(gp_Ax3(pnt(plane.origin), dir(plane.normal()), dir(plane.u))), *outerWire, true);
+    for (const std::size_t k : holes) {
+        if (!maker.IsDone()) break;
+        auto hole = wire(plane, sketch.loops[k], false, signedArea(polygons[k]));
+        if (!hole) return std::unexpected(hole.error());
+        maker.Add(*hole);
+    }
+    if (!maker.IsDone()) return fail(ErrorCode::InvalidArgument, "the loops make no face");
+    return maker.Face();
+}
+
+/// The profile as one planar face: the loop of largest area, less the others inside it.
+Result<TopoDS_Face> profileFace(const Sketch& sketch) {
+    auto checked = loopPolygons(sketch);
+    if (!checked) return std::unexpected(checked.error());
+    const std::vector<std::vector<Vec2d>>& polygons = *checked;
     std::size_t outer = 0;
     for (std::size_t k = 1; k < polygons.size(); ++k) {
         if (std::abs(signedArea(polygons[k])) > std::abs(signedArea(polygons[outer]))) outer = k;
@@ -200,24 +232,42 @@ Result<TopoDS_Face> profileFace(const Sketch& sketch) {
                         "inside another hole");
         }
     }
-    const SketchPlane& plane = sketch.plane;
-    // The outer wire runs anticlockwise about the normal and the holes clockwise, so the face's
-    // material is inside the one and outside the others.
-    auto outerWire = wire(plane, sketch.loops[outer], true, signedArea(polygons[outer]));
-    if (!outerWire) return std::unexpected(outerWire.error());
-    BRepBuilderAPI_MakeFace maker(
-        gp_Pln(gp_Ax3(pnt(plane.origin), dir(plane.normal()), dir(plane.u))), *outerWire, true);
-    for (std::size_t k = 0; k < sketch.loops.size() && maker.IsDone(); ++k) {
-        if (k == outer) continue;
-        auto hole = wire(plane, sketch.loops[k], false, signedArea(polygons[k]));
-        if (!hole) return std::unexpected(hole.error());
-        maker.Add(*hole);
+    std::vector<std::size_t> holes;
+    for (std::size_t k = 0; k < polygons.size(); ++k) {
+        if (k != outer) holes.push_back(k);
     }
-    if (!maker.IsDone()) return fail(ErrorCode::InvalidArgument, "the loops make no face");
-    return maker.Face();
+    return planarFace(sketch, polygons, outer, holes);
 }
 
 } // namespace
+
+Result<std::vector<TopoDS_Face>> sketchFaces(const Sketch& sketch) {
+    auto checked = loopPolygons(sketch);
+    if (!checked) return std::unexpected(checked.error());
+    const std::vector<std::vector<Vec2d>>& polygons = *checked;
+    // A loop's depth is how many others it lies inside: even depths bound faces, and each odd
+    // one is a hole in the face of the loop one level up that holds it.
+    std::vector<std::size_t> depth(polygons.size(), 0);
+    for (std::size_t k = 0; k < polygons.size(); ++k) {
+        for (std::size_t j = 0; j < polygons.size(); ++j) {
+            if (j != k && inside(polygons[j], polygons[k].front())) ++depth[k];
+        }
+    }
+    std::vector<TopoDS_Face> faces;
+    for (std::size_t k = 0; k < polygons.size(); ++k) {
+        if (depth[k] % 2 != 0) continue;
+        std::vector<std::size_t> holes;
+        for (std::size_t j = 0; j < polygons.size(); ++j) {
+            if (depth[j] == depth[k] + 1 && inside(polygons[k], polygons[j].front())) {
+                holes.push_back(j);
+            }
+        }
+        auto face = planarFace(sketch, polygons, k, holes);
+        if (!face) return std::unexpected(face.error());
+        faces.push_back(*face);
+    }
+    return faces;
+}
 
 Result<Solid> extrudeSketch(const Sketch& sketch, const double forwardMm, const double backwardMm) {
     if (!(forwardMm + backwardMm > 0.0) || !std::isfinite(forwardMm + backwardMm)) {

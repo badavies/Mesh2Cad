@@ -239,7 +239,7 @@ Shell detection results appear in a panel where each shell can be highlighted, s
 Prismatic parts are a first-class case, not an add-on. For a cube or bracket, every segmented region is fitted as an exact surface. Fitted primitives are unbounded (an infinite plane or cylinder), so they are not sewn: neighbouring surfaces are intersected and trimmed against each other with OCCT's General Fuse algorithm to give sharp edges, and the result is closed into a solid. No subdivision surfacing is used. On mixed parts, the organic body is sewn first, then trimmed primitives are fused to it or cut from it by booleans.
 
 - **Primitive fitting.** The user selects a mesh region, or accepts one from segmentation, and fits a plane, cylinder, sphere or cone (CGAL shape detection, then least-squares refinement). The result is an exact OCCT surface. Fitted primitives can then be made exactly parallel, perpendicular or at a set angle to each other, to the mean of several, or to a world axis or plane, and refitted with that direction held, since a scanned face's normal is often a little off. A box, the commonest prismatic shape, is fitted in one step (`primitive.box`): six planes held parallel and perpendicular, made a solid of exact planes, or made from typed sizes. A scanned fillet between two such faces is rebuilt exactly (`fillet.fit`, ADR-033): the edge is rounded by Open CASCADE at the radius that brings the solid closest to the selected fillet band.
-- **Section sketches.** Cut the mesh with a plane, fit lines, arcs and splines to the section polyline, then extrude or revolve the 2D profile (OCCT prism and revolution).
+- **Section sketches.** Cut the mesh with a plane, fit lines, arcs and splines to the section polyline, then extrude or revolve the 2D profile (OCCT prism and revolution). Sketches and fitted planes can go to Fusion 360 with the solid (`step.export`, ADR-034).
 - **Booleans.** Subtract or unite primitives and extrusions with the organic body, using OCCT fuzzy booleans with the project tolerance.
 - **No constraint solver in v1.** Sketches are fitted, not constrained. A solver (for example SolveSpace's, GPL v3) is a backlog item that needs its own decision record.
 
@@ -247,13 +247,13 @@ Prismatic parts are a first-class case, not an add-on. For a cube or bracket, ev
 
 | Format | Target | Implementation | Key settings |
 | --- | --- | --- | --- |
-| STEP AP242 | Fusion 360 (primary) | OCCT STEP writer | Units mm, one solid per body, validity check before writing |
+| STEP AP242 | Fusion 360 (primary) | OCCT STEP writer | Units mm, one solid per body, validity check before writing; sketches and fitted planes as flat surface bodies, since Fusion drops loose curves; each body a product named after its object (ADR-034) |
 | glTF / GLB | Blender | OCCT tessellation, then OCCT glTF writer | Chord deviation and angle, in mm and degrees |
 | OBJ | Blender, general | OCCT tessellation, then OCCT OBJ writer | Same tessellation settings |
 | STL | 3D printing | OCCT tessellation, then STL writer | Binary by default |
 | PLY / OBJ (raw mesh) | Exporting the repaired scan itself | Own writer from `TriMesh` | Unchanged mesh data |
 
-**Export acceptance.** Every STEP export is re-imported by OCCT in the test suite and must pass `BRepCheck_Analyzer` as one closed solid. At each milestone gate, the golden-set STEP files are also opened in Fusion 360 by hand, using a written checklist.
+**Export acceptance.** Every STEP export is re-imported by OCCT in the test suite and must pass `BRepCheck_Analyzer` as one closed solid (a file with sketches and planes too: each solid as one closed solid, each sketch or plane as its faces). At each milestone gate, the golden-set STEP files are also opened in Fusion 360 by hand, using a written checklist.
 
 IGES is a backlog item. Parasolid is a non-goal.
 
@@ -501,6 +501,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-031 | Commands that write files say so (`writesFiles`) and path parameters name their file types (`x-file-types`) | Accepted | The app logs file writes and builds its file dialogs from the schema; MCP stops calling them read-only; see `docs/adr/0031-file-writing-commands-and-file-types.md` |
 | ADR-032 | Flat areas are held on their plane inside the cage fit | Accepted | A scanned flat face comes out flat without trimming it as a primitive; see `docs/adr/0032-flat-areas-in-the-cage-fit.md` |
 | ADR-033 | Scanned fillets are reconstructed exactly, at a radius fitted to the scan | Accepted | Constant-radius fillets between analytic faces with Open CASCADE's `BRepFilletAPI_MakeFillet`; fillet modelling stays a non-goal; see `docs/adr/0033-fitted-fillets.md` |
+| ADR-034 | Sketches and fitted planes go to STEP as flat faces, each body a product named after its object | Accepted | Fusion 360 imports faces and solids only, not curves; `step.export`; see `docs/adr/0034-sketches-and-planes-in-step.md` |
 
 ## 15. Review log
 

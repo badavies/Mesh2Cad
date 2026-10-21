@@ -10,6 +10,7 @@
 #include <numbers>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "m2c/commands/Command.h"
@@ -533,6 +534,106 @@ void addSurfaceCommands(std::vector<Command>& out) {
         });
     exportStep.writesFiles = true;
     out.push_back(std::move(exportStep));
+
+    Command exportBodies = makeCommand(
+        "step.export",
+        "Write solids, sketches and fitted planes to one STEP AP242 file in millimetres, each as "
+        "its own body named after its object (Fusion 360 makes each a named component). Fusion "
+        "leaves loose curves out of a STEP file, so a sketch becomes flat faces bounded by its "
+        "loops (lines and arcs exact, a loop inside another a hole), and a plane a flat "
+        "rectangle over the region it was fitted to: surface bodies to sketch on, project from "
+        "or build construction planes on. Then reads the file back and checks every body. "
+        "Fails, writing nothing, if a solid is not valid, a sketch has an open loop or a "
+        "primitive is not a plane.",
+        R"({
+            "type":"object",
+            "properties":{
+                "ids":{"type":"array","items":{"type":"integer","x-object":["solid","sketch","primitive"],"minimum":0},"minItems":1,"description":"The solids, sketches and plane primitives, in the order they are written."},
+                "path":{"type":"string","x-file-types":["step","stp"],"description":"The .step or .stp file to write."}
+            },
+            "required":["ids","path"],"additionalProperties":false})",
+        false,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(path, requireString(params, "path"));
+            const std::filesystem::path file(*path);
+            if (!isStepPath(file)) {
+                return fail(ErrorCode::InvalidArgument, "the path must end in .step or .stp");
+            }
+            if (!params.contains("ids") || !params["ids"].is_array() || params["ids"].empty()) {
+                return fail(ErrorCode::InvalidArgument, "ids must list the objects to write");
+            }
+            std::vector<StepBody> bodies;
+            std::vector<DocumentObject> objects;
+            for (const Json& entry : params["ids"]) {
+                M2C_TRY(id, requireId(Json{{"id", entry}}, "id"));
+                const auto object = context.document.find(*id);
+                if (!object) {
+                    return fail(ErrorCode::NotFound,
+                                "object " + std::to_string(*id) + " not found");
+                }
+                for (const DocumentObject& seen : objects) {
+                    if (seen.id == object->id) {
+                        return fail(ErrorCode::InvalidArgument,
+                                    "object " + std::to_string(*id) + " is listed twice");
+                    }
+                }
+                if (object->solid() != nullptr) {
+                    bodies.push_back({.name = object->name, .shape = object->solid()->solid});
+                } else if (object->sketch() != nullptr) {
+                    bodies.push_back({.name = object->name, .shape = object->sketch()->sketch});
+                } else if (object->primitive() != nullptr) {
+                    auto outline = planeOutline(object->primitive()->fit);
+                    if (!outline) {
+                        return fail(ErrorCode::InvalidArgument,
+                                    "primitive " + std::to_string(*id) + ": " +
+                                        outline.error().message);
+                    }
+                    bodies.push_back({.name = object->name, .shape = std::move(*outline)});
+                } else {
+                    return fail(ErrorCode::InvalidArgument,
+                                "object " + std::to_string(*id) + " is a " + object->kind() +
+                                    ", not a solid, sketch or plane");
+                }
+                objects.push_back(*object);
+            }
+            M2C_TRY(faceCounts, writeStep(bodies, file));
+            M2C_TRY(reread, readStepBodies(file));
+            // Each body must come back as itself: a solid as one valid closed solid of the same
+            // volume, a sketch or plane as its faces and no solid.
+            bool passed = reread->size() == bodies.size();
+            double worstVolumeError = 0.0;
+            Json written = Json::array();
+            for (std::size_t k = 0; k < bodies.size(); ++k) {
+                const Solid* solid = std::get_if<Solid>(&bodies[k].shape);
+                const DocumentObject& object = objects[k];
+                const std::string kind = object.primitive() != nullptr ? "plane" : object.kind();
+                written.push_back(Json{{"id", object.id},
+                                       {"name", object.name},
+                                       {"kind", kind},
+                                       {"face_count", (*faceCounts)[k]}});
+                if (k >= reread->size()) continue;
+                const SolidSummary& back = (*reread)[k];
+                if (solid != nullptr) {
+                    const double expected = solid->summary().volumeMm3;
+                    const double error =
+                        std::abs(back.volumeMm3 - expected) / std::max(std::abs(expected), 1e-12);
+                    worstVolumeError = std::max(worstVolumeError, error);
+                    passed = passed && back.solidCount == 1 && back.closed && back.valid &&
+                             error <= kStepVolumeTolerance;
+                } else {
+                    passed = passed && back.solidCount == 0 && back.valid &&
+                             back.faceCount == (*faceCounts)[k];
+                }
+            }
+            return Json{{"path", *path},
+                        {"bodies", std::move(written)},
+                        {"check",
+                         {{"passed", passed},
+                          {"body_count", reread->size()},
+                          {"volume_error", worstVolumeError}}}};
+        });
+    exportBodies.writesFiles = true;
+    out.push_back(std::move(exportBodies));
 
     out.push_back(makeCommand(
         "solid.extrude",

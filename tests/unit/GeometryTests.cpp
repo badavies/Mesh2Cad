@@ -201,3 +201,33 @@ TEST_CASE("A primitive is drawn clipped to its region's box", "[core][primitive]
         .extent = {.min = {0, 0, 0}, .max = {1, 1, 1}}};
     CHECK_FALSE(primitiveDisplay(away).has_value());
 }
+
+TEST_CASE("A fitted plane is bounded by its region for export", "[core][primitive]") {
+    // The plane z = 5 over a 10 x 20 region: a rectangle on the plane, grown as it is drawn.
+    const FittedPrimitive plane{
+        .surface = {.kind = PrimitiveKind::Plane, .point = {3, 4, 5}, .direction = {0, 0, 1}},
+        .extent = {.min = {0, 0, 5}, .max = {10, 20, 5}}};
+    const auto outline = planeOutline(plane);
+    REQUIRE(outline.has_value());
+    CHECK(outline->plane.normal() == Vec3d{0, 0, 1});
+    REQUIRE(outline->loops.size() == 1);
+    const auto& curves = outline->loops.front().curves;
+    REQUIRE(curves.size() == 4);
+    const double m = 0.01 * std::sqrt(500.0);
+    double area = 0.0;
+    for (std::size_t k = 0; k < 4; ++k) {
+        CHECK(curves[k].kind == CurveKind::Line);
+        CHECK(curves[k].end() == curves[(k + 1) % 4].start()); // closed
+        area += cross(curves[k].start(), curves[k].end()) / 2.0;
+        const Vec3d world = outline->plane.toWorld(curves[k].start());
+        CHECK_THAT(world.z, WithinAbs(5.0, 1e-12));
+        CHECK(world.x >= -m - 1e-9);
+        CHECK(world.x <= 10.0 + m + 1e-9);
+    }
+    CHECK_THAT(area, WithinAbs((10 + 2 * m) * (20 + 2 * m), 1e-9)); // anticlockwise, positive
+
+    const FittedPrimitive cylinder{
+        .surface = {.kind = PrimitiveKind::Cylinder, .direction = {1, 0, 0}, .radiusMm = 4.0},
+        .extent = {.min = {0, -4, -4}, .max = {30, 4, 4}}};
+    CHECK(planeOutline(cylinder).error().code == ErrorCode::InvalidArgument);
+}

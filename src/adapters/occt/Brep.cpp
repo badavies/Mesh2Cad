@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <BRepBndLib.hxx>
@@ -46,12 +47,16 @@
 #include <Standard_Failure.hxx>
 #include <Standard_Handle.hxx>
 #include <Standard_Version.hxx>
+#include <StepBasic_Product.hxx>
+#include <StepData_StepModel.hxx>
+#include <TCollection_HAsciiString.hxx>
 #include <TopAbs_Orientation.hxx>
 #include <TopAbs_ShapeEnum.hxx>
 #include <TopExp.hxx>
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
@@ -247,21 +252,72 @@ Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
 
 Result<void>
 writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name) {
-    return guarded("STEP export", [&]() -> Result<void> {
-        if (!BRepCheck_Analyzer(solid.shape().shape).IsValid()) {
-            return fail(ErrorCode::InvalidState, "the solid is not valid; nothing was written");
+    const bool valid = guarded("checking the solid", [&]() -> Result<bool> {
+                           return BRepCheck_Analyzer(solid.shape().shape).IsValid();
+                       }).value_or(false);
+    if (!valid) return fail(ErrorCode::InvalidState, "the solid is not valid; nothing was written");
+    auto written = writeStep(std::vector{StepBody{.name = name, .shape = solid}}, path);
+    if (!written) return std::unexpected(written.error());
+    return {};
+}
+
+Result<std::vector<std::size_t>> writeStep(const std::vector<StepBody>& bodies,
+                                           const std::filesystem::path& path) {
+    if (bodies.empty()) return fail(ErrorCode::InvalidArgument, "there is nothing to write");
+    return guarded("STEP export", [&]() -> Result<std::vector<std::size_t>> {
+        // Every body is made and checked before anything is written.
+        std::vector<TopoDS_Shape> shapes;
+        std::vector<std::size_t> faceCounts;
+        for (const StepBody& body : bodies) {
+            TopoDS_Shape shape;
+            if (const Solid* solid = std::get_if<Solid>(&body.shape)) {
+                shape = solid->shape().shape;
+            } else {
+                auto faces = sketchFaces(std::get<Sketch>(body.shape));
+                if (!faces) {
+                    return fail(faces.error().code,
+                                "'" + body.name + "': " + faces.error().message);
+                }
+                TopoDS_Compound compound;
+                BRep_Builder builder;
+                builder.MakeCompound(compound);
+                for (const TopoDS_Face& face : *faces) builder.Add(compound, face);
+                shape = compound;
+            }
+            if (!BRepCheck_Analyzer(shape).IsValid()) {
+                return fail(ErrorCode::InvalidState,
+                            "'" + body.name + "' is not valid; nothing was written");
+            }
+            NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faces;
+            TopExp::MapShapes(shape, TopAbs_FACE, faces);
+            faceCounts.push_back(static_cast<std::size_t>(faces.Extent()));
+            shapes.push_back(shape);
         }
         STEPControl_Writer writer; // initialises the STEP parameters set below
         Interface_Static::SetCVal("write.step.schema", "AP242DIS");
         Interface_Static::SetCVal("write.step.unit", "MM");
-        Interface_Static::SetCVal("write.step.product.name", name.c_str());
-        if (writer.Transfer(solid.shape().shape, STEPControl_AsIs) != IFSelect_RetDone) {
-            return fail(ErrorCode::Internal, "Open CASCADE could not convert the solid to STEP");
+        for (std::size_t k = 0; k < shapes.size(); ++k) {
+            if (writer.Transfer(shapes[k], STEPControl_AsIs) != IFSelect_RetDone) {
+                return fail(ErrorCode::Internal,
+                            "Open CASCADE could not convert '" + bodies[k].name + "' to STEP");
+            }
+        }
+        // The writer names every product "Product <n>" (or the parameter's name and a number);
+        // give each, in the order they were transferred, its body's name as it is.
+        const opencascade::handle<StepData_StepModel> model = writer.Model();
+        std::size_t named = 0;
+        for (int e = 1; e <= model->NbEntities() && named < bodies.size(); ++e) {
+            const auto product = opencascade::handle<StepBasic_Product>::DownCast(model->Value(e));
+            if (product.IsNull()) continue;
+            const opencascade::handle<TCollection_HAsciiString> name =
+                new TCollection_HAsciiString(bodies[named++].name.c_str());
+            product->SetId(name);
+            product->SetName(name);
         }
         if (writer.Write(utf8(path).c_str()) != IFSelect_RetDone) {
             return fail(ErrorCode::Io, "could not write " + utf8(path));
         }
-        return {};
+        return faceCounts;
     });
 }
 
@@ -403,6 +459,19 @@ Result<SolidSummary> readStep(const std::filesystem::path& path) {
         }
         reader.TransferRoots();
         return summarise(reader.OneShape());
+    });
+}
+
+Result<std::vector<SolidSummary>> readStepBodies(const std::filesystem::path& path) {
+    return guarded("STEP import", [&]() -> Result<std::vector<SolidSummary>> {
+        STEPControl_Reader reader;
+        if (reader.ReadFile(utf8(path).c_str()) != IFSelect_RetDone) {
+            return fail(ErrorCode::Parse, "could not read " + utf8(path) + " as STEP");
+        }
+        reader.TransferRoots();
+        std::vector<SolidSummary> bodies;
+        for (int k = 1; k <= reader.NbShapes(); ++k) bodies.push_back(summarise(reader.Shape(k)));
+        return bodies;
     });
 }
 

@@ -71,8 +71,12 @@ TEST_CASE("Every path parameter names the file types it takes", "[commands]") {
 
 TEST_CASE("Commands that write files say so", "[commands]") {
     Session s;
-    const std::set<std::string> writers{
-        "deviation.report", "mesh.export", "project.save", "solid.export", "view.render"};
+    const std::set<std::string> writers{"deviation.report",
+                                        "mesh.export",
+                                        "project.save",
+                                        "solid.export",
+                                        "step.export",
+                                        "view.render"};
     for (const Command* c : s.registry.list()) {
         CAPTURE(c->name);
         CHECK(c->writesFiles == writers.contains(c->name));

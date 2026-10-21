@@ -43,6 +43,16 @@ open the translated design. Do not use **Insert > Insert Mesh**, which reads mes
 | 10 | Section | **Inspect > Section Analysis** on an origin plane shows a closed, filled section. |
 | 11 | Responsiveness | Orbit, select and the timeline stay usable (no multi-second pauses). |
 
+## Sketches and planes (`step.export`)
+
+When the file comes from `step.export` with sketches or fitted planes as well as the solid (ADR-034), the browser shows one component per object, named after it: the solid's holds a body, and each sketch's or plane's holds a surface body (Fusion drops loose curves from STEP, so they arrive as flat faces). Check 2 above then expects those components too.
+
+| # | Check | Pass when |
+|---|---|---|
+| 12 | Components | One component per exported object, each named as the object is in Mesh2Cad. |
+| 13 | Sketch faces | **Create Sketch** on a sketch's face, then **Project** its edges: lines and arcs come in as lines and arcs (not splines), and the profile matches the section. |
+| 14 | Planes | **Construct > Offset Plane** at 0 from a plane's face gives a construction plane where the fitted plane was. |
+
 ## Recording the result
 
 For each file give: the scan, the Mesh2Cad commit, the Fusion 360 version, the face count and

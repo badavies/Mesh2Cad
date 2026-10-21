@@ -55,7 +55,9 @@ target.
     removed), sewing, an outward solid (`ShapeFix_Solid`) and the kernel's checker; fails unless
     the result is one valid closed solid.
   - `writeStep` (AP242, millimetres, checks the solid first) and `readStep`, which summarises
-    a STEP file as a `SolidSummary`.
+    a STEP file as a `SolidSummary`. `writeStep` also takes several `StepBody`s (solids and
+    sketches, a sketch as the planar faces of its loops) and names each product after its
+    body; `readStepBodies` summarises each body of a file on its own (ADR-034).
 - `m2c/adapters/occt/Surface.h` (namespace `m2c::occt`):
   - `surfaceDistances`: distances from points to a fitted primitive made as an unbounded Open
     CASCADE surface (`Geom_Plane`, `Geom_CylindricalSurface`, `Geom_SphericalSurface`,
