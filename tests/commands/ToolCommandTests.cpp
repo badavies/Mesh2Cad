@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -12,10 +13,12 @@
 #include <map>
 #include <numbers>
 #include <string>
+#include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/commands/Command.h"
+#include "m2c/core/Base64.h"
 #include "m2c/core/SelectionColors.h"
 #include "m2c/io/MeshIO.h"
 
@@ -443,6 +446,155 @@ TEST_CASE("view.render colours each listed selection as the app does", "[command
     CHECK(single["color_legend"][0]["rgb"] == Json::array({1.0, 0.5, 0.1}));
     CHECK(s.run("view.render", {{"path", path.string()}})["color_legend"].empty());
     CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}, {"selection_ids", {box}}}));
+}
+
+namespace {
+
+/// The bounds, in pixels, of the faces marked orange: {min x, min y, max x, max y}.
+std::array<int, 4> orangeBounds(const Image& image) {
+    std::array<int, 4> b{image.width, image.height, -1, -1};
+    for (int y = 0; y < image.height; ++y) {
+        for (int x = 0; x < image.width; ++x) {
+            const Rgb p = image.at(x, y);
+            if (p.r > 0.3 && p.r > p.b + 0.25 && p.g < 0.75 * p.r) {
+                b = {std::min(b[0], x), std::min(b[1], y), std::max(b[2], x), std::max(b[3], y)};
+            }
+        }
+    }
+    return b;
+}
+
+} // namespace
+
+TEST_CASE("view.render frames an object and draws axes", "[commands][render]") {
+    Session s;
+    const TempDir dir;
+    const auto path = dir.path() / "focus.png";
+    const ObjectId box = s.import(dir, makeBox(200, 200, 200, 20), "big");
+    // A small patch near the middle of the top face.
+    const Json patch =
+        s.run("select.brush", {{"id", box}, {"center", {100, 100, 200}}, {"radius_mm", 6}});
+    const Json sel = patch["selection_id"];
+    const auto cover = [&](const Json& extra) {
+        Json params{
+            {"path", path.string()}, {"width", 400}, {"height", 300}, {"selection_id", sel}};
+        params.update(extra);
+        s.run("view.render", params);
+        const auto image = readPng(path);
+        REQUIRE(image.has_value());
+        const auto b = orangeBounds(*image);
+        REQUIRE(b[2] >= b[0]);
+        return std::max(static_cast<double>(b[2] - b[0] + 1) / image->width,
+                        static_cast<double>(b[3] - b[1] + 1) / image->height);
+    };
+    CHECK(cover(Json::object()) < 0.10);
+    CHECK(cover({{"focus_id", sel}}) >= 0.40);
+
+    // An unknown object fails and writes nothing.
+    const auto other = dir.path() / "none.png";
+    const auto missing = s.tryRun("view.render", {{"path", other.string()}, {"focus_id", 999}});
+    REQUIRE_FALSE(missing);
+    CHECK(missing.error().code == ErrorCode::NotFound);
+    CHECK_FALSE(std::filesystem::exists(other));
+
+    // The triad: red, green and blue in the bottom-left corner; without it, the picture as before.
+    const auto bytes = [](const std::filesystem::path& p) {
+        std::ifstream file(p, std::ios::binary);
+        return std::string{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    };
+    s.run("view.render", {{"path", path.string()}});
+    const std::string plain = bytes(path);
+    s.run("view.render", {{"path", path.string()}, {"axes", false}});
+    CHECK(bytes(path) == plain);
+    s.run("view.render", {{"path", path.string()}, {"axes", true}});
+    const auto image = readPng(path);
+    REQUIRE(image.has_value());
+    bool red = false, green = false, blue = false;
+    for (int y = image->height * 85 / 100; y < image->height; ++y) {
+        for (int x = 0; x < image->width * 15 / 100; ++x) {
+            const Rgb p = image->at(x, y);
+            red = red || (p.r > 0.8 && p.g < 0.4 && p.b < 0.4);
+            green = green || (p.g > 0.7 && p.r < 0.5 && p.b < 0.5);
+            blue = blue || (p.b > 0.85 && p.r < 0.45 && p.g < 0.65);
+        }
+    }
+    CHECK(red);
+    CHECK(green);
+    CHECK(blue);
+}
+
+TEST_CASE("view.render quad is four views at one scale", "[commands][render]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId box = s.import(dir, makeBox(30, 20, 10, 4), "box");
+    s.run("sketch.section", {{"id", box}, {"plane", "xy"}, {"offset_mm", 5}});
+    const auto quadPath = dir.path() / "quad.png";
+    const Json quad =
+        s.run("view.render",
+              {{"path", quadPath.string()}, {"view", "quad"}, {"width", 200}, {"height", 160}});
+    REQUIRE(quad["panels"].size() == 4);
+    const auto sheet = readPng(quadPath);
+    REQUIRE(sheet.has_value());
+    REQUIRE(sheet->width == 200);
+    REQUIRE(sheet->height == 160);
+    // Each panel is the single view at half the size with the same (sphere) framing, apart from
+    // its label in the top-left corner.
+    const std::array<const char*, 4> views{"front", "right", "top", "iso"};
+    for (std::size_t k = 0; k < views.size(); ++k) {
+        CAPTURE(views[k]);
+        const Json& panel = quad["panels"][k];
+        CHECK(panel["view"] == views[k]);
+        const auto single = dir.path() / "single.png";
+        s.run("view.render",
+              {{"path", single.string()},
+               {"view", views[k]},
+               {"framing", "sphere"},
+               {"width", 100},
+               {"height", 80}});
+        const auto view = readPng(single);
+        REQUIRE(view.has_value());
+        const int left = panel["x"].get<int>(), top = panel["y"].get<int>();
+        int differing = 0, labelled = 0;
+        for (int y = 0; y < 80; ++y) {
+            for (int x = 0; x < 100; ++x) {
+                const Rgb a = sheet->at(left + x, top + y), b = view->at(x, y);
+                const bool same = a.r == b.r && a.g == b.g && a.b == b.b;
+                if (x < 4 + 6 * 5 && y < 4 + 7) {
+                    labelled += same ? 0 : 1;
+                } else {
+                    differing += same ? 0 : 1;
+                }
+            }
+        }
+        CHECK(differing == 0);
+        CHECK(labelled > 0);
+    }
+
+    // Odd sizes are refused rather than rounded.
+    const auto odd =
+        s.tryRun("view.render", {{"path", quadPath.string()}, {"view", "quad"}, {"width", 201}});
+    REQUIRE_FALSE(odd);
+    CHECK(odd.error().code == ErrorCode::InvalidArgument);
+    CHECK_FALSE(s.tryRun(
+        "view.render", {{"path", quadPath.string()}, {"view", "quad"}, {"direction", {1, 0, 0}}}));
+}
+
+TEST_CASE("view.render without a path returns the picture", "[commands][render]") {
+    Session s;
+    const TempDir dir;
+    s.import(dir, makeBox(30, 20, 10, 4), "box");
+    const auto path = dir.path() / "view.png";
+    const Json written =
+        s.run("view.render", {{"path", path.string()}, {"width", 64}, {"height", 48}});
+    CHECK(written["path"] == path.string());
+    CHECK(written["image"] == Json{{"path", path.string()}, {"mime_type", "image/png"}});
+    const Json returned = s.run("view.render", {{"width", 64}, {"height", 48}});
+    CHECK_FALSE(returned.contains("path"));
+    CHECK(returned["image"]["mime_type"] == "image/png");
+    std::ifstream file(path, std::ios::binary);
+    const std::vector<std::uint8_t> bytes{std::istreambuf_iterator<char>(file),
+                                          std::istreambuf_iterator<char>()};
+    CHECK(returned["image"]["data_base64"] == encodeBase64(bytes));
 }
 
 TEST_CASE("Selections, face deletion and datum alignment through commands", "[commands][align]") {

@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "m2c/core/TriMesh.h"
@@ -28,13 +29,25 @@ struct Image {
     [[nodiscard]] Rgb at(int x, int y) const;
 };
 
+/// How a Raster frames its box: tightly around the box's corners as seen from the view, or
+/// around the box's bounding sphere, which gives the same scale and centre from every direction.
+enum class Framing {
+    Box,
+    Sphere
+};
+
 class Raster {
 public:
     /// Looks at `box` from the direction `from` (towards the camera, any length) with `up` pointing
     /// up the picture, framing the box with a margin. Precondition: width and height are positive,
     /// from is not zero and not along up.
-    Raster(
-        int width, int height, const Aabb& box, const Vec3d& from, const Vec3d& up, Rgb background);
+    Raster(int width,
+           int height,
+           const Aabb& box,
+           const Vec3d& from,
+           const Vec3d& up,
+           Rgb background,
+           Framing framing = Framing::Box);
 
     /// Triangles with front faces in `front`, or `vertexColors` (one per position) blended across
     /// them, back faces in `back`, and faces with a nonzero `marks` entry (one per face) mixed
@@ -54,6 +67,14 @@ public:
                std::span<const std::uint32_t> segments,
                Rgb color,
                bool onTop);
+
+    /// The world axes as seen from the view, X red, Y green and Z blue as in the app, in the
+    /// bottom-left corner (within 15% of the width and height), over everything.
+    void axisTriad();
+
+    /// Upper-case text in a 5 x 7 pixel font, `scale` pixels per font pixel, from its top-left
+    /// corner. Only the letters A to Z and spaces are drawn; anything else leaves a gap.
+    void label(int x, int y, std::string_view text, Rgb color, int scale = 1);
 
     [[nodiscard]] const Image& image() const noexcept { return image_; }
 

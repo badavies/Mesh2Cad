@@ -2,7 +2,9 @@
 // view.render: a picture of the document for agents, which see no viewport.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -11,6 +13,7 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
+#include "m2c/core/Base64.h"
 #include "m2c/core/DeviationColors.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Raster.h"
@@ -35,6 +38,7 @@ constexpr Rgb kBack{0.72, 0.30, 0.30};
 constexpr Rgb kCage{0.95, 0.60, 0.20};
 constexpr Rgb kSketch{0.30, 0.85, 0.95};
 constexpr Rgb kHighlight{1.00, 0.82, 0.25};
+constexpr Rgb kLabel{0.85, 0.86, 0.88};
 
 struct View {
     Vec3d from;
@@ -87,44 +91,164 @@ std::vector<Rgb> deviationColors(const std::vector<DocumentObject>& objects, Obj
     return out;
 }
 
+/// The bounds of any object, for focus_id: a selection's faces, a deviation's mesh, a
+/// measurement's two points. None when it has nothing to frame (an empty selection).
+std::optional<Aabb> objectBounds(const Document& document, const DocumentObject& o) {
+    if (const MeshData* m = o.mesh()) return m->mesh->bounds();
+    if (const SolidData* s = o.solid()) return s->solid.display().bounds();
+    if (const PrimitiveData* p = o.primitive(); p && p->display) return p->display->bounds();
+    if (const QuadLayoutData* q = o.quadLayout()) return q->cage.bounds();
+    if (const SketchData* k = o.sketch()) {
+        const SketchLines lines = sketchLines(k->sketch);
+        if (lines.points.empty()) return std::nullopt;
+        return pointsBox(lines.points);
+    }
+    if (const MeasurementData* m = o.measurement())
+        return pointsBox({m->measurement.a.position, m->measurement.b.position});
+    const ObjectId meshId = o.selection() != nullptr   ? o.selection()->meshId
+                            : o.deviation() != nullptr ? o.deviation()->meshId
+                                                       : 0;
+    const auto mesh = document.find(meshId);
+    if (!mesh || mesh->mesh() == nullptr) return std::nullopt;
+    const TriMesh& m = *mesh->mesh()->mesh;
+    if (o.deviation() != nullptr) return m.bounds();
+    std::vector<Vec3d> points;
+    for (const std::uint32_t f : o.selection()->faces->indices()) {
+        for (std::size_t k = 0; k < 3; ++k) points.push_back(m.positions()[m.indices()[3 * f + k]]);
+    }
+    if (points.empty()) return std::nullopt;
+    return pointsBox(points);
+}
+
+/// What view.render draws, gathered once and drawn into each picture (four for a quad).
+struct Scene {
+    std::vector<DocumentObject> objects;
+    std::vector<SketchLines> sketches; ///< One per object, empty for anything but a sketch.
+    std::vector<SelectionRef> marked;  ///< Mark k + 2 is marked[k]; the current one is mark 1.
+    std::vector<Rgb> markColors;
+    bool current{false}; ///< The last of `marked` is selection_id.
+    std::optional<ObjectId> highlight;
+    double diagonal{0.0};
+};
+
+/// Draws the scene as the app does and returns the ids drawn: meshes, then solids and
+/// primitives over the scan they were fitted to, then edges, then sketches over everything (a
+/// section lies inside its mesh).
+Json draw(Raster& raster, const Scene& scene) {
+    Json drawn = Json::array();
+    const auto color = [&](const DocumentObject& o, Rgb base) {
+        return scene.highlight && *scene.highlight == o.id ? kHighlight : base;
+    };
+    const std::vector<DocumentObject>& objects = scene.objects;
+    for (const DocumentObject& o : objects) {
+        const MeshData* m = o.mesh();
+        if (!o.visible || m == nullptr) continue;
+        // Later marks win, so selection_id (last) shows over the listed selections.
+        std::vector<std::uint8_t> marks;
+        for (std::size_t k = 0; k < scene.marked.size(); ++k) {
+            if (scene.marked[k].meshId != o.id) continue;
+            marks.resize(m->mesh->faceCount());
+            const bool current = scene.current && k + 1 == scene.marked.size();
+            const auto mark = static_cast<std::uint8_t>(current ? 1 : k + 2);
+            for (const std::uint32_t f : scene.marked[k].faces->indices()) marks[f] = mark;
+        }
+        std::vector<Rgb> colors = deviationColors(objects, o.id);
+        if (scene.highlight && *scene.highlight == o.id) colors.clear();
+        raster.triangles(m->mesh->positions(),
+                         m->mesh->indices(),
+                         color(o, kMesh),
+                         kBack,
+                         colors,
+                         marks,
+                         0.0,
+                         scene.markColors);
+        drawn.push_back(o.id);
+    }
+    for (const DocumentObject& o : objects) {
+        if (!o.visible) continue;
+        const TriMesh* surface = nullptr;
+        Rgb base = kSolid;
+        if (const SolidData* s = o.solid()) surface = &s->solid.display();
+        if (const PrimitiveData* p = o.primitive()) {
+            surface = p->display.get();
+            base = kPrimitive;
+        }
+        if (surface == nullptr) continue;
+        // A primitive's patch is one-sided: draw its back in its own colour too.
+        const Rgb c = color(o, base);
+        raster.triangles(surface->positions(),
+                         surface->indices(),
+                         c,
+                         o.primitive() != nullptr ? c : kBack,
+                         {},
+                         {},
+                         1e-3 * scene.diagonal);
+        drawn.push_back(o.id);
+    }
+    for (const DocumentObject& o : objects) {
+        if (!o.visible || o.quadLayout() == nullptr) continue;
+        const QuadLayout& cage = o.quadLayout()->cage;
+        raster.lines(cage.positions(), cageEdges(cage), color(o, kCage), false);
+        drawn.push_back(o.id);
+    }
+    for (std::size_t i = 0; i < objects.size(); ++i) {
+        if (!objects[i].visible || scene.sketches[i].points.empty()) continue;
+        raster.lines(
+            scene.sketches[i].points, scene.sketches[i].segments, color(objects[i], kSketch), true);
+        drawn.push_back(objects[i].id);
+    }
+    return drawn;
+}
+
+Json unitJson(const Vec3d& v) {
+    return toJson(v * (1.0 / length(v)));
+}
+
 } // namespace
 
 void addViewCommands(std::vector<Command>& out) {
     Command render = makeCommand(
         "view.render",
-        "Draw the visible objects to a PNG file, as the app's viewport shows them, so an agent "
-        "can see the document: meshes grey (red where a back face shows, deviation colours "
-        "when a deviation of the mesh is visible), solids blue, primitives green, quad layout "
-        "edges orange and sketches cyan over everything. selection_id marks a selection's "
-        "faces orange, selection_ids marks each listed selection in its own colour (the app's, "
-        "listed in color_legend), and highlight_id draws one object yellow. The view is "
-        "orthographic and "
-        "framed on what is drawn. Needs no GPU or display. Over MCP the picture is also "
-        "returned as an image.",
+        "Draw the visible objects as the app's viewport shows them, so an agent can see the "
+        "document: meshes grey (red where a back face shows, deviation colours when a deviation "
+        "of the mesh is visible), solids blue, primitives green, quad layout edges orange and "
+        "sketches cyan over everything. selection_id marks a selection's faces orange, "
+        "selection_ids marks each listed selection in its own colour (the app's, listed in "
+        "color_legend), and highlight_id draws one object yellow. The view is orthographic and "
+        "framed on what is drawn, or on focus_id with 20% padding; view quad is a 2 x 2 sheet of "
+        "front, right, top and iso, labelled, all at one scale (framing sphere). With path the "
+        "PNG is written there; without it nothing is written and the result carries the PNG as "
+        "image.data_base64. Needs no GPU or display. Over MCP the picture is also returned as an "
+        "image.",
         R"({
             "type":"object",
             "properties":{
-                "path":{"type":"string","x-file-types":["png"],"description":"PNG file to write."},
-                "view":{"type":"string","enum":["iso","front","back","left","right","top","bottom"],"default":"iso"},
+                "path":{"type":"string","x-file-types":["png"],"description":"PNG file to write; without it the picture is returned in the result instead."},
+                "view":{"type":"string","enum":["iso","front","back","left","right","top","bottom","quad"],"default":"iso","description":"A standard view, or quad: front, right, top and iso in one picture (width and height must be even)."},
                 "direction":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,"description":"From the part towards the camera, instead of a standard view."},
                 "width":{"type":"integer","minimum":16,"maximum":4096,"default":800},
                 "height":{"type":"integer","minimum":16,"maximum":4096,"default":600},
+                "framing":{"type":"string","enum":["box","sphere"],"default":"box","description":"box fits the view tightly; sphere frames the bounding sphere, the same scale and centre from every direction (as each quad panel does)."},
+                "focus_id":{"type":"integer","x-object":"any","minimum":0,"description":"Frame this object's bounds with 20% padding, still drawing everything visible."},
+                "axes":{"type":"boolean","default":false,"description":"Draw an X (red), Y (green), Z (blue) triad in the bottom-left corner."},
                 "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"A selection whose faces are marked orange."},
                 "selection_ids":{"type":"array","items":{"type":"integer","x-object":"selection","minimum":0},"maxItems":254,"description":"Selections whose faces are marked, each in its own colour; selection_id wins where they overlap."},
                 "highlight_id":{"type":"integer","x-object":"any","minimum":0,"description":"An object drawn in yellow."}
             },
-            "required":["path"],"additionalProperties":false})",
+            "additionalProperties":false})",
         false,
         [](CommandContext& context, const Json& params) -> Result<Json> {
-            M2C_TRY(path, requireString(params, "path"));
+            M2C_TRY(path, optionalString(params, "path"));
             M2C_TRY(viewName, optionalString(params, "view"));
-            const auto chosen = standardView(viewName->value_or("iso"));
+            const bool quad = viewName->value_or("iso") == "quad";
+            const auto chosen = standardView(quad ? "iso" : viewName->value_or("iso"));
             if (!chosen) {
                 return fail(ErrorCode::InvalidArgument,
-                            "view must be iso, front, back, left, right, top or bottom");
+                            "view must be iso, front, back, left, right, top, bottom or quad");
             }
             View view = *chosen;
             if (params.contains("direction")) {
+                if (quad) return fail(ErrorCode::InvalidArgument, "a quad view takes no direction");
                 M2C_TRY(from, requireVec3(params, "direction"));
                 if (!(length(*from) > 0.0)) {
                     return fail(ErrorCode::InvalidArgument, "direction must not be zero");
@@ -135,11 +259,24 @@ void addViewCommands(std::vector<Command>& out) {
             }
             M2C_TRY(width, optionalInteger(params, "width", 800, 16, 4096));
             M2C_TRY(height, optionalInteger(params, "height", 600, 16, 4096));
+            if (quad && (*width % 2 != 0 || *height % 2 != 0 || *width < 32 || *height < 32)) {
+                return fail(ErrorCode::InvalidArgument,
+                            "a quad view needs an even width and height of at least 32");
+            }
+            M2C_TRY(framingName, optionalString(params, "framing"));
+            if (*framingName && **framingName != "box" && **framingName != "sphere")
+                return fail(ErrorCode::InvalidArgument, "framing must be box or sphere");
+            const Framing framing =
+                quad || framingName->value_or("box") == "sphere" ? Framing::Sphere : Framing::Box;
+            M2C_TRY(axes, optionalBool(params, "axes", false));
+            M2C_TRY(focusId, optionalId(params, "focus_id"));
             M2C_TRY(selection, optionalSelection(context, params, "selection_id"));
             M2C_TRY(highlight, optionalId(params, "highlight_id"));
+
+            Scene scene;
+            scene.highlight = *highlight;
             // Marks: 1 is selection_id in orange, 2 onwards the listed selections' colours.
-            std::vector<SelectionRef> marked;
-            std::vector<Rgb> markColors{kCurrentSelectionColor};
+            scene.markColors.push_back(kCurrentSelectionColor);
             Json legend = Json::array();
             if (params.contains("selection_ids")) {
                 const Json& ids = params["selection_ids"];
@@ -149,24 +286,25 @@ void addViewCommands(std::vector<Command>& out) {
                 }
                 for (const Json& id : ids) {
                     M2C_TRY(ref, requireSelection(context, Json{{"id", id}}, "id"));
-                    const Rgb c = selectionColor(ref->id);
-                    marked.push_back(std::move(*ref));
-                    markColors.push_back(c);
+                    scene.markColors.push_back(selectionColor(ref->id));
+                    scene.marked.push_back(std::move(*ref));
                 }
             }
             if (*selection) {
-                marked.push_back(**selection);
-                markColors.push_back(kCurrentSelectionColor);
+                scene.marked.push_back(**selection);
+                scene.markColors.push_back(kCurrentSelectionColor);
+                scene.current = true;
             }
-            for (std::size_t k = 0; k < marked.size(); ++k) {
-                const auto object = context.document.find(marked[k].id);
-                const Rgb& c = markColors[k + 1];
-                legend.push_back({{"id", marked[k].id},
+            for (std::size_t k = 0; k < scene.marked.size(); ++k) {
+                const auto object = context.document.find(scene.marked[k].id);
+                const Rgb& c = scene.markColors[k + 1];
+                legend.push_back({{"id", scene.marked[k].id},
                                   {"name", object ? object->name : std::string()},
                                   {"rgb", Json::array({c.r, c.g, c.b})}});
             }
 
-            const std::vector<DocumentObject> objects = context.document.objects();
+            scene.objects = context.document.objects();
+            const std::vector<DocumentObject>& objects = scene.objects;
             std::optional<Aabb> box;
             const auto add = [&](const Aabb& b) {
                 if (box) {
@@ -175,7 +313,7 @@ void addViewCommands(std::vector<Command>& out) {
                     box = b;
                 }
             };
-            std::vector<SketchLines> sketches(objects.size());
+            scene.sketches.resize(objects.size());
             for (std::size_t i = 0; i < objects.size(); ++i) {
                 const DocumentObject& o = objects[i];
                 if (!o.visible) continue;
@@ -185,91 +323,97 @@ void addViewCommands(std::vector<Command>& out) {
                     add(p->display->bounds());
                 if (const QuadLayoutData* q = o.quadLayout()) add(q->cage.bounds());
                 if (const SketchData* s = o.sketch()) {
-                    sketches[i] = sketchLines(s->sketch);
-                    if (!sketches[i].points.empty()) add(pointsBox(sketches[i].points));
+                    scene.sketches[i] = sketchLines(s->sketch);
+                    if (!scene.sketches[i].points.empty()) add(pointsBox(scene.sketches[i].points));
                 }
             }
             if (!box) return fail(ErrorCode::InvalidState, "nothing visible to draw");
+            scene.diagonal = length(box->max - box->min);
+            Aabb frame = *box;
+            if (*focusId) {
+                const auto focus = context.document.find(**focusId);
+                if (!focus) {
+                    return fail(ErrorCode::NotFound,
+                                "no object with id " + std::to_string(**focusId));
+                }
+                const auto bounds = objectBounds(context.document, *focus);
+                if (!bounds) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "object " + std::to_string(**focusId) + " has nothing to frame");
+                }
+                // 20% padding: 10% of the size on each side, at least a millimetre in all.
+                const Vec3d centre = (bounds->min + bounds->max) * 0.5;
+                const Vec3d half = (bounds->max - bounds->min) * 0.6;
+                const double floor = std::max(0.5, 0.1 * length(half));
+                const Vec3d pad{
+                    std::max(half.x, floor), std::max(half.y, floor), std::max(half.z, floor)};
+                frame = Aabb{.min = centre - pad, .max = centre + pad};
+            }
 
-            Raster raster(static_cast<int>(*width),
-                          static_cast<int>(*height),
-                          *box,
-                          view.from,
-                          view.up,
-                          kBackground);
-            const double diagonal = length(box->max - box->min);
-            Json drawn = Json::array();
-            const auto color = [&](const DocumentObject& o, Rgb base) {
-                return *highlight && **highlight == o.id ? kHighlight : base;
-            };
-            // Meshes, then solids and primitives over the scan they were fitted to, then edges,
-            // then sketches over everything (a section lies inside its mesh).
-            for (const DocumentObject& o : objects) {
-                const MeshData* m = o.mesh();
-                if (!o.visible || m == nullptr) continue;
-                // Later marks win, so selection_id (last) shows over the listed selections.
-                std::vector<std::uint8_t> marks;
-                for (std::size_t k = 0; k < marked.size(); ++k) {
-                    if (marked[k].meshId != o.id) continue;
-                    marks.resize(m->mesh->faceCount());
-                    const bool current = *selection && k + 1 == marked.size();
-                    const auto mark = static_cast<std::uint8_t>(current ? 1 : k + 2);
-                    for (const std::uint32_t f : marked[k].faces->indices()) marks[f] = mark;
+            Image picture;
+            Json drawn;
+            Json result = Json::object();
+            if (!quad) {
+                Raster raster(static_cast<int>(*width),
+                              static_cast<int>(*height),
+                              frame,
+                              view.from,
+                              view.up,
+                              kBackground,
+                              framing);
+                drawn = draw(raster, scene);
+                if (*axes) raster.axisTriad();
+                picture = raster.image();
+                result["view_direction"] = unitJson(view.from);
+            } else {
+                // Front, right / top, iso; each panel is the single view at half the size.
+                const int w = static_cast<int>(*width) / 2, h = static_cast<int>(*height) / 2;
+                picture = Image{.width = 2 * w,
+                                .height = 2 * h,
+                                .rgb = std::vector<std::uint8_t>(12 * static_cast<std::size_t>(w) *
+                                                                 static_cast<std::size_t>(h))};
+                Json panels = Json::array();
+                const std::array<const char*, 4> names{"front", "right", "top", "iso"};
+                for (std::size_t k = 0; k < names.size(); ++k) {
+                    const View v = *standardView(names[k]);
+                    Raster raster(w, h, frame, v.from, v.up, kBackground, Framing::Sphere);
+                    drawn = draw(raster, scene);
+                    if (*axes) raster.axisTriad();
+                    std::string label = names[k];
+                    for (char& c : label) c = static_cast<char>(c - 'a' + 'A');
+                    raster.label(4, 4, label, kLabel, h >= 200 ? 2 : 1);
+                    const int left = (k % 2 == 0 ? 0 : w), top = (k < 2 ? 0 : h);
+                    const Image& panel = raster.image();
+                    for (int y = 0; y < h; ++y) {
+                        std::copy_n(panel.rgb.begin() + 3 * static_cast<std::ptrdiff_t>(y) * w,
+                                    3 * w,
+                                    picture.rgb.begin() +
+                                        3 * (static_cast<std::ptrdiff_t>(top + y) * 2 * w + left));
+                    }
+                    panels.push_back({{"view", names[k]},
+                                      {"x", left},
+                                      {"y", top},
+                                      {"width", w},
+                                      {"height", h},
+                                      {"view_direction", unitJson(v.from)}});
                 }
-                std::vector<Rgb> colors = deviationColors(objects, o.id);
-                if (*highlight && **highlight == o.id) colors.clear();
-                raster.triangles(m->mesh->positions(),
-                                 m->mesh->indices(),
-                                 color(o, kMesh),
-                                 kBack,
-                                 colors,
-                                 marks,
-                                 0.0,
-                                 markColors);
-                drawn.push_back(o.id);
+                result["panels"] = std::move(panels);
             }
-            for (const DocumentObject& o : objects) {
-                if (!o.visible) continue;
-                const TriMesh* surface = nullptr;
-                Rgb base = kSolid;
-                if (const SolidData* s = o.solid()) surface = &s->solid.display();
-                if (const PrimitiveData* p = o.primitive()) {
-                    surface = p->display.get();
-                    base = kPrimitive;
-                }
-                if (surface == nullptr) continue;
-                // A primitive's patch is one-sided: draw its back in its own colour too.
-                const Rgb c = color(o, base);
-                raster.triangles(surface->positions(),
-                                 surface->indices(),
-                                 c,
-                                 o.primitive() != nullptr ? c : kBack,
-                                 {},
-                                 {},
-                                 1e-3 * diagonal);
-                drawn.push_back(o.id);
+            result["width"] = *width;
+            result["height"] = *height;
+            result["drawn_ids"] = std::move(drawn);
+            result["color_legend"] = std::move(legend);
+            if (*path) {
+                M2C_TRY(written, writePng(picture, **path));
+                result["path"] = **path;
+                result["image"] = {{"path", **path}, {"mime_type", "image/png"}};
+            } else {
+                M2C_TRY(png, encodePng(picture));
+                result["image"] = {{"data_base64", encodeBase64(*png)}, {"mime_type", "image/png"}};
             }
-            for (const DocumentObject& o : objects) {
-                if (!o.visible || o.quadLayout() == nullptr) continue;
-                const QuadLayout& cage = o.quadLayout()->cage;
-                raster.lines(cage.positions(), cageEdges(cage), color(o, kCage), false);
-                drawn.push_back(o.id);
-            }
-            for (std::size_t i = 0; i < objects.size(); ++i) {
-                if (!objects[i].visible || sketches[i].points.empty()) continue;
-                raster.lines(
-                    sketches[i].points, sketches[i].segments, color(objects[i], kSketch), true);
-                drawn.push_back(objects[i].id);
-            }
-            M2C_TRY(written, writePng(raster.image(), *path));
-            return Json{{"path", *path},
-                        {"width", *width},
-                        {"height", *height},
-                        {"view_direction", toJson(view.from * (1.0 / length(view.from)))},
-                        {"drawn_ids", std::move(drawn)},
-                        {"color_legend", std::move(legend)},
-                        {"image", {{"path", *path}, {"mime_type", "image/png"}}}};
+            return result;
         });
+    // Only with a path (ADR-031, amended): without one the picture comes back in the result.
     render.writesFiles = true;
     out.push_back(std::move(render));
 }

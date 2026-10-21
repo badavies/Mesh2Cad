@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -161,6 +162,31 @@ TEST_CASE("MCP server lists commands as tools and calls them", "[mcp]") {
     CHECK(content[1]["type"] == "image");
     CHECK(content[1]["mimeType"] == "image/png");
     CHECK(content[1]["data"].get<std::string>().starts_with("iVBORw0KGgo"));
+
+    // Without a path the picture comes back in the result, as an image block only, and no file
+    // is written anywhere near.
+    const auto listing = [] {
+        std::vector<std::filesystem::path> names;
+        for (const auto& entry :
+             std::filesystem::directory_iterator(std::filesystem::current_path()))
+            names.push_back(entry.path());
+        std::ranges::sort(names);
+        return names;
+    };
+    const auto before = listing();
+    const Json inline_ = *mcp.handle(
+        request(9,
+                "tools/call",
+                {{"name", "view_render"}, {"arguments", {{"width", 32}, {"height", 32}}}}));
+    const Json& parts = inline_["result"]["content"];
+    REQUIRE(parts.size() == 2);
+    CHECK(parts[1]["type"] == "image");
+    CHECK(parts[1]["mimeType"] == "image/png");
+    CHECK(parts[1]["data"].get<std::string>().starts_with("iVBORw0KGgo")); // \x89PNG\r\n\x1a\n
+    CHECK_FALSE(inline_["result"]["structuredContent"]["image"].contains("data_base64"));
+    CHECK(parts[0]["text"].get<std::string>().find("data_base64") == std::string::npos);
+    CHECK_FALSE(inline_["result"]["structuredContent"].contains("path"));
+    CHECK(listing() == before);
 
     // A tool without parameters may be sent null arguments.
     const Json listed =
