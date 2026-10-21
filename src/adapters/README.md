@@ -30,7 +30,9 @@ target.
 - `m2c/adapters/osd/Subdivision.h` (namespace `m2c::osd`):
   - `fitCage` with `CageFitParams` and `CageFitResult`: moves the cage vertices so the
     Catmull-Clark limit surface follows a mesh (point-to-plane least squares through the limit
-    stencils, with smoothing; mesh points beyond a distance gate are left out).
+    stencils, with smoothing; mesh points beyond a distance gate are left out; `HeldPlane`s keep
+    chosen vertices on a plane, so the limit surface is flat where all of a patch's vertices are
+    held).
   - `extractPatches` with `PatchParams` and `PatchResult`: the limit surface as one
     `SurfacePatch` per ptex face, exact bicubics where the cage is regular and caps fitted to
     OpenSubdiv's Gregory patches (positions and tangent planes along their edges) elsewhere.

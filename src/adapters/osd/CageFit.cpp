@@ -59,7 +59,23 @@ SparseMatrix laplacian(const QuadLayout& cage) {
     return l;
 }
 
+/// Moves the held vertices onto their planes. Alternating projections settle a vertex held by
+/// two or three planes on (near) their intersection.
+void holdOnPlanes(std::vector<Vec3d>& positions, const std::vector<HeldPlane>& held) {
+    constexpr int kRounds = 20;
+    for (int round = 0; round < kRounds; ++round) {
+        for (const HeldPlane& plane : held) {
+            for (const std::uint32_t v : plane.vertices) {
+                Vec3d& p = positions[v];
+                p = p - plane.normal * dot(p - plane.point, plane.normal);
+            }
+        }
+        if (held.size() < 2) return; // one plane: one projection is exact
+    }
+}
+
 constexpr int kSearchGrid = 4;           // tessellation per patch for the closest-point search
+constexpr double kHoldWeight = 10.0;     // stiffness of the held-plane term, per vertex
 constexpr double kPointWeight = 0.1;     // share of point-to-point distance in the fit
 constexpr double kSolveTolerance = 1e-9; // relative residual of each round's solve
 
@@ -71,6 +87,14 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         params.iterations < 1) {
         return fail(ErrorCode::InvalidArgument,
                     "smoothing and distance must be at least 0; samples and iterations at least 1");
+    }
+    for (const HeldPlane& plane : params.held) {
+        if (std::abs(length(plane.normal) - 1.0) > 1e-9 ||
+            std::ranges::any_of(plane.vertices,
+                                [&cage](std::uint32_t v) { return v >= cage.vertexCount(); })) {
+            return fail(ErrorCode::InvalidArgument,
+                        "a held plane needs a unit normal and vertices of the cage");
+        }
     }
     auto limit = Limit::create(cage, params.isolationLevel, params.open);
     if (!limit) return std::unexpected(limit.error());
@@ -115,15 +139,38 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         return out;
     };
     const SparseMatrix smooth = blockDiagonal(ltl);
+    // Held vertices start on their planes, so the smoothing term keeps the flat shape rather
+    // than the bumps they had.
+    std::vector<Vec3d> positions = cage.positions();
+    holdOnPlanes(positions, params.held);
     Eigen::VectorXd start(3 * n);
     for (Eigen::Index v = 0; v < n; ++v) {
-        const auto& [x, y, z] = cage.positions()[static_cast<std::size_t>(v)];
+        const auto& [x, y, z] = positions[static_cast<std::size_t>(v)];
         start(v) = x;
         start(n + v) = y;
         start(2 * n + v) = z;
     }
     Eigen::VectorXd current = start;
-    std::vector<Vec3d> positions = cage.positions();
+    // The held-plane term: weight * (normal . p - normal . point)^2 per held vertex.
+    std::vector<Eigen::Triplet<double>> holdEntries;
+    Eigen::VectorXd holdRhs = Eigen::VectorXd::Zero(3 * n);
+    const double hold = kHoldWeight * static_cast<double>(m) / static_cast<double>(n);
+    for (const HeldPlane& plane : params.held) {
+        const std::array nc{plane.normal.x, plane.normal.y, plane.normal.z};
+        const double offset = dot(plane.normal, plane.point);
+        for (const std::uint32_t v : plane.vertices) {
+            for (Eigen::Index a = 0; a < 3; ++a) {
+                const double na = nc[static_cast<std::size_t>(a)];
+                for (Eigen::Index b = 0; b < 3; ++b) {
+                    holdEntries.push_back(
+                        entry(a * n + v, b * n + v, hold * na * nc[static_cast<std::size_t>(b)]));
+                }
+                holdRhs(a * n + v) += hold * na * offset;
+            }
+        }
+    }
+    SparseMatrix holdTerm(3 * n, 3 * n);
+    holdTerm.setFromTriplets(holdEntries.begin(), holdEntries.end());
     std::vector<VertexWeight> w;
     std::vector<double> history;
     // Each round starts with the rms of the previous round's result; the best result is kept, in
@@ -196,10 +243,10 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         identity.setIdentity();
         const SparseMatrix planeT = plane.transpose();
         const SparseMatrix pointT = point.transpose();
-        const SparseMatrix normal =
-            planeT * plane + kPointWeight * (pointT * point) + mu * smooth + anchor * identity;
+        const SparseMatrix normal = planeT * plane + kPointWeight * (pointT * point) + mu * smooth +
+                                    anchor * identity + holdTerm;
         const Eigen::VectorXd rhs = planeT * planeTargets + kPointWeight * (pointT * pointTargets) +
-                                    mu * (smooth * start) + anchor * current;
+                                    mu * (smooth * start) + anchor * current + holdRhs;
         // Conjugate gradients from the last round's positions converge in a few dozen
         // iterations: the point and smoothing terms keep the system well conditioned. A direct
         // factorisation costs most of the fit on large cages, so it is only the fallback.
@@ -218,6 +265,15 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         for (Eigen::Index v = 0; v < n; ++v) {
             positions[static_cast<std::size_t>(v)] = {
                 .x = current(v), .y = current(n + v), .z = current(2 * n + v)};
+        }
+        if (!params.held.empty()) {
+            holdOnPlanes(positions, params.held);
+            for (Eigen::Index v = 0; v < n; ++v) {
+                const auto& [x, y, z] = positions[static_cast<std::size_t>(v)];
+                current(v) = x;
+                current(n + v) = y;
+                current(2 * n + v) = z;
+            }
         }
     }
 

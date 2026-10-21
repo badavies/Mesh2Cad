@@ -4,15 +4,20 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <memory>
 #include <numbers>
 #include <string>
 #include <vector>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/MeshSelection.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/pipeline/Deviation.h"
+#include "m2c/pipeline/PrimitiveFit.h"
 #include "m2c/pipeline/QuadRemesh.h"
 #include "m2c/pipeline/Surface.h"
 
@@ -54,6 +59,46 @@ QuadLayout cubeCage(double size) {
     std::vector<std::uint32_t> v{0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4,
                                  1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7};
     return *QuadLayout::create(std::move(p), {0, 4, 8, 12, 16, 20, 24}, std::move(v));
+}
+
+/// A rounded cube (half-size 10, nearly flat across the middle of each face) with a dent 0.4 deep
+/// in the middle of its top and a little noise everywhere: a flat face scanned with a defect.
+TriMesh dentedBox() {
+    TriMesh box = makeRoundedCube(10.0, 8.0);
+    std::vector<Vec3d> p = box.positions();
+    for (Vec3d& v : p) {
+        if (v.z > 9.0) v.z -= 0.4 * std::exp(-(v.x * v.x + v.y * v.y) / (2.0 * 1.5 * 1.5));
+    }
+    return addNoise(makeMesh(std::move(p), box.indices()), 0.03);
+}
+
+/// The top's faces with all three corners in |x|, |y| < 6.
+MeshSelection topFaces(const TriMesh& scan) {
+    MeshSelection top(scan.faceCount());
+    const auto inside = [](const Vec3d& v) {
+        return v.z > 9.0 && std::abs(v.x) < 6.0 && std::abs(v.y) < 6.0;
+    };
+    for (std::uint32_t f = 0; f < scan.faceCount(); ++f) {
+        const auto [a, b, c] = scan.face(f);
+        if (inside(scan.positions()[a]) && inside(scan.positions()[b]) &&
+            inside(scan.positions()[c])) {
+            top.set(f);
+        }
+    }
+    return top;
+}
+
+/// Largest distance from the plane of the limit surface's points over |x|, |y| < 4 on the top.
+double topDeviation(const QuadLayout& cage, const Primitive& plane) {
+    const auto limit = tessellateLimit(cage, 2, 4);
+    REQUIRE(limit);
+    double worst = 0.0;
+    for (const Vec3d& q : limit->positions()) {
+        if (q.z > 9.0 && std::abs(q.x) < 4.0 && std::abs(q.y) < 4.0) {
+            worst = std::max(worst, std::abs(dot(q - plane.point, plane.direction)));
+        }
+    }
+    return worst;
 }
 
 SeamReport seams(const std::vector<SurfacePatch>& faces, int k, double tol) {
@@ -554,4 +599,78 @@ TEST_CASE("Deviation reports a known offset from a solid and from a mesh", "[sta
     const auto self = deviationToSolid(built->solid.display(), built->solid, 0.1);
     REQUIRE(self);
     CHECK(self->stats().p95AbsMm < 1e-6);
+}
+
+TEST_CASE("A flat area of the scan becomes its plane, dent and noise left out",
+          "[stages][surface]") {
+    const TriMesh scan = dentedBox();
+    QuadRemeshParams q;
+    q.targetFaces = 2400;
+    const auto remeshed = quadRemesh(scan, q);
+    REQUIRE(remeshed);
+    const auto top = std::make_shared<const MeshSelection>(topFaces(scan));
+    REQUIRE(top->count() > 100);
+    std::vector<Vec3d> points;
+    for (std::uint32_t f = 0; f < scan.faceCount(); ++f) {
+        if (top->test(f)) points.push_back(scan.positions()[scan.face(f)[0]]);
+    }
+    const Primitive plane =
+        fitPrimitive(Primitive{.kind = PrimitiveKind::Plane, .direction = {0, 0, 1}}, points)
+            .primitive;
+    REQUIRE(plane.direction.z > 0.999);
+
+    SurfaceBuildParams p;
+    const auto plain = buildSurface(remeshed->cage, &scan, p);
+    REQUIRE(plain);
+    CHECK(plain->heldVertices.empty());
+    CHECK(topDeviation(plain->cage, plane) > 0.2); // the fit follows the dent
+
+    p.flat.push_back(FlatArea{.point = plane.point, .normal = plane.direction, .faces = top});
+    const auto flat = buildSurface(remeshed->cage, &scan, p);
+    REQUIRE(flat);
+    REQUIRE(flat->heldVertices.size() == 1);
+    CHECK(flat->heldVertices[0] > 50);
+    CHECK(topDeviation(flat->cage, plane) < 1e-6);
+    const SolidSummary s = flat->solid.summary();
+    CHECK(s.closed);
+    CHECK(s.valid);
+    // Away from the dent the fit is as close as before.
+    CHECK(flat->fit.p95DistanceMm < plain->fit.p95DistanceMm * 1.5 + 0.01);
+
+    // Held vertices are worked out again on the refined cage.
+    p.refineToMm = 1e-6;
+    p.maxRefinements = 1;
+    const auto refined = buildSurface(remeshed->cage, &scan, p);
+    REQUIRE(refined);
+    CHECK(refined->heldVertices[0] > 3 * flat->heldVertices[0]);
+    CHECK(topDeviation(refined->cage, plane) < 1e-6);
+}
+
+TEST_CASE("Flat areas need fitting, a selection of the scan and a unit normal",
+          "[stages][surface]") {
+    const TriMesh scan = dentedBox();
+    QuadRemeshParams q;
+    q.targetFaces = 600;
+    const auto remeshed = quadRemesh(scan, q);
+    REQUIRE(remeshed);
+    const auto top = std::make_shared<const MeshSelection>(topFaces(scan));
+    SurfaceBuildParams p;
+    p.flat.push_back(FlatArea{.point = {0, 0, 10}, .normal = {0, 0, 1}, .faces = top});
+    p.fit = false;
+    CHECK(buildSurface(remeshed->cage, &scan, p).error().code == ErrorCode::InvalidArgument);
+    p.fit = true;
+    p.flat[0].normal = {0, 0, 2};
+    CHECK(buildSurface(remeshed->cage, &scan, p).error().code == ErrorCode::InvalidArgument);
+    p.flat[0].normal = {0, 0, 1};
+    p.flat[0].faces = std::make_shared<const MeshSelection>(scan.faceCount() + 1);
+    CHECK(buildSurface(remeshed->cage, &scan, p).error().code == ErrorCode::InvalidArgument);
+
+    osd::CageFitParams f;
+    f.held.push_back(
+        HeldPlane{.point = {},
+                  .normal = {0, 0, 1},
+                  .vertices = {static_cast<std::uint32_t>(remeshed->cage.vertexCount())}});
+    CHECK(fitCage(remeshed->cage, scan, f).error().code == ErrorCode::InvalidArgument);
+    f.held[0] = HeldPlane{.point = {}, .normal = {0, 1, 1}, .vertices = {0}};
+    CHECK(fitCage(remeshed->cage, scan, f).error().code == ErrorCode::InvalidArgument);
 }

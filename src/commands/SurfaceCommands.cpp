@@ -74,7 +74,10 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "farther from the mesh than that (95th percentile) has its cage subdivided once and is "
         "fitted again, up to max_refinements times. An open cage (from quad.remesh "
         "keep_outline) needs thickness_mm: its fitted sheet becomes a wall that thick, behind "
-        "the faces' side, with a sharp-edged rim. Adds a solid object; the quad layout and "
+        "the faces' side, with a sharp-edged rim. Each flat area (a selection of the mesh and "
+        "a plane fitted to it with primitive.fit) holds the cage vertices over it on the plane "
+        "while fitting, so the surface there is that plane, without the scan's noise and bumps, "
+        "and blends into the rest at the area's edge. Adds a solid object; the quad layout and "
         "mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid "
         "of positive volume whose faces, after the last fit, meet at no more than 90 degrees.",
         R"({
@@ -92,6 +95,10 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "refine_to_mm":{"type":"number","minimum":0,"default":0,"description":"While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off."},
                 "max_refinements":{"type":"integer","minimum":0,"maximum":3,"default":2,"description":"Most subdivisions refine_to_mm may make."},
                 "thickness_mm":{"type":"number","minimum":0,"default":0,"description":"For an open cage: thicken the fitted sheet by this much, against its faces' direction; required for an open cage and only for one."},
+                "flat":{"type":"array","default":[],"description":"Areas held flat while fitting, each {selection_id, plane_id}: faces of the mesh and a plane primitive fitted to them (primitive.fit). Cage vertices whose closest mesh face is selected stay on the plane. Needs fit.","items":{"type":"object","properties":{
+                    "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"Faces of the mesh (mesh_id) that are flat."},
+                    "plane_id":{"type":"integer","x-object":"primitive","minimum":0,"description":"A plane primitive fitted to them."}},
+                    "required":["selection_id","plane_id"],"additionalProperties":false}},
                 "name":{"type":"string"}
             },
             "required":["id"],"additionalProperties":false})",
@@ -130,6 +137,26 @@ void addSurfaceCommands(std::vector<Command>& out) {
             } else if (p.fit) {
                 return fail(ErrorCode::InvalidArgument, "mesh_id is required when fit is true");
             }
+            if (params.contains("flat") && !params["flat"].is_array()) {
+                return fail(ErrorCode::InvalidArgument, "flat must list areas");
+            }
+            for (const Json& area : params.value("flat", Json::array())) {
+                if (!scan) return fail(ErrorCode::InvalidArgument, "flat areas need mesh_id");
+                M2C_TRY(selection, requireSelection(context, area, "selection_id", inputs[1]));
+                M2C_TRY(plane, requireObject(context, area, "plane_id", "primitive"));
+                const Primitive& surface = plane->primitive()->fit.surface;
+                if (surface.kind != PrimitiveKind::Plane) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "primitive " + std::to_string(plane->id) + " is a " +
+                                    primitiveKindName(surface.kind) + ", not a plane");
+                }
+                p.flat.push_back(
+                    FlatArea{.point = surface.point,
+                             .normal = surface.direction * (1.0 / length(surface.direction)),
+                             .faces = selection->faces});
+                inputs.push_back(selection->id);
+                inputs.push_back(plane->id);
+            }
             M2C_TRY(built,
                     buildSurface(layout->quadLayout()->cage, scan.get(), p, context.progress));
             const SolidSummary summary = built->solid.summary();
@@ -163,7 +190,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
                                      {"smoothing", built->smoothing},
                                      {"fits", built->fits},
                                      {"refinements", built->p95BeforeRefinementMm.size()},
-                                     {"p95_before_refinement_mm", built->p95BeforeRefinementMm}};
+                                     {"p95_before_refinement_mm", built->p95BeforeRefinementMm},
+                                     {"held_vertices", built->heldVertices}};
             }
             return result;
         }));
