@@ -235,7 +235,7 @@ endif()
 # The toolkits the OCCT adapter uses. OCCT 7.8 merged the STEP toolkits into TKDESTEP.
 set(m2c_occt_toolkits
     TKernel TKMath TKG2d TKG3d TKGeomBase TKBRep TKGeomAlgo TKTopAlgo TKPrim TKBO TKShHealing
-    TKMesh TKXSBase)
+    TKMesh TKXSBase TKFillet)
 if(TARGET TKDESTEP)
     list(APPEND m2c_occt_toolkits TKDESTEP TKDE)
 else()

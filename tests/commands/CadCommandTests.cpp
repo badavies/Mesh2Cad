@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <miniz.h>
 #include <numbers>
@@ -735,6 +736,73 @@ TEST_CASE("primitive.box fits a box to a selection or makes one from its size", 
     fails({{"size_mm", {10, 10, 10}}, {"axes", {{1, 0, 0}, {0, 1, 0}, {0, 0, -1}}}},
           ErrorCode::InvalidArgument);
     fails({{"size_mm", {10, 10, 10}}, {"axes", {{1, 0, 0}, {0, 1, 0}}}},
+          ErrorCode::InvalidArgument);
+    CHECK(s.document.objects().size() == before);
+}
+
+TEST_CASE("fillet.fit rounds a box's edge at the scanned fillet's radius", "[commands][fillet]") {
+    Session s;
+    const TempDir dir;
+    // The scan's fillet band: a quarter arc of radius 3 along the top back edge of a 30 x 20 x
+    // 10 box, as a strip of triangles.
+    std::vector<Vec3d> p;
+    std::vector<std::uint32_t> idx;
+    for (int i = 0; i <= 26; ++i) {
+        for (int j = 0; j <= 12; ++j) {
+            const double a = std::numbers::pi / 2.0 * j / 12.0;
+            p.push_back({2.0 + i, 17.0 + 3.0 * std::cos(a), 7.0 + 3.0 * std::sin(a)});
+            if (i > 0 && j > 0) {
+                const auto at = [](int u, int v) { return static_cast<std::uint32_t>(u * 13 + v); };
+                idx.insert(idx.end(),
+                           {at(i - 1, j - 1),
+                            at(i, j - 1),
+                            at(i, j),
+                            at(i - 1, j - 1),
+                            at(i, j),
+                            at(i - 1, j)});
+            }
+        }
+    }
+    const ObjectId scan = s.import(dir, addNoise(makeMesh(p, idx), 0.02), "band");
+    const auto band = s.run("select.all", {{"id", scan}})["selection_id"];
+    const auto block =
+        s.run("primitive.box", {{"size_mm", {30, 20, 10}}, {"center", {15, 10, 5}}})["id"];
+    const Json edge = Json::array({{15, 20, 10}});
+
+    const Json fit =
+        s.run("fillet.fit", {{"solid_id", block}, {"edge_points", edge}, {"selection_id", band}});
+    CHECK_THAT(fit["radius_mm"].get<double>(), Catch::Matchers::WithinAbs(3.0, 0.05));
+    CHECK(fit["p95_mm"].get<double>() < 0.05);
+    CHECK(fit["builds"].get<int>() > 1);
+    CHECK(fit["summary"]["valid"] == true);
+    CHECK(fit["summary"]["face_count"] == 7);
+    const auto object = s.document.find(fit["id"].get<ObjectId>());
+    REQUIRE(object);
+    CHECK(object->name == "Box (filleted)");
+    CHECK(object->provenance.inputs ==
+          std::vector<ObjectId>{block.get<ObjectId>(), band.get<ObjectId>(), scan});
+
+    const Json typed = s.run(
+        "fillet.fit",
+        {{"solid_id", block}, {"edge_points", edge}, {"selection_id", band}, {"radius_mm", 3.0}});
+    CHECK(typed["radius_mm"] == 3.0);
+    CHECK(typed["builds"] == 1);
+
+    // Failures add nothing: a typed radius far from the scan's, one too large for the box, no
+    // edge points, and a mesh instead of a solid.
+    const std::size_t before = s.document.objects().size();
+    const auto fails = [&](const Json& params, ErrorCode code) {
+        const auto r = s.tryRun("fillet.fit", params);
+        REQUIRE_FALSE(r);
+        CHECK(r.error().code == code);
+    };
+    fails({{"solid_id", block}, {"edge_points", edge}, {"selection_id", band}, {"radius_mm", 1.0}},
+          ErrorCode::InvalidState);
+    fails({{"solid_id", block}, {"edge_points", edge}, {"selection_id", band}, {"radius_mm", 12.0}},
+          ErrorCode::InvalidState);
+    fails({{"solid_id", block}, {"edge_points", Json::array()}, {"selection_id", band}},
+          ErrorCode::InvalidArgument);
+    fails({{"solid_id", scan}, {"edge_points", edge}, {"selection_id", band}},
           ErrorCode::InvalidArgument);
     CHECK(s.document.objects().size() == before);
 }

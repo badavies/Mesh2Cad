@@ -47,6 +47,9 @@ target.
   - `primitiveSolid`: a fitted cylinder (bounded along its axis) or sphere as a solid
     (`BRepPrimAPI_MakeCylinder`, `BRepPrimAPI_MakeSphere`).
   - `boxSolid`: an `OrientedBox` as a solid of six exact planes (`BRepPrimAPI_MakeBox`).
+- `m2c/adapters/occt/Fillet.h` (namespace `m2c::occt`): `filletEdges`, the edges of a solid
+  nearest some points rounded by a constant-radius rolling-ball fillet
+  (`BRepFilletAPI_MakeFillet`, ADR-033).
 - `m2c/adapters/occt/Brep.h` (namespace `m2c::occt`):
   - `makeSolid` with `SewParams`: B-spline faces (knots where pieces join with C2 continuity
     removed), sewing, an outward solid (`ShapeFix_Solid`) and the kernel's checker; fails unless
