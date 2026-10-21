@@ -15,6 +15,7 @@
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <BRep_Builder.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_BSplineCurve.hxx>
@@ -25,8 +26,10 @@
 #include <TColgp_HArray1OfPnt.hxx>
 #endif
 #include <TopoDS.hxx>
+#include <TopoDS_Compound.hxx>
 #include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
+#include <TopoDS_Shape.hxx>
 #include <TopoDS_Wire.hxx>
 #include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
@@ -162,19 +165,11 @@ wire(const SketchPlane& plane, const SketchLoop& loop, bool anticlockwise, doubl
     return (signedArea > 0.0) == anticlockwise ? out : TopoDS::Wire(out.Reversed());
 }
 
-/// The profile as one planar face: the loop of largest area, less the others inside it.
-Result<TopoDS_Face> profileFace(const Sketch& sketch) {
+/// Fails unless the sketch has loops, each closed and of curves with their points.
+Result<void> checkLoops(const Sketch& sketch) {
     if (sketch.loops.empty()) return fail(ErrorCode::InvalidArgument, "the sketch has no loop");
-    std::vector<std::vector<Vec2d>> polygons;
     for (const SketchLoop& loop : sketch.loops) {
         const auto& curves = loop.curves;
-        for (std::size_t k = 0; k < curves.size(); ++k) {
-            if (length(curves[k].end() - curves[(k + 1) % curves.size()].start()) > kGapMm) {
-                return fail(
-                    ErrorCode::InvalidArgument,
-                    "the profile is open: a curve does not start where the one before ends");
-            }
-        }
         if (curves.empty()) return fail(ErrorCode::InvalidArgument, "a loop has no curves");
         for (const SketchCurve& c : curves) {
             if (c.kind != CurveKind::Arc && c.points.size() < 2) {
@@ -182,8 +177,22 @@ Result<TopoDS_Face> profileFace(const Sketch& sketch) {
                             "a line or spline has fewer than two points");
             }
         }
-        polygons.push_back(polygon(loop));
+        for (std::size_t k = 0; k < curves.size(); ++k) {
+            if (length(curves[k].end() - curves[(k + 1) % curves.size()].start()) > kGapMm) {
+                return fail(
+                    ErrorCode::InvalidArgument,
+                    "the profile is open: a curve does not start where the one before ends");
+            }
+        }
     }
+    return {};
+}
+
+/// The profile as one planar face: the loop of largest area, less the others inside it.
+Result<TopoDS_Face> profileFace(const Sketch& sketch) {
+    if (auto checked = checkLoops(sketch); !checked) return std::unexpected(checked.error());
+    std::vector<std::vector<Vec2d>> polygons;
+    for (const SketchLoop& loop : sketch.loops) polygons.push_back(polygon(loop));
     std::size_t outer = 0;
     for (std::size_t k = 1; k < polygons.size(); ++k) {
         if (std::abs(signedArea(polygons[k])) > std::abs(signedArea(polygons[outer]))) outer = k;
@@ -218,6 +227,19 @@ Result<TopoDS_Face> profileFace(const Sketch& sketch) {
 }
 
 } // namespace
+
+Result<TopoDS_Shape> sketchWires(const Sketch& sketch) {
+    if (auto checked = checkLoops(sketch); !checked) return std::unexpected(checked.error());
+    TopoDS_Compound out;
+    BRep_Builder builder;
+    builder.MakeCompound(out);
+    for (const SketchLoop& loop : sketch.loops) {
+        auto made = wire(sketch.plane, loop, true, signedArea(polygon(loop)));
+        if (!made) return std::unexpected(made.error());
+        builder.Add(out, *made);
+    }
+    return out;
+}
 
 Result<Solid> extrudeSketch(const Sketch& sketch, const double forwardMm, const double backwardMm) {
     if (!(forwardMm + backwardMm > 0.0) || !std::isfinite(forwardMm + backwardMm)) {

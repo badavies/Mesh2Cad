@@ -268,11 +268,13 @@ TEST_CASE("A trimmed solid exports to STEP and reads back the same", "[stage][tr
     REQUIRE(occt::writeStep(trimmed->solid, file, "box").has_value());
     auto read = occt::readStep(file);
     REQUIRE(read.has_value());
-    CHECK(read->solidCount == 1);
-    CHECK(read->valid);
-    CHECK(read->faceCount == 7);
-    CHECK(read->edgeCount == trimmed->solid.summary().edgeCount);
-    CHECK_THAT(read->volumeMm3, WithinRel(trimmed->solid.summary().volumeMm3, 1e-9));
+    CHECK(read->solids.solidCount == 1);
+    CHECK(read->solids.valid);
+    CHECK(read->solids.faceCount == 7);
+    CHECK(read->solids.edgeCount == trimmed->solid.summary().edgeCount);
+    CHECK(read->looseFaces == 0);
+    CHECK(read->looseEdges == 0);
+    CHECK_THAT(read->solids.volumeMm3, WithinRel(trimmed->solid.summary().volumeMm3, 1e-9));
 }
 
 TEST_CASE("Trimming rejects no primitives and bad parameters", "[stage][trim]") {

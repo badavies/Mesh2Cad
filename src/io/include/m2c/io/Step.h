@@ -7,6 +7,8 @@
 namespace m2c {
 
 using occt::readStep;
+using occt::StepContents;
+using occt::StepPart;
 using occt::writeStep;
 
 } // namespace m2c
