@@ -313,6 +313,19 @@ Make planes, cylinders and cones exactly parallel, perpendicular or at a set ang
 | `reference_ids` | array |  | Primitives whose mean direction is the reference: all planes, or all cylinders and cones. |
 | `relation` | `parallel` \| `perpendicular` \| `angle` |  | Default `"parallel"`. |
 
+### `primitive.box`
+
+Make an exact box solid: fitted to the faces of a selection (six planes, opposite ones parallel and neighbouring ones perpendicular, nearest to the selected vertices, from the faces' normals and then Gauss-Newton steps), or from a size, centre and axes. Given with a selection, size_mm, center and axes replace the fitted ones, for example to snap the sizes to nominal values. Sides the selection does not reach stay at its extent. Adds a solid object, which solid.boolean can fuse or cut and solid.export can write; fails, adding nothing, when the fit's P95 distance is above max_residual_mm. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `axes` | array |  | Three perpendicular, right-handed directions (scaled to unit length); default the world axes, or the fitted ones. |
+| `center` | array |  | The box's centre; default the origin, or the fitted one. |
+| `max_residual_mm` | number |  | Largest P95 distance from the selected vertices to the fitted box. Default `0.1`. |
+| `name` | string |  |  |
+| `selection_id` | selection id |  | Faces to fit the box to; required unless size_mm is given. |
+| `size_mm` | array |  | Edge lengths along the three axes. |
+
 ### `primitive.fit`
 
 Fit an exact, unbounded plane, cylinder, sphere or cone to the faces of a selection by least squares, starting from CGAL's estimate, and add it as a primitive. With kind "auto" it takes the simplest kind that fits about as well as any. Fails, adding nothing, when 95% of the region's vertices are not within max_residual_mm of the surface. The result gives the primitive, its RMS, largest and P95 distance, and the region's bounding box. *(changes the document)*

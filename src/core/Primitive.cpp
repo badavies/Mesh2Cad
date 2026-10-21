@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <numbers>
@@ -51,6 +52,18 @@ std::optional<PrimitiveKind> primitiveKindFromName(const std::string_view name) 
         if (name == primitiveKindName(kind)) return kind;
     }
     return std::nullopt;
+}
+
+double distanceTo(const OrientedBox& box, const Vec3d& p) noexcept {
+    const std::array half{box.sizeMm.x / 2.0, box.sizeMm.y / 2.0, box.sizeMm.z / 2.0};
+    double outside2 = 0.0;
+    double inside = std::numeric_limits<double>::infinity();
+    for (std::size_t k = 0; k < 3; ++k) {
+        const double g = std::abs(dot(p - box.center, box.axes[k])) - half[k];
+        if (g > 0.0) outside2 += g * g;
+        inside = std::min(inside, -g);
+    }
+    return outside2 > 0.0 ? std::sqrt(outside2) : inside;
 }
 
 double distanceTo(const Primitive& s, const Vec3d& p) noexcept {

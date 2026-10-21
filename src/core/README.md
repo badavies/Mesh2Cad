@@ -22,6 +22,7 @@ millimetres. Errors cross module boundaries as `Result<T>` (`std::expected<T, Er
 - `m2c/core/Raster.h`: `Raster`, a software rasteriser (orthographic, flat shaded like the app's viewport, depth tested) drawing triangles and lines into an `Image` of `Rgb` pixels, for `view.render`.
 - `m2c/core/DeviationColors.h`: `deviationColor` (the deviation colour map, standard or colour-blind safe, as `Rgb8`) and `deviationRange`.
 - `m2c/core/Sketch.h`: `Sketch` (a `SketchPlane` and closed `SketchLoop`s of `SketchCurve` lines, arcs and splines), `Vec2d`, `planeThrough`, `curveKindName`, `distanceTo` for a curve, and `sketchLines` (the curves as world-space segments, for drawing).
+- `m2c/core/Primitive.h`: `Primitive` (an unbounded plane, cylinder, sphere or cone) and `FittedPrimitive`, `OrientedBox` (a cuboid at any angle), `distanceTo` and `normalAt`, and `primitiveDisplay` for drawing.
 - `m2c/core/Measurement.h`: `Measurement`, `PickedPoint` and `SnapKind` for point-to-point distances.
 - `m2c/core/DisplayProxy.h`: `buildDisplayProxy`, a decimated stand-in mesh for drawing while the camera moves.
 

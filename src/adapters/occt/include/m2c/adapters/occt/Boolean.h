@@ -31,4 +31,9 @@ booleanSolids(const Solid& a, const Solid& b, BooleanOp op, double fuzzyMm);
 /// positive, a negative lengthMm, or a cylinder of no length.
 [[nodiscard]] Result<Solid> primitiveSolid(const FittedPrimitive& fit, double lengthMm);
 
+/// The box as a solid of six exact planar faces (BRepPrimAPI_MakeBox). Fails with
+/// InvalidArgument unless every size is positive and the axes are unit, perpendicular and
+/// right-handed (within 1e-6).
+[[nodiscard]] Result<Solid> boxSolid(const OrientedBox& box);
+
 } // namespace m2c::occt

@@ -3,6 +3,7 @@
 // An unbounded exact surface fitted to a region of a scan (ARCHITECTURE.md section 7,
 // "Primitive fitting"): a plane, cylinder, sphere or cone.
 
+#include <array>
 #include <optional>
 #include <string_view>
 
@@ -39,6 +40,18 @@ struct FittedPrimitive {
     double maxMm{0.0};
     double p95Mm{0.0};
 };
+
+/// A cuboid at any angle (primitive.box).
+struct OrientedBox {
+    Vec3d center{};
+    /// Unit, perpendicular and right-handed.
+    std::array<Vec3d, 3> axes{
+        {{.x = 1, .y = 0, .z = 0}, {.x = 0, .y = 1, .z = 0}, {.x = 0, .y = 0, .z = 1}}};
+    Vec3d sizeMm{}; ///< Edge lengths along axes[0], axes[1] and axes[2].
+};
+
+/// Distance from p to the box's surface, from inside or outside.
+[[nodiscard]] double distanceTo(const OrientedBox& box, const Vec3d& p) noexcept;
 
 /// "plane", "cylinder", "sphere" or "cone".
 [[nodiscard]] const char* primitiveKindName(PrimitiveKind kind) noexcept;
