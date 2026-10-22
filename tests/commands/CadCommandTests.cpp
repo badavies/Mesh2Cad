@@ -413,6 +413,23 @@ TEST_CASE("deviation.compute measures a mesh against a solid or a mesh", "[comma
     CHECK_FALSE(s.tryRun("deviation.compute", {{"id", bigger}, {"reference_id", cage}}));
     CHECK_FALSE(s.tryRun("deviation.compute", {{"id", solid}, {"reference_id", mesh}}));
 
+    // Info returns the statistics compute returned, and takes only deviations.
+    const Json info = s.run("deviation.info", {{"id", dev}});
+    CHECK(info["stats"] == toSolid["stats"]);
+    CHECK(info["mesh_id"] == bigger);
+    CHECK(info["reference_id"] == solid);
+    const auto wrongKind = s.tryRun("deviation.info", {{"id", mesh}});
+    REQUIRE_FALSE(wrongKind);
+    CHECK(wrongKind.error().code == ErrorCode::InvalidArgument);
+    const auto unknown = s.tryRun("deviation.info", {{"id", 9999}});
+    REQUIRE_FALSE(unknown);
+    CHECK(unknown.error().code == ErrorCode::NotFound);
+    const Command* infoCommand = s.registry.find("deviation.info");
+    REQUIRE(infoCommand != nullptr);
+    CHECK(infoCommand->paramsSchema["required"] == Json::array({"id"}));
+    CHECK_FALSE(infoCommand->mutatesDocument);
+    CHECK_FALSE(infoCommand->writesFiles);
+
     // The report: statistics, then the histogram.
     const auto csv = dir.path() / "dev.csv";
     s.run("deviation.report", {{"id", dev}, {"path", csv.string()}, {"bins", 4}});

@@ -32,6 +32,10 @@ public:
 
     [[nodiscard]] Viewport* viewport() const noexcept { return viewport_; }
 
+    /// Logs an object's info query (mesh.info, solid.info, deviation.info), as its context
+    /// menu's Info does. Objects without one are ignored.
+    void showInfo(ObjectId id);
+
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
@@ -51,6 +55,8 @@ private:
     void showTool(const QString& name) const;
     void runForm();
     void run(const QString& command, const Json& params, Engine::Done done = {}) const;
+    /// The read-only query that describes an object of this kind, or null.
+    [[nodiscard]] static const char* infoCommand(const DocumentObject& o);
 
     // Interaction results from the viewport.
     void onBrushStroke(ObjectId mesh, const std::vector<Vec3d>& centers, bool subtract, bool add);

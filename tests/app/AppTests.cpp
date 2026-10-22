@@ -8,6 +8,7 @@
 #include <QElapsedTimer>
 #include <QLineEdit>
 #include <QMouseEvent>
+#include <QPlainTextEdit>
 #include <QStringList>
 #include <QSurfaceFormat>
 #include <QToolButton>
@@ -19,6 +20,7 @@
 #include <cmath>
 #include <iostream>
 #include <numbers>
+#include <set>
 #include <thread>
 #include <utility>
 
@@ -378,7 +380,20 @@ TEST_CASE("The viewport draws solids, cages and deviation colours", "[app][surfa
     };
     const ObjectId cage = run("quad.remesh", {{"id", mesh}, {"target_faces", 300}});
     const ObjectId solid = run("surface.build", {{"id", cage}, {"mesh_id", mesh}});
-    run("deviation.compute", {{"id", mesh}, {"reference_id", solid}, {"tolerance_mm", 0.5}});
+    const ObjectId deviation =
+        run("deviation.compute", {{"id", mesh}, {"reference_id", solid}, {"tolerance_mm", 0.5}});
+
+    // Info on the deviation logs its statistics, not an error.
+    auto* log = window.findChild<QPlainTextEdit*>();
+    REQUIRE(log != nullptr);
+    QStringList lines;
+    QObject::connect(&engine, &Engine::logLine, log, [&lines](const QString& line, bool failed) {
+        if (failed) lines << line;
+    });
+    window.showInfo(deviation);
+    REQUIRE(waitFor([&] { return log->toPlainText().contains("\"stats\""); }));
+    CHECK(log->toPlainText().contains("\"rms_mm\""));
+    CHECK(lines.isEmpty());
 
     Viewport* view = window.viewport();
     view->fitAll();
@@ -453,6 +468,25 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
     };
     const Json regions = run("mesh.segment", {{"id", mesh}})["regions"];
     REQUIRE(regions.size() == 3);
+
+    // Every row shows its object's id; the name column stays the bare name.
+    auto* tree = window.findChild<QTreeWidget*>();
+    REQUIRE(tree != nullptr);
+    std::set<ObjectId> listed;
+    for (QTreeWidgetItemIterator it(tree); *it != nullptr; ++it) {
+        const auto id = (*it)->data(0, Qt::UserRole + 1).value<ObjectId>();
+        const DocumentObject* o = engine.snapshot()->find(id);
+        REQUIRE(o != nullptr);
+        CHECK((*it)->text(2) == QStringLiteral("#%1").arg(id));
+        CHECK((*it)->text(0) == QString::fromStdString(o->name));
+        listed.insert(id);
+    }
+    CHECK(listed.size() == engine.snapshot()->objects.size());
+    // Renaming in place sets exactly the typed name.
+    tree->topLevelItem(0)->setText(0, "Renamed can");
+    REQUIRE(waitFor(
+        [&] { return !engine.busy() && engine.snapshot()->find(mesh)->name == "Renamed can"; }));
+    CHECK(tree->topLevelItem(0)->text(2) == QStringLiteral("#%1").arg(mesh));
     const Json fit = run("primitive.fit", {{"selection_id", regions[2]["selection_id"]}});
     REQUIRE(fit["kind"] == "cylinder");
     CHECK(countKind(*engine.snapshot(), "primitive") == 1);
@@ -471,8 +505,6 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
     // A section of the can is listed under it and drawn as a cyan circle over the cylinder.
     const Json section = run("sketch.section", {{"id", mesh}, {"plane", "xy"}, {"offset_mm", 15}});
     const auto sketchId = section["id"].get<ObjectId>();
-    auto* tree = window.findChild<QTreeWidget*>();
-    REQUIRE(tree != nullptr);
     REQUIRE(tree->topLevelItemCount() >= 1);
     const QTreeWidgetItem* canItem = tree->topLevelItem(0);
     REQUIRE(canItem->childCount() >= 1);

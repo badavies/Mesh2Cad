@@ -159,8 +159,10 @@ void MainWindow::buildDocks() {
     setDockOptions(AnimatedDocks | AllowTabbedDocks);
 
     tree_ = new QTreeWidget;
-    tree_->setHeaderLabels({tr("Object"), tr("Info")});
+    tree_->setHeaderLabels({tr("Object"), tr("Info"), tr("Id")});
+    tree_->header()->setStretchLastSection(false);
     tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     tree_->setContextMenuPolicy(Qt::CustomContextMenu);
     tree_->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::SelectedClicked);
     connect(tree_, &QTreeWidget::itemSelectionChanged, this, &MainWindow::onTreeSelection);
@@ -198,18 +200,8 @@ void MainWindow::buildDocks() {
                 }
             }
         });
-        const char* info = o == nullptr                ? nullptr
-                           : o->mesh() != nullptr      ? "mesh.info"
-                           : o->solid() != nullptr     ? "solid.info"
-                           : o->deviation() != nullptr ? "deviation.report"
-                                                       : nullptr;
-        if (info != nullptr) {
-            menu.addAction(tr("Info"), this, [this, id, info] {
-                run(info, {{"id", id}}, [this](const Result<Json>& r) {
-                    if (r) log_->appendPlainText(QString::fromStdString(r->dump(2)));
-                });
-            });
-        }
+        if (o != nullptr && infoCommand(*o) != nullptr)
+            menu.addAction(tr("Info"), this, [this, id] { showInfo(id); });
         menu.addSeparator();
         menu.addAction(tr("Delete"), this, [this, id] { run("object.delete", {{"id", id}}); });
         menu.exec(tree_->viewport()->mapToGlobal(pos));
@@ -503,7 +495,8 @@ void MainWindow::refreshTree() {
     tree_->clear();
     std::map<ObjectId, QTreeWidgetItem*> meshes;
     const auto makeItem = [](const DocumentObject& o, const QString& info) {
-        auto* item = new QTreeWidgetItem({QString::fromStdString(o.name), info});
+        auto* item = new QTreeWidgetItem(
+            {QString::fromStdString(o.name), info, QStringLiteral("#%1").arg(o.id)});
         item->setData(0, kIdRole, QVariant::fromValue(o.id));
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable | Qt::ItemIsEditable);
         item->setCheckState(0, o.visible ? Qt::Checked : Qt::Unchecked);
@@ -607,6 +600,22 @@ ObjectId MainWindow::currentSelection() const {
 }
 
 // ---- Commands ---------------------------------------------------------------------------------
+
+const char* MainWindow::infoCommand(const DocumentObject& o) {
+    return o.mesh() != nullptr        ? "mesh.info"
+           : o.solid() != nullptr     ? "solid.info"
+           : o.deviation() != nullptr ? "deviation.info"
+                                      : nullptr;
+}
+
+void MainWindow::showInfo(const ObjectId id) {
+    const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
+    const char* info = o != nullptr ? infoCommand(*o) : nullptr;
+    if (info == nullptr) return;
+    run(info, {{"id", id}}, [this](const Result<Json>& r) {
+        if (r) log_->appendPlainText(QString::fromStdString(r->dump(2)));
+    });
+}
 
 void MainWindow::run(const QString& command, const Json& params, Engine::Done done) const {
     engine_.run(command, params, std::move(done));
