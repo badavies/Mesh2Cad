@@ -44,12 +44,20 @@ FetchContent_Declare(miniz
 # ---- oneTBB (ADR 0036) --------------------------------------------------------------------------
 # Built as a subproject when no installed copy is found. Like the other fetched libraries it is
 # then static, which oneTBB warns about; only core links it, so there is one scheduler.
+# v2022.2.0 is the first to configure with MinGW on Windows (it probed the assembler through
+# /dev/null). With MinGW, oneTBB's profiling hooks (on in Debug) do not compile, as they pass
+# char names where Windows builds take wchar_t; nothing here uses them. Its headers are system
+# headers, as an installed copy's are: their Windows-only code fails core's warning flags.
 set(TBB_TEST OFF CACHE BOOL "oneTBB: build tests")
 set(TBB_STRICT OFF CACHE BOOL "oneTBB: treat warnings as errors")
+if(MINGW)
+    add_compile_definitions(TBB_USE_PROFILING_TOOLS=0)
+endif()
 FetchContent_Declare(TBB
     GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB.git
-    GIT_TAG        v2022.1.0
+    GIT_TAG        v2022.3.0
     GIT_SHALLOW    TRUE
+    SYSTEM
     FIND_PACKAGE_ARGS 2021.5 CONFIG)
 
 set(m2c_dependencies nlohmann_json Eigen3 miniz TBB)
