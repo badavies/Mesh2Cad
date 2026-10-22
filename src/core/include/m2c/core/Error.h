@@ -16,6 +16,7 @@ enum class ErrorCode {
     Io,              ///< Reading or writing a file failed.
     Parse,           ///< The file content is malformed.
     Unsupported,     ///< Valid request for something not implemented.
+    Cancelled,       ///< Asked to stop while running (CancelToken); nothing was changed.
     Internal,        ///< A bug: an exception or invariant violation we did not expect.
 };
 
@@ -41,6 +42,8 @@ using Result = std::expected<T, Error>;
         return "parse";
     case ErrorCode::Unsupported:
         return "unsupported";
+    case ErrorCode::Cancelled:
+        return "cancelled";
     case ErrorCode::Internal:
         return "internal";
     }

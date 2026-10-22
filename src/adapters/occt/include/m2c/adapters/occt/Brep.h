@@ -13,6 +13,7 @@
 
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SurfacePatch.h"
@@ -80,9 +81,11 @@ enum class BrepFormat {
 /// Signed distance from each point to the solid's faces, positive outside: the closest display
 /// triangle gives the face and, through the display map, a start point on it; Open CASCADE then
 /// projects onto that face's surface (the B-spline face, or for a solid with none the kernel
-/// face's own surface), staying within the face's parameter range.
+/// face's own surface), staying within the face's parameter range. Stops with Cancelled within a
+/// few thousand points of `progress` being cancelled.
 [[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,
-                                                          const std::vector<Vec3d>& points);
+                                                          const std::vector<Vec3d>& points,
+                                                          const Progress& progress = {});
 
 /// The kernel's triangulation of the solid's faces (within 0.1% of its diagonal of them) as one
 /// mesh, welded where faces meet: neighbouring faces share their common edge's points, so the mesh

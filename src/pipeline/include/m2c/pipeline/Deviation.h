@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "m2c/core/DeviationField.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -14,12 +15,17 @@
 namespace m2c {
 
 /// To a solid's faces, exactly (the Open CASCADE adapter projects onto each face's surface).
-[[nodiscard]] Result<DeviationField>
-deviationToSolid(const TriMesh& mesh, const Solid& reference, double toleranceMm);
+/// Both stop with Cancelled within a few thousand vertices of `progress` being cancelled.
+[[nodiscard]] Result<DeviationField> deviationToSolid(const TriMesh& mesh,
+                                                      const Solid& reference,
+                                                      double toleranceMm,
+                                                      const Progress& progress = {});
 
 /// To another mesh's triangles, through its spatial index; outside is where its normals point.
-[[nodiscard]] Result<DeviationField>
-deviationToMesh(const TriMesh& mesh, const TriMesh& reference, double toleranceMm);
+[[nodiscard]] Result<DeviationField> deviationToMesh(const TriMesh& mesh,
+                                                     const TriMesh& reference,
+                                                     double toleranceMm,
+                                                     const Progress& progress = {});
 
 /// A connected patch of a mesh out of tolerance on one side (ADR-035): where a scan has a hole,
 /// boss or pocket the reference lacks, or misses one it has.

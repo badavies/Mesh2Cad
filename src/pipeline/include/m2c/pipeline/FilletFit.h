@@ -36,7 +36,7 @@ struct FilletFitResult {
 /// kernel cannot build count as no fit. With params.radiusMm, rounds at that radius and only
 /// measures. Fails as filletEdges does, with InvalidArgument for no band points, and with
 /// InvalidState when no radius builds or the P95 distance is above params.maxResidualMm.
-/// Deterministic.
+/// Deterministic. Stops with Cancelled before the next radius once `progress` is cancelled.
 [[nodiscard]] Result<FilletFitResult> fitFillet(const Solid& solid,
                                                 const std::vector<Vec3d>& edgePoints,
                                                 const std::vector<Vec3d>& band,

@@ -17,6 +17,7 @@
 
 #include "m2c/adapters/osd/Subdivision.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -82,11 +83,14 @@ constexpr double kSolveTolerance = 1e-9;     // relative residual of each round'
 constexpr double kSampleSpacing = 1.0 / 3.0; // most spacing of samples, in mean cage edges
 constexpr double kTaubinShrink = 0.5;        // Taubin fairing: a smoothing step,
 constexpr double kTaubinInflate = -0.53;     // then a slightly larger step back
+constexpr Eigen::Index kCancelEvery = 4096;  // samples searched between cancel checks
 
 } // namespace
 
-Result<CageFitResult>
-fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params) {
+Result<CageFitResult> fitCage(const QuadLayout& cage,
+                              const TriMesh& scan,
+                              const CageFitParams& params,
+                              const Progress& progress) {
     if (params.smoothing < 0.0 || params.maxSampleDistanceMm < 0.0 || params.maxSamples < 1 ||
         params.iterations < 1) {
         return fail(ErrorCode::InvalidArgument,
@@ -266,6 +270,10 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         std::size_t used = 0;
         distances.clear();
         for (Eigen::Index k = 0; k < m; ++k) {
+            if (k % kCancelEvery == 0) {
+                if (auto go = checkCancelled(progress, "fitting the cage"); !go)
+                    return std::unexpected(go.error());
+            }
             const Vec3d& q = samples[static_cast<std::size_t>(k)];
             const auto [patch, s, t, distance, surfaceNormal] = locate(*tess, q);
             planeTargets(k) = 0.0;

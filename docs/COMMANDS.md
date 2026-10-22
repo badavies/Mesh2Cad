@@ -12,6 +12,11 @@ Long commands (`quad.remesh`, `surface.build`, `deviation.compute`, `mesh.simpli
 `rpc.progress` notifications over JSON-RPC, as `notifications/progress` over MCP when the
 tool call carries `_meta.progressToken`, and in the desktop app's status bar.
 
+A JSON-RPC request's id is its job id: `rpc.cancel` `{"id": ...}` stops the running
+request with that id. `quad.remesh`, `surface.build`, `deviation.compute` and
+`fillet.fit` stop at their next stage, or within a few thousand points while fitting or
+measuring, and fail with code -32800 (`cancelled`); the document stays as it was.
+
 ## align
 
 ### `align.datum`

@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -39,6 +40,7 @@ bool sameToken(const std::string& a, const std::string& b) {
 Json rpcError(const Error& error) {
     int code = RpcServer::kCommandFailed;
     if (error.code == ErrorCode::InvalidArgument) code = RpcServer::kInvalidParams;
+    if (error.code == ErrorCode::Cancelled) code = RpcServer::kCancelled;
     if (error.code == ErrorCode::NotFound && error.message.starts_with("unknown command")) {
         code = RpcServer::kMethodNotFound;
     }
@@ -51,6 +53,22 @@ RpcServer::RpcServer(const CommandRegistry& registry,
                      EventSink events)
     : registry_(registry), context_(context), token_(std::move(token)), events_(std::move(events)),
       authenticated_(!token_) {}
+
+bool RpcServer::cancel(const Json& id) {
+    const std::scoped_lock lock(runningMutex_);
+    if (!running_ || running_->first != id) return false;
+    running_->second.cancel();
+    return true;
+}
+
+void RpcServer::cancelAll() {
+    const std::scoped_lock lock(runningMutex_);
+    if (running_) running_->second.cancel();
+}
+
+bool RpcServer::isCancel(const Json& message) {
+    return message.is_object() && message.contains("method") && message["method"] == "rpc.cancel";
+}
 
 std::optional<Json> RpcServer::handle(const Json& message) {
     if (message.is_array()) {
@@ -129,19 +147,38 @@ std::optional<Json> RpcServer::handleOne(const Json& request) {
     if (!params.is_object() && !params.is_null()) {
         return reply(errorResponse(id, kInvalidParams, "params must be an object"));
     }
+    if (method == "rpc.cancel") {
+        if (!params.is_object() || !params.contains("id") ||
+            !(params["id"].is_string() || params["id"].is_number_integer())) {
+            return reply(errorResponse(id, kInvalidParams, "rpc.cancel needs the request's id"));
+        }
+        return ok(Json{{"cancelled", cancel(params["id"])}});
+    }
 
     const std::uint64_t before = context_.document.revision();
-    // While the command runs, its stages go out as rpc.progress notifications for this request.
+    // While the command runs, its stages go out as rpc.progress notifications for this request,
+    // and rpc.cancel with its id stops it (the context's own token is set aside meanwhile).
     const Progress outer = context_.progress;
-    if (events_) {
-        context_.progress = [this, &id, &method, &outer](std::string_view stage, double fraction) {
-            Json event{{"id", id}, {"command", method}, {"stage", std::string(stage)}};
-            if (fraction >= 0.0) event["fraction"] = fraction;
-            events_(Json{{"jsonrpc", "2.0"}, {"method", "rpc.progress"}, {"params", event}});
+    const CancelToken token = CancelToken::make();
+    context_.progress = Progress(
+        [this, &id, &method, &outer](std::string_view stage, double fraction) {
+            if (events_) {
+                Json event{{"id", id}, {"command", method}, {"stage", std::string(stage)}};
+                if (fraction >= 0.0) event["fraction"] = fraction;
+                events_(Json{{"jsonrpc", "2.0"}, {"method", "rpc.progress"}, {"params", event}});
+            }
             report(outer, stage, fraction);
-        };
+        },
+        token);
+    if (!isNotification) {
+        const std::scoped_lock lock(runningMutex_);
+        running_.emplace(id, token);
     }
     const auto result = registry_.execute(context_, method, params);
+    {
+        const std::scoped_lock lock(runningMutex_);
+        running_.reset();
+    }
     context_.progress = outer;
     if (events_ && context_.document.revision() != before) {
         events_(

@@ -10,6 +10,7 @@
 #include <memory>
 #include <numbers>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -20,6 +21,7 @@
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshStats.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
@@ -908,4 +910,49 @@ TEST_CASE("Fairing the cage's shape calms a noisy scan's surface", "[stages][sur
     CHECK(faired->fairness.rmsCurvatureVariation < 0.75 * kept->fairness.rmsCurvatureVariation);
     CHECK(faired->fit.p95DistanceMm < kept->fit.p95DistanceMm + 0.002);
     CHECK(truthRms(*faired) < truthRms(*kept));
+}
+
+TEST_CASE("A cancelled build, fit or deviation stops and gives no result", "[stages][surface]") {
+    const TriMesh sphere = makeSphere(20.0, 4);
+    QuadRemeshParams q;
+    q.targetFaces = 200;
+    const auto remeshed = quadRemesh(sphere, q);
+    REQUIRE(remeshed);
+    const auto stopped = [](const auto& result, const std::string& message) {
+        REQUIRE_FALSE(result.has_value());
+        CHECK(result.error().code == ErrorCode::Cancelled);
+        CHECK(result.error().message == message);
+    };
+
+    // Cancelled when a stage starts: the build stops there.
+    const CancelToken token = CancelToken::make();
+    std::vector<std::string> stages;
+    const Progress cancelAtFaces(
+        [&](std::string_view stage, double) {
+            stages.emplace_back(stage);
+            if (stage == "making the faces") token.cancel();
+        },
+        token);
+    stopped(buildSurface(remeshed->cage, &sphere, SurfaceBuildParams{}, cancelAtFaces),
+            "cancelled while making the faces");
+    CHECK(stages.size() == 2); // the fit, then the faces
+
+    // Cancelled while it runs: the fit stops within a few thousand samples, and so do the
+    // remesh and the deviation, at their next check.
+    const Progress cancelled({}, token);
+    stopped(fitCage(remeshed->cage, sphere, CageFitParams{}, cancelled),
+            "cancelled while fitting the cage");
+    stopped(quadRemesh(sphere, q, CageCloseParams{}, cancelled),
+            "cancelled while remeshing into quads");
+    const auto built = buildSurface(remeshed->cage, &sphere, SurfaceBuildParams{});
+    REQUIRE(built);
+    stopped(deviationToSolid(sphere, built->solid, 0.1, cancelled),
+            "cancelled while measuring distances to the solid");
+    stopped(deviationToMesh(sphere, sphere, 0.1, cancelled),
+            "cancelled while measuring distances to the mesh");
+    // A token nobody cancels changes nothing.
+    const auto measured =
+        deviationToSolid(sphere, built->solid, 0.1, Progress({}, CancelToken::make()));
+    REQUIRE(measured);
+    CHECK(measured->distances() == deviationToSolid(sphere, built->solid, 0.1)->distances());
 }

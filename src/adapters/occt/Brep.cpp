@@ -107,6 +107,7 @@ void bezierKnots(const std::vector<double>& breaks,
 /// when the surface moves by no more than this: regular regions of a merged face then become one
 /// C2 B-spline, and only the knots next to caps stay triple.
 constexpr double kKnotRemovalToleranceMm = 1e-7;
+constexpr std::size_t kCancelEvery = 4096; // points measured between cancel checks
 
 void removeKnots(Geom_BSplineSurface& surface) {
     for (int k = surface.NbUKnots() - 1; k >= 2; --k) {
@@ -421,7 +422,8 @@ Result<Solid> readBrep(const std::string& brep,
     });
 }
 
-Result<std::vector<double>> signedDistances(const Solid& solid, const std::vector<Vec3d>& points) {
+Result<std::vector<double>>
+signedDistances(const Solid& solid, const std::vector<Vec3d>& points, const Progress& progress) {
     const std::vector<SurfacePatch>& faces = solid.faces();
     const auto& [display, triangleFaces, vertexUvs] = solid.displayMap();
     // A solid with no B-spline faces is measured against its kernel faces.
@@ -466,6 +468,10 @@ Result<std::vector<double>> signedDistances(const Solid& solid, const std::vecto
         std::vector<double> out;
         out.reserve(points.size());
         for (const Vec3d& p : points) {
+            if (out.size() % kCancelEvery == 0) {
+                if (auto go = checkCancelled(progress, "measuring distances to the solid"); !go)
+                    return std::unexpected(go.error());
+            }
             const ClosestPoint near = index.closestPoint(p);
             const std::size_t f = triangleFaces[near.face];
             // Barycentric weights of the closest point give its (u, v) from the corners'.
