@@ -65,6 +65,9 @@ target.
     counts of the faces and edges outside them.
   - `weldedTriangulation`: the kernel's triangulation of a solid as one mesh, welded where faces
     meet, for checks such as `cgal::selfIntersects`.
+  - `exportTriangulation` with `ExportTessellation`: the same at a chord in millimetres and an
+    angle in degrees, of a copy of the solid's topology (so its display is unchanged), without
+    triangles that collapse at a point, for GLB, glTF, OBJ and STL export.
 - `m2c/adapters/occt/Surface.h` (namespace `m2c::occt`):
   - `surfaceDistances`: distances from points to a fitted primitive made as an unbounded Open
     CASCADE surface (`Geom_Plane`, `Geom_CylindricalSurface`, `Geom_SphericalSurface`,

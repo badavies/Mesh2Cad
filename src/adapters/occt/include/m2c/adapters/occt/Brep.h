@@ -93,6 +93,20 @@ enum class BrepFormat {
 /// is closed where the solid is. For checks on the solid's shape, such as cgal::selfIntersects().
 [[nodiscard]] Result<TriMesh> weldedTriangulation(const Solid& solid);
 
+/// How finely exportTriangulation() follows the surface (ARCHITECTURE.md section 7, Export).
+struct ExportTessellation {
+    double chordMm{0.01};  ///< Largest distance from a triangle to the surface it stands for.
+    double angleDeg{10.0}; ///< Largest angle between neighbouring triangles' normals on a face.
+};
+
+/// The kernel's triangulation of the solid's faces at the given chord and angle, welded where
+/// faces meet as weldedTriangulation() is, and without triangles that collapse to a line where
+/// a face narrows to a point. Triangulates a copy, so the solid and its display are unchanged
+/// and an earlier, finer triangulation is not reused. Fails with InvalidArgument for a chord that
+/// is not positive or an angle outside (0, 90] degrees.
+[[nodiscard]] Result<TriMesh> exportTriangulation(const Solid& solid,
+                                                  const ExportTessellation& params);
+
 /// Reads a STEP file and summarises its solids, and counts what is outside them.
 [[nodiscard]] Result<StepContents> readStep(const std::filesystem::path& path);
 

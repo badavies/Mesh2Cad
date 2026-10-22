@@ -1,6 +1,6 @@
 # io (`Mesh2Cad::io`)
 
-Reads and writes mesh files, STEP files, reports and the project file. Mesh readers weld duplicate positions, drop
+Reads and writes mesh files, glTF files, STEP files, reports and the project file. Mesh readers weld duplicate positions, drop
 unused vertices and validate the result through `TriMesh::create`. The module works on core
 types only; it cannot see the document, so the command engine converts between project data and
 document objects.
@@ -11,6 +11,8 @@ document objects.
 - `m2c/io/Stl.h`: `readStl` (binary or ASCII) and `writeStl` (binary, float coordinates).
 - `m2c/io/Obj.h`: `readObj` (positions and faces only) and `writeObj` (round-trips exactly).
 - `m2c/io/Ply.h`: `readPly` (ASCII or binary, either byte order), `readPlyUnwelded` (the project file's mesh reader, which keeps vertices as stored) and `writePly` (binary little-endian, double precision).
+- `m2c/io/Gltf.h`: `writeGltf` with `GltfOptions`, a mesh as GLB or as glTF with its buffer embedded: metres, Y up, normals split at creases, one node and a grey material (ADR-037).
+- `m2c/io/SolidMesh.h`: `exportTriangulation` and `ExportTessellation`, a solid's triangulation at a chord and angle for mesh export, from the Open CASCADE adapter.
 - `m2c/io/Step.h`: `writeStep` (AP242, millimetres; a solid alone, or `StepPart`s: a solid, sketches and planes as named products, ADR-034) and `readStep` returning `StepContents` (a `SolidSummary` of the file's solids, and the faces and edges outside them), from the Open CASCADE adapter.
 - `m2c/io/Png.h`: `encodePng` and `writePng`, an `Image` as an 8-bit RGB PNG (miniz).
 - `m2c/io/Report.h`: `writeDeviationReport`, a deviation's statistics and histogram as CSV.
@@ -22,7 +24,7 @@ shared by the readers.
 ## Dependencies
 
 May use: `core`; `adapters` for B-rep files (STEP now, B-rep in the project file); miniz and
-nlohmann_json (linked privately, for the project zip and manifest).
+nlohmann_json (linked privately, for the project zip and manifest and the glTF JSON).
 Must not depend on: `document`, `pipeline`, `commands`, `app`, `cli`, `rpc`, `mcp`,
 and kernel library headers (CGAL, Open CASCADE, OpenSubdiv). Enforced by
 `scripts/check_layers.py`.

@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstddef>
 #include <filesystem>
+#include <fstream>
+#include <ios>
 #include <memory>
 #include <numbers>
 #include <string>
@@ -15,12 +17,16 @@
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/MeshStats.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/Progress.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/document/Document.h"
+#include "m2c/io/Gltf.h"
+#include "m2c/io/MeshIO.h"
+#include "m2c/io/SolidMesh.h"
 #include "m2c/io/Step.h"
 #include "m2c/pipeline/Boolean.h"
 #include "m2c/pipeline/BoxFit.h"
@@ -53,9 +59,14 @@ Json toJson(const SolidSummary& s) {
                 {"bounds", toJson(s.bounds)}};
 }
 
-bool isStepPath(const std::filesystem::path& path) {
+std::string lowerExtension(const std::filesystem::path& path) {
     std::string ext = path.extension().string();
     std::ranges::transform(ext, ext.begin(), [](const unsigned char c) { return std::tolower(c); });
+    return ext;
+}
+
+bool isStepPath(const std::filesystem::path& path) {
+    const std::string ext = lowerExtension(path);
     return ext == ".step" || ext == ".stp";
 }
 
@@ -617,6 +628,78 @@ void addSurfaceCommands(std::vector<Command>& out) {
         });
     exportStep.writesFiles = true;
     out.push_back(std::move(exportStep));
+
+    Command exportMesh = makeCommand(
+        "solid.export.mesh",
+        "Write a solid as a triangle mesh for Blender or 3D printing: GLB or glTF (metres, Y up, "
+        "as the format requires, so Blender shows it at its true size and the right way up; "
+        "smooth normals split where the surface turns more than crease_angle_deg), OBJ, or "
+        "binary STL (millimetres, Z up). The triangles are at most chord_mm from the surface and "
+        "turn at most angle_deg from their neighbours on a face; faces are welded where they meet. "
+        "Fails, writing nothing, unless the mesh is closed. The result gives the triangle count "
+        "and the mesh's volume error against the solid, with the limit it stays within (the "
+        "solid's area times chord_mm, over its volume).",
+        R"({
+            "type":"object",
+            "properties":{
+                "id":{"type":"integer","x-object":"solid","minimum":0,"description":"The solid."},
+                "path":{"type":"string","x-file-types":["glb","gltf","obj","stl"],"description":"The file to write; the extension (.glb, .gltf, .obj, .stl) selects the format."},
+                "chord_mm":{"type":"number","exclusiveMinimum":0,"default":0.01,"description":"Largest distance from a triangle to the surface."},
+                "angle_deg":{"type":"number","exclusiveMinimum":0,"maximum":90,"default":10,"description":"Largest angle between neighbouring triangles on a face."},
+                "crease_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":30,"description":"GLB and glTF: edges where the surface turns more than this are shaded sharp."}
+            },
+            "required":["id","path"],"additionalProperties":false})",
+        false,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(object, requireObject(context, params, "id", "solid"));
+            M2C_TRY(path, requireString(params, "path"));
+            M2C_TRY(chord, optionalNumber(params, "chord_mm", 0.01, 1e-6, 1e6));
+            M2C_TRY(angle, optionalNumber(params, "angle_deg", 10.0, 1e-3, 90.0));
+            M2C_TRY(crease, optionalNumber(params, "crease_angle_deg", 30.0, 0.0, 180.0));
+            const std::filesystem::path file(*path);
+            const std::string ext = lowerExtension(file);
+            if (ext != ".glb" && ext != ".gltf" && ext != ".obj" && ext != ".stl") {
+                return fail(ErrorCode::InvalidArgument,
+                            "the path must end in .glb, .gltf, .obj or .stl");
+            }
+            const Solid& solid = object->solid()->solid;
+            M2C_TRY(mesh, exportTriangulation(solid, {.chordMm = *chord, .angleDeg = *angle}));
+            const MeshStats stats = computeStats(*mesh);
+            if (!stats.isWatertight()) {
+                return fail(ErrorCode::InvalidState,
+                            "the triangulation of " + object->name + " is not closed (" +
+                                std::to_string(stats.boundaryEdgeCount) + " open and " +
+                                std::to_string(stats.nonManifoldEdgeCount) +
+                                " non-manifold edges); nothing was written");
+            }
+            if (ext == ".glb" || ext == ".gltf") {
+                std::ofstream stream(file, std::ios::binary | std::ios::trunc);
+                if (!stream) return fail(ErrorCode::Io, "cannot open '" + *path + "' for writing");
+                M2C_TRY(written,
+                        writeGltf(*mesh,
+                                  stream,
+                                  {.binary = ext == ".glb",
+                                   .name = object->name,
+                                   .creaseAngleDeg = *crease}));
+            } else {
+                M2C_TRY(written, writeMesh(*mesh, file));
+            }
+            const SolidSummary& summary = solid.summary();
+            const double volume = std::abs(summary.volumeMm3);
+            const double error = std::abs(stats.signedVolume - summary.volumeMm3);
+            return Json{
+                {"id", object->id},
+                {"path", *path},
+                {"triangle_count", stats.faceCount},
+                {"vertex_count", stats.vertexCount},
+                {"chord_mm", *chord},
+                {"angle_deg", *angle},
+                {"volume_mm3", stats.signedVolume},
+                {"volume_error", volume > 0.0 ? error / volume : 0.0},
+                {"volume_error_limit", volume > 0.0 ? summary.areaMm2 * *chord / volume : 0.0}};
+        });
+    exportMesh.writesFiles = true;
+    out.push_back(std::move(exportMesh));
 
     out.push_back(makeCommand(
         "solid.extrude",

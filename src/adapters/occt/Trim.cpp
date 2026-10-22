@@ -20,6 +20,7 @@
 
 #include <BRepAlgoAPI_BuilderAlgo.hxx>
 #include <BRepBndLib.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepBuilderAPI_MakeFace.hxx>
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
@@ -147,13 +148,9 @@ double coverage(const TopoDS_Face& face, const SpatialIndex& scan, const double 
     return total > 0.0 ? near / total : 0.0;
 }
 
-} // namespace
-
-Result<FaceTessellation> triangulate(const TopoDS_Shape& solid) {
-    Bnd_Box box;
-    BRepBndLib::Add(solid, box);
-    const double deflection = 1e-3 * std::sqrt(box.SquareExtent());
-    BRepMesh_IncrementalMesh const mesher(solid, deflection, false, 0.3, false);
+/// The triangulation BRepMesh left on each face of the solid, in TopExp::MapShapes order and
+/// turned to face outward.
+Result<FaceTessellation> faceTriangulations(const TopoDS_Shape& solid) {
     NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> faces;
     TopExp::MapShapes(solid, TopAbs_FACE, faces);
     std::vector<Vec3d> positions;
@@ -192,25 +189,65 @@ Result<FaceTessellation> triangulate(const TopoDS_Shape& solid) {
                             .vertexUvs = std::move(uvs)};
 }
 
+/// The faces' triangles as one mesh with equal points made one vertex: a face's nodes on an edge
+/// are the edge's own points, so neighbouring faces then share them. With dropCollapsed,
+/// triangles left with a repeated vertex (where a face narrows to a point, such as a sphere's
+/// pole, whose nodes all lie on one point) are left out.
+Result<TriMesh> weld(const TriMesh& faces, const bool dropCollapsed) {
+    std::map<std::array<double, 3>, std::uint32_t> ids;
+    std::vector<Vec3d> positions;
+    std::vector<std::uint32_t> vertex;
+    vertex.reserve(faces.vertexCount());
+    for (const Vec3d& p : faces.positions()) {
+        const auto [it, added] =
+            ids.try_emplace({p.x, p.y, p.z}, static_cast<std::uint32_t>(positions.size()));
+        if (added) positions.push_back(p);
+        vertex.push_back(it->second);
+    }
+    std::vector<std::uint32_t> indices;
+    indices.reserve(faces.indices().size());
+    for (std::size_t f = 0; f < faces.faceCount(); ++f) {
+        const auto [a, b, c] = faces.face(f);
+        const std::uint32_t va = vertex[a], vb = vertex[b], vc = vertex[c];
+        if (dropCollapsed && (va == vb || vb == vc || vc == va)) continue;
+        indices.insert(indices.end(), {va, vb, vc});
+    }
+    return TriMesh::create(std::move(positions), std::move(indices));
+}
+
+} // namespace
+
+Result<FaceTessellation> triangulate(const TopoDS_Shape& solid) {
+    Bnd_Box box;
+    BRepBndLib::Add(solid, box);
+    const double deflection = 1e-3 * std::sqrt(box.SquareExtent());
+    BRepMesh_IncrementalMesh const mesher(solid, deflection, false, 0.3, false);
+    return faceTriangulations(solid);
+}
+
 Result<TriMesh> weldedTriangulation(const Solid& solid) {
     return guarded("triangulating the solid", [&]() -> Result<TriMesh> {
         auto faces = triangulate(solid.shape().shape);
         if (!faces) return std::unexpected(faces.error());
-        // A face's nodes on an edge are the edge's own points, so equal points are one vertex.
-        std::map<std::array<double, 3>, std::uint32_t> ids;
-        std::vector<Vec3d> positions;
-        std::vector<std::uint32_t> vertex;
-        vertex.reserve(faces->mesh.vertexCount());
-        for (const Vec3d& p : faces->mesh.positions()) {
-            const auto [it, added] =
-                ids.try_emplace({p.x, p.y, p.z}, static_cast<std::uint32_t>(positions.size()));
-            if (added) positions.push_back(p);
-            vertex.push_back(it->second);
-        }
-        std::vector<std::uint32_t> indices;
-        indices.reserve(faces->mesh.indices().size());
-        for (const std::uint32_t v : faces->mesh.indices()) indices.push_back(vertex[v]);
-        return TriMesh::create(std::move(positions), std::move(indices));
+        return weld(faces->mesh, false);
+    });
+}
+
+Result<TriMesh> exportTriangulation(const Solid& solid, const ExportTessellation& params) {
+    if (!(params.chordMm > 0.0) || !(params.angleDeg > 0.0 && params.angleDeg <= 90.0)) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the chord must be positive and the angle between 0 and 90 degrees");
+    }
+    return guarded("triangulating the solid for export", [&]() -> Result<TriMesh> {
+        // A copy of the topology without triangulations: BRepMesh keeps a face's triangulation
+        // when it is already finer than asked, and the solid's own display stays as it was.
+        const TopoDS_Shape copy =
+            BRepBuilderAPI_Copy(solid.shape().shape, Standard_False, Standard_False).Shape();
+        BRepMesh_IncrementalMesh const mesher(
+            copy, params.chordMm, false, params.angleDeg * std::numbers::pi / 180.0, false);
+        auto faces = faceTriangulations(copy);
+        if (!faces) return std::unexpected(faces.error());
+        return weld(faces->mesh, true);
     });
 }
 

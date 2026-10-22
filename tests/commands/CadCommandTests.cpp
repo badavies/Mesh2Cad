@@ -374,6 +374,68 @@ TEST_CASE("solid.export writes a STEP file that reads back as the same solid",
                          {{"id", solid}, {"path", (dir.path() / "no" / "x.step").string()}}));
 }
 
+TEST_CASE("solid.export.mesh writes GLB, glTF, OBJ and STL meshes of a solid",
+          "[commands][export]") {
+    Session s;
+    const TempDir dir;
+    const Json box = s.run("primitive.box", {{"size_mm", {30, 20, 10}}, {"name", "block"}});
+    const ObjectId ballMesh = s.import(dir, makeSphere(20.0, 4), "ball");
+    const auto cage = s.run("quad.remesh", {{"id", ballMesh}, {"target_faces", 300}})["id"];
+    const auto ball = s.run("surface.build", {{"id", cage}, {"mesh_id", ballMesh}})["id"];
+    const double ballVolume = s.run("solid.info", {{"id", ball}})["summary"]["volume_mm3"];
+
+    for (const std::string ext : {"glb", "gltf", "obj", "stl"}) {
+        CAPTURE(ext);
+        const auto path = (dir.path() / ("block." + ext)).string();
+        const Json written = s.run("solid.export.mesh", {{"id", box["id"]}, {"path", path}});
+        CHECK(written["path"] == path);
+        CHECK(written["triangle_count"] == 12);
+        CHECK(written["volume_error"].get<double>() < 1e-12);
+        CHECK(std::filesystem::file_size(path) > 100);
+
+        const auto round = (dir.path() / ("ball." + ext)).string();
+        const Json curved = s.run("solid.export.mesh", {{"id", ball}, {"path", round}});
+        CHECK(curved["triangle_count"].get<int>() > 1000);
+        CHECK(curved["volume_error"].get<double>() <= curved["volume_error_limit"].get<double>());
+        if (ext == "obj" || ext == "stl") {
+            // Read back closed, with the volume reported.
+            const Json read = s.run("mesh.import", {{"path", round}});
+            CHECK(read["stats"]["is_watertight"] == true);
+            CHECK(read["stats"]["face_count"] == curved["triangle_count"]);
+            CHECK_THAT(read["stats"]["signed_volume_mm3"].get<double>(),
+                       Catch::Matchers::WithinRel(ballVolume, 1e-3));
+        }
+    }
+    CHECK_FALSE(s.document.canRedo()); // no document change
+
+    // A smaller chord gives more triangles and a smaller volume error.
+    const auto fine =
+        s.run("solid.export.mesh",
+              {{"id", ball}, {"path", (dir.path() / "fine.stl").string()}, {"chord_mm", 0.002}});
+    const auto coarse = s.run("solid.export.mesh",
+                              {{"id", ball},
+                               {"path", (dir.path() / "coarse.stl").string()},
+                               {"chord_mm", 0.1},
+                               {"angle_deg", 30}});
+    CHECK(fine["triangle_count"].get<int>() > coarse["triangle_count"].get<int>());
+    CHECK(fine["volume_error"].get<double>() < coarse["volume_error"].get<double>());
+
+    // Bad settings, objects and extensions fail and write nothing.
+    const auto bad = (dir.path() / "bad.glb").string();
+    CHECK_FALSE(s.tryRun("solid.export.mesh", {{"id", ball}, {"path", bad}, {"chord_mm", 0}}));
+    CHECK_FALSE(s.tryRun("solid.export.mesh", {{"id", ball}, {"path", bad}, {"angle_deg", 95}}));
+    CHECK_FALSE(
+        s.tryRun("solid.export.mesh", {{"id", ball}, {"path", bad}, {"crease_angle_deg", -1}}));
+    CHECK_FALSE(s.tryRun("solid.export.mesh", {{"id", ballMesh}, {"path", bad}}));
+    CHECK_FALSE(std::filesystem::exists(bad));
+    const auto step = (dir.path() / "ball.step").string();
+    CHECK_FALSE(s.tryRun("solid.export.mesh", {{"id", ball}, {"path", step}}));
+    CHECK_FALSE(std::filesystem::exists(step));
+    CHECK(s.run("solid.export.mesh",
+                {{"id", ball}, {"path", (dir.path() / "upper.GLB").string()}})["triangle_count"]
+              .get<int>() > 1000);
+}
+
 TEST_CASE("solid.export writes sketches and planes beside the solid", "[commands][surface]") {
     Session s;
     const TempDir dir;

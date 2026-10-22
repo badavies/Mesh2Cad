@@ -1,6 +1,7 @@
 m2c_add_library(io
     SOURCES
         detail/Parse.cpp
+        Gltf.cpp
         MeshIO.cpp
         Obj.cpp
         Ply.cpp
