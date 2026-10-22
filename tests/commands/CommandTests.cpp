@@ -45,10 +45,13 @@ TEST_CASE("Every command is well formed", "[commands]") {
         CHECK_FALSE(c->summary.empty());
         CHECK(c->paramsSchema.is_object());
         CHECK(c->paramsSchema.value("type", "") == "object");
-        // A command that writes a file is told where by a required "path".
+        // A command that writes a file is told where by "path", required except by view.render,
+        // which returns the picture instead when it has no path (ADR-031).
         if (c->writesFiles) {
             const Json& required = c->paramsSchema.value("required", Json::array());
-            CHECK(std::ranges::find(required, Json("path")) != required.end());
+            CHECK(c->paramsSchema["properties"].contains("path"));
+            CHECK((std::ranges::find(required, Json("path")) != required.end()) ==
+                  (c->name != "view.render"));
         }
     }
 }

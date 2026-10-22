@@ -12,7 +12,9 @@ Headers live in this folder (no `m2c/mcp/` prefix).
   into `mesh_import`) and its `EngineCall` callback type. It answers `initialize`, `ping`,
   `tools/list` (from `commands.list`) and `tools/call`.
   A result that names a picture it wrote (`{"image": {"path", "mime_type"}}`, as
-  `view.render`'s does) also carries the picture as an image content block.
+  `view.render`'s does) also carries the picture as an image content block; one that carries the
+  picture itself (`{"image": {"data_base64", "mime_type"}}`, `view.render` without a path) has it
+  moved into the block, out of the text and structured content.
   A tool call whose request carries `_meta.progressToken` gets a `notifications/progress` every
   two seconds until it returns (through the optional `Notify` callback): the progress is the
   seconds spent, and the message names the latest stage the command reported, which the engine

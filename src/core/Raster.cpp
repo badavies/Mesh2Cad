@@ -44,7 +44,8 @@ Raster::Raster(const int width,
                const Aabb& box,
                const Vec3d& from,
                const Vec3d& up,
-               const Rgb background)
+               const Rgb background,
+               const Framing framing)
     : image_{.width = width, .height = height, .rgb = {}},
       depth_(static_cast<std::size_t>(width) * static_cast<std::size_t>(height),
              std::numeric_limits<double>::infinity()) {
@@ -67,7 +68,13 @@ Raster::Raster(const int width,
     }
     centreX_ = 0.5 * (minX + maxX);
     centreY_ = 0.5 * (minY + maxY);
-    const double spanX = std::max(maxX - minX, 1e-9), spanY = std::max(maxY - minY, 1e-9);
+    double spanX = std::max(maxX - minX, 1e-9), spanY = std::max(maxY - minY, 1e-9);
+    if (framing == Framing::Sphere) {
+        const Vec3d centre = (box.min + box.max) * 0.5;
+        centreX_ = dot(centre, right_);
+        centreY_ = dot(centre, up_);
+        spanX = spanY = std::max(length(box.max - box.min), 1e-9);
+    }
     scale_ = 0.9 * std::min(width / spanX, height / spanY);
     lineBias_ = 1e-3 * std::max({spanX, spanY, maxZ - minZ});
     image_.rgb.resize(3 * depth_.size());
@@ -178,6 +185,86 @@ void Raster::lines(const std::span<const Vec3d> points,
             if (!onTop && !(z < d)) continue;
             if (!onTop) d = z;
             put(x, y, color);
+        }
+    }
+}
+
+void Raster::axisTriad() {
+    const int size = std::min(image_.width, image_.height);
+    const double length = 0.06 * size;
+    const double ox = 0.07 * size, oy = image_.height - 0.07 * size;
+    struct Axis {
+        Vec3d direction;
+        Rgb color;
+    };
+    std::array<Axis, 3> axes{{{{1, 0, 0}, {0.90, 0.31, 0.31}},
+                              {{0, 1, 0}, {0.39, 0.78, 0.39}},
+                              {{0, 0, 1}, {0.35, 0.55, 0.94}}}};
+    // The axis furthest from the camera first, so nearer ones draw over it.
+    std::ranges::stable_sort(axes, [&](const Axis& a, const Axis& b) {
+        return dot(a.direction, forward_) > dot(b.direction, forward_);
+    });
+    for (const Axis& axis : axes) {
+        const double dx = dot(axis.direction, right_) * length;
+        const double dy = -dot(axis.direction, up_) * length;
+        const int steps =
+            std::max(1, static_cast<int>(std::ceil(std::max(std::abs(dx), std::abs(dy)))));
+        for (int i = 0; i <= steps; ++i) {
+            const double t = static_cast<double>(i) / steps;
+            // Two pixels wide.
+            for (int k = 0; k < 4; ++k) {
+                const int x = static_cast<int>(std::floor(ox + dx * t)) + (k & 1);
+                const int y = static_cast<int>(std::floor(oy + dy * t)) + (k >> 1);
+                if (x >= 0 && y >= 0 && x < image_.width && y < image_.height)
+                    put(x, y, axis.color);
+            }
+        }
+    }
+}
+
+void Raster::label(
+    const int x, const int y, const std::string_view text, const Rgb color, const int scale) {
+    // 5 x 7 glyphs, one byte per row, the five low bits from left to right.
+    static constexpr std::array<std::array<std::uint8_t, 7>, 26> kGlyphs{{
+        {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, // A
+        {0x1E, 0x11, 0x11, 0x1E, 0x11, 0x11, 0x1E}, // B
+        {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E}, // C
+        {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E}, // D
+        {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F}, // E
+        {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10}, // F
+        {0x0E, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0F}, // G
+        {0x11, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, // H
+        {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E}, // I
+        {0x07, 0x02, 0x02, 0x02, 0x02, 0x12, 0x0C}, // J
+        {0x11, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11}, // K
+        {0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x1F}, // L
+        {0x11, 0x1B, 0x15, 0x15, 0x11, 0x11, 0x11}, // M
+        {0x11, 0x11, 0x19, 0x15, 0x13, 0x11, 0x11}, // N
+        {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}, // O
+        {0x1E, 0x11, 0x11, 0x1E, 0x10, 0x10, 0x10}, // P
+        {0x0E, 0x11, 0x11, 0x11, 0x15, 0x12, 0x0D}, // Q
+        {0x1E, 0x11, 0x11, 0x1E, 0x14, 0x12, 0x11}, // R
+        {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E}, // S
+        {0x1F, 0x04, 0x04, 0x04, 0x04, 0x04, 0x04}, // T
+        {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E}, // U
+        {0x11, 0x11, 0x11, 0x11, 0x11, 0x0A, 0x04}, // V
+        {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0A}, // W
+        {0x11, 0x11, 0x0A, 0x04, 0x0A, 0x11, 0x11}, // X
+        {0x11, 0x11, 0x0A, 0x04, 0x04, 0x04, 0x04}, // Y
+        {0x1F, 0x01, 0x02, 0x04, 0x08, 0x10, 0x1F}, // Z
+    }};
+    for (std::size_t i = 0; i < text.size(); ++i) {
+        if (text[i] < 'A' || text[i] > 'Z') continue;
+        const auto& glyph = kGlyphs[static_cast<std::size_t>(text[i] - 'A')];
+        const int left = x + static_cast<int>(i) * 6 * scale;
+        for (int row = 0; row < 7 * scale; ++row) {
+            for (int col = 0; col < 5 * scale; ++col) {
+                if ((glyph[static_cast<std::size_t>(row / scale)] >> (4 - col / scale) & 1) == 0)
+                    continue;
+                const int px = left + col, py = y + row;
+                if (px >= 0 && py >= 0 && px < image_.width && py < image_.height)
+                    put(px, py, color);
+            }
         }
     }
 }

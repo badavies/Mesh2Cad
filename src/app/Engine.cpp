@@ -70,6 +70,12 @@ QString summarize(const std::string& source, const std::string& command, const R
     return line;
 }
 
+/// Whether a command wrote a file: one that may write files did when its result names the path
+/// (view.render without a path returns its picture instead; ADR-031).
+bool wroteFile(const Command* c, const Json& result) {
+    return c->writesFiles && result.is_object() && result.contains("path");
+}
+
 } // namespace
 
 const DocumentObject* DocSnapshot::find(const ObjectId id) const {
@@ -214,7 +220,7 @@ void Engine::run(const QString& command, const Json& params, Done done) {
                             .count();
         publish(); // the UI sees the new document before the callback runs
         const Command* c = registry_.find(name);
-        const bool quiet = result && c != nullptr && !c->mutatesDocument && !c->writesFiles;
+        const bool quiet = result && c != nullptr && !c->mutatesDocument && !wroteFile(c, *result);
         QString line = summarize("ui", name, result);
         if (ms >= 100)
             line += QStringLiteral("  (%1 s)").arg(static_cast<double>(ms) / 1000.0, 0, 'f', 1);
@@ -310,7 +316,11 @@ void Engine::onReadyRead(int connectionId) {
             // A command the log will show still running after a while says so, so a long one
             // does not look hung.
             const auto finished = std::make_shared<std::atomic<bool>>(false);
-            if (command != nullptr && (command->mutatesDocument || command->writesFiles)) {
+            const bool givesPath = named && request.contains("params") &&
+                                   request["params"].is_object() &&
+                                   request["params"].contains("path");
+            if (command != nullptr &&
+                (command->mutatesDocument || (command->writesFiles && givesPath))) {
                 const QString running = QStringLiteral("[%1] %2  running...")
                                             .arg(QString::fromStdString(c->context->source),
                                                  QString::fromStdString(method));
@@ -337,16 +347,16 @@ void Engine::onReadyRead(int connectionId) {
                 // A notification has no reply; the parse then gives a discarded value.
                 const Json response = Json::parse(reply, nullptr, false);
                 failed = response.is_object() && response.contains("error");
+                const Json result =
+                    !failed && response.is_object() ? response.value("result", Json()) : Json();
                 if (command != nullptr &&
-                    (command->mutatesDocument || command->writesFiles || failed)) {
+                    (command->mutatesDocument || wroteFile(command, result) || failed)) {
                     const Result<Json> r =
-                        failed
-                            ? Result<Json>(
-                                  std::unexpected(Error{.code = ErrorCode::InvalidArgument,
-                                                        .message = response["error"].value(
-                                                            "message", std::string("error"))}))
-                            : Result<Json>(response.is_object() ? response.value("result", Json())
-                                                                : Json());
+                        failed ? Result<Json>(
+                                     std::unexpected(Error{.code = ErrorCode::InvalidArgument,
+                                                           .message = response["error"].value(
+                                                               "message", std::string("error"))}))
+                               : Result<Json>(result);
                     logText = summarize(c->context->source, method, r);
                     if (ms >= 100) {
                         logText += QStringLiteral("  (%1 s)")

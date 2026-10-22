@@ -19,7 +19,9 @@ millimetres. Errors cross module boundaries as `Result<T>` (`std::expected<T, Er
 - `m2c/core/SpatialIndex.h`: `SpatialIndex` (BVH with `raycast`, `closestPoint`, `facesWithin`), `RayHit`, `ClosestPoint`, `closestPointOnTriangle`.
 - `m2c/core/MeshSelection.h`: `MeshSelection`, a bitset of face indices on one mesh.
 - `m2c/core/Transform.h`: `Transform3d` (rigid rotation plus translation) and `transformMesh`.
-- `m2c/core/Raster.h`: `Raster`, a software rasteriser (orthographic, flat shaded like the app's viewport, depth tested) drawing triangles and lines into an `Image` of `Rgb` pixels, for `view.render`.
+- `m2c/core/Raster.h`: `Raster`, a software rasteriser (orthographic, flat shaded like the app's viewport, depth tested) drawing triangles and lines into an `Image` of `Rgb` pixels, for `view.render`; it also draws an axis triad and upper-case labels.
+- `m2c/core/SelectionColors.h`: `selectionColor(id)`, the colour of a non-current selection in the viewport and in `view.render`.
+- `m2c/core/Base64.h`: `encodeBase64`, for pictures returned inside JSON results.
 - `m2c/core/DeviationColors.h`: `deviationColor` (the deviation colour map, standard or colour-blind safe, as `Rgb8`) and `deviationRange`.
 - `m2c/core/Sketch.h`: `Sketch` (a `SketchPlane` and closed `SketchLoop`s of `SketchCurve` lines, arcs and splines), `Vec2d`, `planeThrough`, `curveKindName`, `distanceTo` for a curve, and `sketchLines` (the curves as world-space segments, for drawing).
 - `m2c/core/Primitive.h`: `Primitive` (an unbounded plane, cylinder, sphere or cone) and `FittedPrimitive`, `OrientedBox` (a cuboid at any angle), `distanceTo` and `normalAt`, and `primitiveDisplay` for drawing.
