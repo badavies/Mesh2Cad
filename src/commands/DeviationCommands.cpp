@@ -105,18 +105,20 @@ void addDeviationCommands(std::vector<Command>& out) {
                 return fail(ErrorCode::NotFound,
                             "no object with id " + std::to_string(*referenceId));
             }
-            report(context.progress, "measuring the scan against the reference");
+            M2C_TRY(go, checkpoint(context.progress, "measuring the scan against the reference"));
             Result<DeviationField> field =
                 reference->solid() != nullptr
-                    ? deviationToSolid(*mesh->mesh, reference->solid()->solid, *tolerance)
+                    ? deviationToSolid(
+                          *mesh->mesh, reference->solid()->solid, *tolerance, context.progress)
                 : reference->mesh() != nullptr
-                    ? deviationToMesh(*mesh->mesh, *reference->mesh()->mesh, *tolerance)
+                    ? deviationToMesh(
+                          *mesh->mesh, *reference->mesh()->mesh, *tolerance, context.progress)
                     : fail(ErrorCode::InvalidArgument,
                            "object " + std::to_string(*referenceId) + " is a " + reference->kind() +
                                ", not a solid or a mesh");
             if (!field) return std::unexpected(field.error());
             const DeviationStats stats = field->stats();
-            report(context.progress, "finding hotspots");
+            M2C_TRY(found, checkpoint(context.progress, "finding hotspots"));
             const std::vector<DeviationHotspot> hotspots =
                 largestHotspots(*mesh->mesh, *field, static_cast<std::size_t>(*maxHotspots));
             M2C_TRY(id,

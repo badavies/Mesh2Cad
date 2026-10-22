@@ -116,7 +116,8 @@ struct SurfaceBuildResult {
 /// Fits, extracts and sews in one go. The cage must be closed, or open with thicknessMm set;
 /// `scan` may be null when fit is off.
 /// Fails unless the result is one valid closed solid of positive volume whose faces meet at no
-/// more than maxFoldAngleDeg. Deterministic for the same inputs.
+/// more than maxFoldAngleDeg. Deterministic for the same inputs. Reports each stage to
+/// `progress` and stops with Cancelled at the next stage, or within the fit, once it is cancelled.
 [[nodiscard]] Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                                                       const TriMesh* scan,
                                                       const SurfaceBuildParams& params,

@@ -356,18 +356,21 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                           .p95DistanceMm = 0.0,
                           .rmsBeforeRoundMm = {}};
         if (params.fit) {
-            report(progress,
-                   "fitting the cage (" + std::to_string(start.faceCount()) + " quads, fit " +
-                       std::to_string(tries + 1) + ")");
+            if (auto go = checkpoint(progress,
+                                     "fitting the cage (" + std::to_string(start.faceCount()) +
+                                         " quads, fit " + std::to_string(tries + 1) + ")");
+                !go)
+                return std::unexpected(go.error());
             auto held = heldPlanes(start, *scan, params.flat);
             if (!held) return std::unexpected(held.error());
             fitting.held = std::move(*held);
-            auto fitted = fitCage(start, *scan, fitting);
+            auto fitted = fitCage(start, *scan, fitting, progress);
             if (!fitted) return std::unexpected(fitted.error());
             fit = std::move(*fitted);
         }
         ++tries;
-        report(progress, "making the faces");
+        if (auto go = checkpoint(progress, "making the faces"); !go)
+            return std::unexpected(go.error());
         auto patches = extractPatches(fit.cage,
                                       PatchParams{.isolationLevel = fitting.isolationLevel,
                                                   .open = sheet,
@@ -405,7 +408,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
             if (!wall) return std::unexpected(wall.error());
             used = std::move(*wall);
         }
-        report(progress, "merging faces");
+        if (auto go = checkpoint(progress, "merging faces"); !go)
+            return std::unexpected(go.error());
         auto faces =
             sheet ? wallFaces(used,
                               fit.cage.faceCount(),
@@ -422,7 +426,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                             std::to_string(std::lround(faceSeams.maxNormalAngleDeg)) +
                             " degrees; the thickness is more than the sheet's tightest bend");
         }
-        report(progress, "sewing the solid");
+        if (auto go = checkpoint(progress, "sewing the solid"); !go)
+            return std::unexpected(go.error());
         auto display = tessellate(faceSet.faces, params.displayGrid);
         if (!display) return std::unexpected(display.error());
         auto fairness = measureFairness(faceSet.faces, kFairnessSamples);
@@ -432,7 +437,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                                      occt::SewParams{params.sewToleranceMm});
         if (!solid) return std::unexpected(solid.error());
         if (params.checkCrossing) {
-            report(progress, "checking that no faces cross");
+            if (auto go = checkpoint(progress, "checking that no faces cross"); !go)
+                return std::unexpected(go.error());
             auto mesh = occt::weldedTriangulation(*solid);
             if (!mesh) return std::unexpected(mesh.error());
             auto crossed = cgal::selfIntersects(*mesh);

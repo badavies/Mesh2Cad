@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/SurfacePatch.h"
 #include "m2c/core/TriMesh.h"
@@ -64,9 +65,12 @@ struct CageFitResult {
 /// Held vertices (params.held) start and stay on their planes. The samples are the scan's
 /// vertices, thinned to maxSamples, and points across triangles longer than a third of the mean
 /// cage edge (a coarse scan's), within the same budget. The cage must be closed, or open with
-/// params.open. Deterministic.
-[[nodiscard]] Result<CageFitResult>
-fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params);
+/// params.open. Deterministic. Stops with Cancelled within a few thousand samples of
+/// `progress` being cancelled; it reports nothing itself.
+[[nodiscard]] Result<CageFitResult> fitCage(const QuadLayout& cage,
+                                            const TriMesh& scan,
+                                            const CageFitParams& params,
+                                            const Progress& progress = {});
 
 struct PatchParams {
     int isolationLevel{2}; ///< As in CageFitParams; caps get smaller with each level.

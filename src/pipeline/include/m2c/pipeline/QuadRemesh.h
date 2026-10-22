@@ -60,7 +60,8 @@ struct QuadRemeshResult {
     double meanDistanceMm{0.0}; ///< Mean over cage vertices.
 };
 
-/// Remeshes a scan into a quad cage and closes it (closeCage()).
+/// Remeshes a scan into a quad cage and closes it (closeCage()). Reports each stage to `progress`
+/// and stops with Cancelled at the next one once it is cancelled.
 [[nodiscard]] Result<QuadRemeshResult> quadRemesh(const TriMesh& scan,
                                                   const QuadRemeshParams& params,
                                                   const CageCloseParams& close = {},

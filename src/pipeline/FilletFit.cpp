@@ -51,16 +51,18 @@ Result<FilletFitResult> fitFillet(const Solid& solid,
     // edge) is returned, any other leaves the trial without a solid.
     const auto trial = [&](const double r) -> Result<const Trial*> {
         if (const auto it = trials.find(r); it != trials.end()) return &it->second;
-        report(progress,
-               "rounding the edges at " + std::to_string(r) + " mm (try " +
-                   std::to_string(trials.size() + 1) + ")");
+        if (auto go = checkpoint(progress,
+                                 "rounding the edges at " + std::to_string(r) + " mm (try " +
+                                     std::to_string(trials.size() + 1) + ")");
+            !go)
+            return std::unexpected(go.error());
         Trial t;
         auto rounded = filletEdges(solid, edgePoints, r);
         if (!rounded && rounded.error().code == ErrorCode::InvalidArgument) {
             return std::unexpected(rounded.error());
         }
         if (rounded) {
-            auto distances = occt::signedDistances(*rounded, band);
+            auto distances = occt::signedDistances(*rounded, band, progress);
             if (!distances) return std::unexpected(distances.error());
             double sum2 = 0.0;
             for (double& d : *distances) {

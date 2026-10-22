@@ -6,6 +6,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <mutex>
 #include <string>
@@ -106,6 +107,96 @@ TEST_CASE("JSON-RPC sessions with a token refuse commands until authenticated", 
               6, "rpc.auth", {{"token", "s3cret"}, {"source", "mcp"}})))["result"]["source"] ==
           "mcp");
     CHECK(e.context.source == "mcp");
+}
+
+TEST_CASE("rpc.cancel stops the running request and leaves the document as it was", "[rpc]") {
+    Engine e;
+    // A command that runs until it is cancelled (or 10 s pass, so a bug cannot hang the test).
+    std::atomic<bool> started{false};
+    REQUIRE(e.registry
+                .add(Command{.name = "test.wait",
+                             .summary = "Waits to be cancelled.",
+                             .paramsSchema = {{"type", "object"}},
+                             .mutatesDocument = true,
+                             .handler = [](CommandContext& context, const Json&) -> Result<Json> {
+                                 report(context.progress, "waiting");
+                                 const auto until =
+                                     std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                                 while (std::chrono::steady_clock::now() < until) {
+                                     if (auto go = checkCancelled(context.progress, "waiting"); !go)
+                                         return std::unexpected(go.error());
+                                     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                                 }
+                                 return Json{{"cancelled", false}};
+                             }})
+                .has_value());
+    RpcServer* self = nullptr;
+    std::vector<Json> events;
+    std::mutex mutex;
+    bool cancelFromEvents = false; // cancel the request from its first progress event
+    RpcServer server(e.registry, e.context, std::nullopt, [&](const Json& event) {
+        {
+            const std::scoped_lock lock(mutex);
+            events.push_back(event);
+        }
+        if (event["method"] != "rpc.progress") return;
+        started = true;
+        if (cancelFromEvents) {
+            const Json cancelled = *self->handle(request(99, "rpc.cancel", {{"id", "job-2"}}));
+            CHECK(cancelled["result"]["cancelled"] == true);
+        }
+    });
+    self = &server;
+
+    // Nothing runs: there is nothing to cancel, and the request must name an id.
+    CHECK((*server.handle(request(1, "rpc.cancel", {{"id", 5}})))["result"]["cancelled"] == false);
+    CHECK((*server.handle(request(2, "rpc.cancel")))["error"]["code"] == RpcServer::kInvalidParams);
+    CHECK(RpcServer::isCancel(request(3, "rpc.cancel", {{"id", 1}})));
+    CHECK_FALSE(RpcServer::isCancel(request(3, "doc.list")));
+
+    // From another thread while the request runs, as a transport's reader does.
+    Json response;
+    std::thread worker([&] { response = *server.handle(request(7, "test.wait")); });
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!started && std::chrono::steady_clock::now() < until)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK((*server.handle(request(8, "rpc.cancel", {{"id", 6}})))["result"]["cancelled"] == false);
+    CHECK((*server.handle(request(9, "rpc.cancel", {{"id", 7}})))["result"]["cancelled"] == true);
+    worker.join();
+    REQUIRE(response.contains("error"));
+    CHECK(response["id"] == 7);
+    CHECK(response["error"]["code"] == RpcServer::kCancelled);
+    CHECK(response["error"]["data"]["code"] == "cancelled");
+    CHECK(response["error"]["message"] == "cancelled while waiting");
+
+    // A real command stops at its next checkpoint and leaves the document as it was.
+    const TempDir dir;
+    const auto path = dir.path() / "cube.stl";
+    REQUIRE(writeMesh(makeCube(), path).has_value());
+    REQUIRE(
+        (*server.handle(request(10, "mesh.import", {{"path", path.string()}}))).contains("result"));
+    REQUIRE(
+        (*server.handle(request(11, "mesh.import", {{"path", path.string()}}))).contains("result"));
+    const std::uint64_t revision = e.document.revision();
+    const std::size_t objects = e.document.objects().size();
+    events.clear();
+    cancelFromEvents = true;
+    const Json deviation = *server.handle(Json{{"jsonrpc", "2.0"},
+                                               {"id", "job-2"},
+                                               {"method", "deviation.compute"},
+                                               {"params", {{"id", 1}, {"reference_id", 2}}}});
+    CHECK(deviation["error"]["code"] == RpcServer::kCancelled);
+    CHECK(deviation["error"]["message"] ==
+          "cancelled while measuring the scan against the reference");
+    CHECK(e.document.revision() == revision);
+    CHECK(e.document.objects().size() == objects);
+    REQUIRE(events.size() == 1); // its one stage, and no doc.changed
+    CHECK(events[0]["method"] == "rpc.progress");
+
+    // Before rpc.auth, cancelling is refused like everything else.
+    RpcServer locked(e.registry, e.context, std::string("s3cret"));
+    CHECK((*locked.handle(request(1, "rpc.cancel", {{"id", 1}})))["error"]["code"] ==
+          RpcServer::kUnauthorized);
 }
 
 TEST_CASE("MCP server lists commands as tools and calls them", "[mcp]") {

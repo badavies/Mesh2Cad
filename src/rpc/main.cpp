@@ -6,15 +6,21 @@
 //
 //   mesh2cad-rpc [--log <session.jsonl>]
 //
-// Responses go to stdout, doc.changed notifications too; diagnostics go to stderr.
+// Responses go to stdout, doc.changed notifications too; diagnostics go to stderr. Requests run in
+// order; rpc.cancel {"id"} is answered at once and stops the running request with that id.
 
+#include <condition_variable>
 #include <cstddef>
+#include <deque>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <utility>
 
 #include "m2c/commands/Command.h"
 #include "m2c/document/Document.h"
@@ -52,14 +58,53 @@ int main(int argc, char** argv) {
             logFile << line.dump() << '\n' << std::flush;
         };
     }
-    m2c::RpcServer server(registry, context, std::nullopt, [](const m2c::Json& event) {
-        std::cout << event.dump() << '\n' << std::flush;
+    // The engine runs requests in order on a worker thread while this one reads, so an
+    // rpc.cancel can reach the request it names while that runs. Both threads write lines.
+    std::mutex outMutex;
+    const auto send = [&outMutex](const std::string& line) {
+        if (line.empty()) return;
+        const std::scoped_lock lock(outMutex);
+        std::cout << line << '\n' << std::flush;
+    };
+    m2c::RpcServer server(
+        registry, context, std::nullopt, [&send](const m2c::Json& event) { send(event.dump()); });
+
+    std::mutex queueMutex;
+    std::condition_variable wake;
+    std::deque<std::string> queue;
+    bool done = false;
+    std::thread worker([&] {
+        for (;;) {
+            std::string line;
+            {
+                std::unique_lock lock(queueMutex);
+                wake.wait(lock, [&] { return done || !queue.empty(); });
+                if (queue.empty()) return; // input ended and every request has run
+                line = std::move(queue.front());
+                queue.pop_front();
+            }
+            send(server.handleLine(line));
+        }
     });
 
     std::string line;
     while (std::getline(std::cin, line)) {
-        if (const std::string response = server.handleLine(line); !response.empty())
-            std::cout << response << '\n' << std::flush;
+        if (const m2c::Json message = m2c::Json::parse(line, nullptr, false);
+            m2c::RpcServer::isCancel(message)) {
+            if (const auto response = server.handle(message)) send(response->dump());
+            continue;
+        }
+        {
+            const std::scoped_lock lock(queueMutex);
+            queue.push_back(std::move(line));
+        }
+        wake.notify_one();
     }
+    {
+        const std::scoped_lock lock(queueMutex);
+        done = true;
+    }
+    wake.notify_one();
+    worker.join();
     return 0;
 }
