@@ -84,6 +84,11 @@ enum class BrepFormat {
 [[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,
                                                           const std::vector<Vec3d>& points);
 
+/// The kernel's triangulation of the solid's faces (within 0.1% of its diagonal of them) as one
+/// mesh, welded where faces meet: neighbouring faces share their common edge's points, so the mesh
+/// is closed where the solid is. For checks on the solid's shape, such as cgal::selfIntersects().
+[[nodiscard]] Result<TriMesh> weldedTriangulation(const Solid& solid);
+
 /// Reads a STEP file and summarises its solids, and counts what is outside them.
 [[nodiscard]] Result<StepContents> readStep(const std::filesystem::path& path);
 

@@ -82,7 +82,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "while fitting, so the surface there is that plane, without the scan's noise and bumps, "
         "and blends into the rest at the area's edge. Adds a solid object; the quad layout and "
         "mesh are unchanged. Fails, adding nothing, unless the result is one valid closed solid "
-        "of positive volume whose faces, after the last fit, meet at no more than 90 degrees.",
+        "of positive volume whose faces, after the last fit, meet at no more than 90 degrees "
+        "and (unless check_crossing is false) whose surface does not cross itself.",
         R"({
             "type":"object",
             "properties":{
@@ -95,6 +96,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "max_sample_distance_mm":{"type":"number","minimum":0,"default":0,"description":"Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length."},
                 "isolation_level":{"type":"integer","minimum":1,"maximum":4,"default":2,"description":"Refinement around irregular vertices: higher gives smaller caps and more faces' pieces."},
                 "merge":{"type":"boolean","default":true,"description":"Merge rectangles of cage quads into one face each (fewer faces, same surface)."},
+                "check_crossing":{"type":"boolean","default":true,"description":"Check that no two faces of the result cross each other, and fail if any do. Takes seconds to a minute; turn it off for quick trials."},
                 "refine_to_mm":{"type":"number","minimum":0,"default":0,"description":"While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off."},
                 "max_refinements":{"type":"integer","minimum":0,"maximum":3,"default":2,"description":"Most subdivisions refine_to_mm may make."},
                 "thickness_mm":{"type":"number","minimum":0,"default":0,"description":"For an open cage: thicken the fitted sheet by this much, against its faces' direction; required for an open cage and only for one."},
@@ -119,6 +121,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(name, optionalString(params, "name"));
             M2C_TRY(merge, optionalBool(params, "merge", true));
             p.merge = *merge;
+            M2C_TRY(checkCrossing, optionalBool(params, "check_crossing", true));
+            p.checkCrossing = *checkCrossing;
             M2C_TRY(refineTo, optionalNumber(params, "refine_to_mm", 0.0, 0.0, 1e6));
             M2C_TRY(maxRefinements, optionalInteger(params, "max_refinements", 2, 0, 3));
             p.refineToMm = *refineTo;

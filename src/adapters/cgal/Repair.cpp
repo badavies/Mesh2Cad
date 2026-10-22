@@ -274,4 +274,10 @@ Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
     });
 }
 
+Result<bool> selfIntersects(const TriMesh& mesh) {
+    return guarded("the self-intersection check", [&]() -> Result<bool> {
+        return scanIntersections(toSurfaceMesh(mesh)).crossing;
+    });
+}
+
 } // namespace m2c::cgal
