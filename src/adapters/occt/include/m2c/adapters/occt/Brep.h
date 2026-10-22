@@ -81,8 +81,9 @@ enum class BrepFormat {
 /// Signed distance from each point to the solid's faces, positive outside: the closest display
 /// triangle gives the face and, through the display map, a start point on it; Open CASCADE then
 /// projects onto that face's surface (the B-spline face, or for a solid with none the kernel
-/// face's own surface), staying within the face's parameter range. Stops with Cancelled within a
-/// few thousand points of `progress` being cancelled.
+/// face's own surface), staying within the face's parameter range. Runs in parallel chunks
+/// (parallelChunks()), each with its own projectors, so the results are the same on any number of
+/// threads. Stops with Cancelled within a chunk of `progress` being cancelled.
 [[nodiscard]] Result<std::vector<double>> signedDistances(const Solid& solid,
                                                           const std::vector<Vec3d>& points,
                                                           const Progress& progress = {});

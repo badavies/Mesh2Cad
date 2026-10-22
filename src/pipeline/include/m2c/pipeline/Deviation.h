@@ -15,7 +15,8 @@
 namespace m2c {
 
 /// To a solid's faces, exactly (the Open CASCADE adapter projects onto each face's surface).
-/// Both stop with Cancelled within a few thousand vertices of `progress` being cancelled.
+/// Both run in parallel chunks (parallelChunks()), with the same results on any number of
+/// threads, and stop with Cancelled within a chunk of `progress` being cancelled.
 [[nodiscard]] Result<DeviationField> deviationToSolid(const TriMesh& mesh,
                                                       const Solid& reference,
                                                       double toleranceMm,

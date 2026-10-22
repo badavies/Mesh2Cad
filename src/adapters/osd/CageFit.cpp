@@ -17,6 +17,7 @@
 
 #include "m2c/adapters/osd/Subdivision.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Parallel.h"
 #include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/TriMesh.h"
@@ -83,7 +84,7 @@ constexpr double kSolveTolerance = 1e-9;     // relative residual of each round'
 constexpr double kSampleSpacing = 1.0 / 3.0; // most spacing of samples, in mean cage edges
 constexpr double kTaubinShrink = 0.5;        // Taubin fairing: a smoothing step,
 constexpr double kTaubinInflate = -0.53;     // then a slightly larger step back
-constexpr Eigen::Index kCancelEvery = 4096;  // samples searched between cancel checks
+constexpr std::size_t kChunk = 4096;         // samples searched per parallel chunk
 
 } // namespace
 
@@ -254,6 +255,7 @@ Result<CageFitResult> fitCage(const QuadLayout& cage,
     double bestMax = 0.0;
     double bestP95 = 0.0;
     std::vector<double> distances;
+    std::vector<SurfacePoint> located;
     for (unsigned it = 0; it <= params.iterations; ++it) {
         auto tess = tessellate(**limit, (*limit)->patchPoints(positions), kSearchGrid);
         if (!tess) return std::unexpected(tess.error());
@@ -269,13 +271,18 @@ Result<CageFitResult> fitCage(const QuadLayout& cage,
         double maxD = 0.0;
         std::size_t used = 0;
         distances.clear();
+        // The closest points in parallel, each to its own slot; the rows are added in order.
+        located.resize(samples.size());
+        parallelChunks(samples.size(), kChunk, [&](const std::size_t begin, const std::size_t end) {
+            if (progress.cancelled()) return;
+            for (std::size_t k = begin; k < end; ++k) located[k] = locate(*tess, samples[k]);
+        });
+        if (auto go = checkCancelled(progress, "fitting the cage"); !go)
+            return std::unexpected(go.error());
         for (Eigen::Index k = 0; k < m; ++k) {
-            if (k % kCancelEvery == 0) {
-                if (auto go = checkCancelled(progress, "fitting the cage"); !go)
-                    return std::unexpected(go.error());
-            }
             const Vec3d& q = samples[static_cast<std::size_t>(k)];
-            const auto [patch, s, t, distance, surfaceNormal] = locate(*tess, q);
+            const auto [patch, s, t, distance, surfaceNormal] =
+                located[static_cast<std::size_t>(k)];
             planeTargets(k) = 0.0;
             for (Eigen::Index c = 0; c < 3; ++c) pointTargets(c * m + k) = 0.0;
             if (distance > gate) continue; // an empty row: the sample is left out

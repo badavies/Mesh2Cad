@@ -41,7 +41,18 @@ FetchContent_Declare(miniz
     GIT_SHALLOW    TRUE
     FIND_PACKAGE_ARGS CONFIG)
 
-set(m2c_dependencies nlohmann_json Eigen3 miniz)
+# ---- oneTBB (ADR 0036) --------------------------------------------------------------------------
+# Built as a subproject when no installed copy is found. Like the other fetched libraries it is
+# then static, which oneTBB warns about; only core links it, so there is one scheduler.
+set(TBB_TEST OFF CACHE BOOL "oneTBB: build tests")
+set(TBB_STRICT OFF CACHE BOOL "oneTBB: treat warnings as errors")
+FetchContent_Declare(TBB
+    GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB.git
+    GIT_TAG        v2022.1.0
+    GIT_SHALLOW    TRUE
+    FIND_PACKAGE_ARGS 2021.5 CONFIG)
+
+set(m2c_dependencies nlohmann_json Eigen3 miniz TBB)
 
 if(MESH2CAD_BUILD_TESTS)
     FetchContent_Declare(Catch2

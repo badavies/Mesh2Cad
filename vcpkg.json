@@ -12,7 +12,8 @@
       "name": "opencascade",
       "default-features": false
     },
-    "opensubdiv"
+    "opensubdiv",
+    "tbb"
   ],
   "default-features": [
     "tests"

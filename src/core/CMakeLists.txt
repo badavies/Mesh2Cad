@@ -5,6 +5,7 @@ m2c_add_library(core
         DisplayProxy.cpp
         MeshStats.cpp
         MeshTopology.cpp
+        Parallel.cpp
         Primitive.cpp
         QuadLayout.cpp
         Raster.cpp
@@ -13,3 +14,4 @@ m2c_add_library(core
         SpatialIndex.cpp
         Transform.cpp
         TriMesh.cpp)
+target_link_libraries(m2c_core PRIVATE TBB::tbb)

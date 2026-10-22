@@ -4,6 +4,7 @@ add_executable(m2c_unit_tests
     GeometryTests.cpp
     MeshStatsTests.cpp
     ObjPlyTests.cpp
+    ParallelTests.cpp
     ProgressTests.cpp
     ProjectTests.cpp
     RasterTests.cpp

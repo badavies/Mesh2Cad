@@ -325,7 +325,7 @@ THIRD_PARTY.md
 - CMake presets for Windows (MSVC) and Linux (GCC; Clang only with libc++, see ADR-019). Both run in CI on every pull request.
 - Warnings as errors in every preset; clang-format enforced in CI (clang-tidy is not run yet).
 - AddressSanitizer and UndefinedBehaviorSanitizer builds on Linux CI.
-- Floating-point flags are fixed in `cmake/Mesh2CadBuild.cmake`: `-ffp-contract=off` on GCC and Clang, `/fp:precise` on MSVC, and no fast-math anywhere. Parallel sums and reductions, once oneTBB is added, use `tbb::parallel_deterministic_reduce`, never `tbb::parallel_reduce`.
+- Floating-point flags are fixed in `cmake/Mesh2CadBuild.cmake`: `-ffp-contract=off` on GCC and Clang, `/fp:precise` on MSVC, and no fast-math anywhere. Parallel loops go through `parallelChunks` (`m2c/core/Parallel.h`, ADR-036): fixed chunks, one output slot per item, and sums and other reductions made afterwards in order. A reduction that must itself run in parallel uses `tbb::parallel_deterministic_reduce`, never `tbb::parallel_reduce`.
 - Language standard C++23 (`CMAKE_CXX_STANDARD 23`) on all presets.
 - `scripts/check_layers.py` fails the build if any module outside `adapters/` includes a CGAL, OCCT or OpenSubdiv header, or if a module includes one it may not depend on (section 4).
 - CI also runs nightly (and on demand): the full suite on every preset plus a long fuzzing run under the sanitizers.
@@ -429,7 +429,7 @@ As built, where M2 differs from sections 5 to 7:
 
 - Surface build fits the cage by point-to-plane least squares (Eigen `SimplicialLDLT`) with a small point term and a smoothing term, in a few rounds that keep the best; samples far from the surface (parts the cage does not cover) are left out. Regular regions convert exactly to bicubic pieces; each cap at an extraordinary vertex is also bicubic, not a degree-5 `GeomPlate` patch: its boundary curves are the neighbours' and its four interior poles are fitted to the limit surface under the neighbours' tangent planes. On the controller the largest cap error is 0.003 mm and the largest angle across any edge is 1.4 degrees. Faces are sewn with `BRepBuilderAPI_Sewing` and closed with `ShapeFix_Solid`; the command fails unless the result is one valid closed solid.
 - There is no `SurfaceModel` or `SolidRef` type. A core `Solid` holds an opaque shape owned by the OCCT adapter, the B-spline faces (`SurfacePatch`, one per cage quad, for exact distance queries) and a triangulation for display. `QuadLayout` has no link to scan regions yet. Patch merging is M3, so the controller solid has 1,954 faces.
-- Deviation to a solid starts from the closest display triangle and projects onto that face with `ShapeAnalysis_Surface`; it runs single-threaded (no oneTBB, as in M1). The colour range is set from the data (the larger of the 95th percentile and twice the tolerance) rather than by the user, and there is no probe, worst-regions list or report screenshot yet; the report is the statistics and a histogram as CSV.
+- Deviation to a solid starts from the closest display triangle and projects onto that face with `ShapeAnalysis_Surface`; since #31 it runs in parallel chunks with oneTBB (ADR-036). The colour range is set from the data (the larger of the 95th percentile and twice the tolerance) rather than by the user, and there is no probe, worst-regions list or report screenshot yet; the report is the statistics and a histogram as CSV.
 
 Gate criteria:
 
