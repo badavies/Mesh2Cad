@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Error.h"
@@ -24,6 +25,8 @@ public:
     /// Sends a notification to the client. Called from another thread while a tool runs, never
     /// at the same time as `handle` returns a response, so it needs no lock of its own.
     using Notify = std::function<void(const Json& notification)>;
+    /// Asks the engine to stop the call in progress (an rpc.cancel for its request).
+    using EngineCancel = std::function<void()>;
 
     /// While a tools/call whose request carries `_meta.progressToken` runs, `notify` gets a
     /// notifications/progress every `progressEvery`, so a client can show that a long command is
@@ -33,7 +36,15 @@ public:
                        std::chrono::milliseconds progressEvery = std::chrono::seconds(2));
 
     /// Handles one MCP message; returns the response, or nothing for notifications.
+    /// `notifications/cancelled` naming the tools/call that runs stops it through `cancel`, and
+    /// that call then gets no response, as MCP asks. Such a message may be handled on another
+    /// thread while the call runs (isCancel()); everything else is handled one at a time.
     [[nodiscard]] std::optional<Json> handle(const Json& message);
+
+    /// How a cancelled tool call stops its engine call. Without it, cancelling does nothing.
+    void setCancel(EngineCancel cancel) { cancel_ = std::move(cancel); }
+    /// Whether the message is a notifications/cancelled.
+    [[nodiscard]] static bool isCancel(const Json& message);
 
     /// A notification from the engine while `call` runs. The latest rpc.progress stage goes into
     /// the progress messages ("surface.build: making the faces, 12 s"); the rest is dropped.
@@ -55,6 +66,10 @@ private:
     std::mutex stageMutex_; ///< Guards stage_: written by engineEvent, read by the heartbeat.
     std::string stage_;     ///< The running command's latest stage, or empty.
     std::map<std::string, std::string> commandForTool_;
+    EngineCancel cancel_;
+    std::mutex callMutex_;       ///< Guards the two below: set by handle, read by a cancel.
+    std::optional<Json> callId_; ///< The tools/call request that runs.
+    bool callCancelled_{false};
 };
 
 } // namespace m2c

@@ -13,6 +13,7 @@ class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
 class QPlainTextEdit;
+class QPushButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -91,6 +92,7 @@ private:
     QPlainTextEdit* log_{nullptr};
     QLabel* status_{nullptr};
     QLabel* hover_{nullptr};
+    QPushButton* cancel_{nullptr}; ///< Shown while a command runs; stops it.
     QDoubleSpinBox* brushRadius_{nullptr};
     QDoubleSpinBox* creaseAngle_{nullptr};
     QAction* undo_{nullptr};

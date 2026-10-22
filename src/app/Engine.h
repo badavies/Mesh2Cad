@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "m2c/commands/Command.h"
+#include "m2c/core/Progress.h"
 #include "m2c/rpc/RpcServer.h"
 #include "m2c/rpc/Session.h"
 
@@ -59,6 +60,11 @@ public:
     /// Queues a command from the UI. `done` runs on the UI thread with the result.
     void run(const QString& command, const Json& params, Done done = {});
 
+    /// Asks the running command to stop, whoever sent it: a long one stops at its next
+    /// checkpoint and fails with Cancelled, leaving the document as it was. Queued commands
+    /// still run.
+    void cancel();
+
     /// Starts listening for local connections and writes the session file. Returns a message
     /// for the log either way; failure only means agents cannot connect.
     QString startLocalServer();
@@ -85,7 +91,7 @@ private:
     struct Connection {
         QLocalSocket* socket{nullptr};
         std::unique_ptr<CommandContext> context; // engine thread only
-        std::unique_ptr<RpcServer> rpc;          // engine thread only
+        std::unique_ptr<RpcServer> rpc;          // engine thread only, but for cancelling
         QByteArray buffer;                       // UI thread only
         std::atomic<bool> authenticated{false};  // written by the engine thread
     };
@@ -112,6 +118,7 @@ private:
     std::condition_variable wake_;
     std::deque<std::function<void()>> queue_;
     bool stopping_{false};
+    CancelToken uiCancel_; ///< The running UI command's.
     std::thread worker_;
 
     // UI thread state.

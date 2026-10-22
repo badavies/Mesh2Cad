@@ -33,7 +33,9 @@ def main() -> int:
         "A JSON-RPC request's id is its job id: `rpc.cancel` `{\"id\": ...}` stops the running",
         "request with that id. `quad.remesh`, `surface.build`, `deviation.compute` and",
         "`fillet.fit` stop at their next stage, or within a few thousand points while fitting or",
-        "measuring, and fail with code -32800 (`cancelled`); the document stays as it was.",
+        "measuring, and fail with code -32800 (`cancelled`); the document stays as it was. Over",
+        "MCP, `notifications/cancelled` stops a tool call the same way; in the desktop app, the",
+        "Cancel button in the status bar does.",
         "",
     ]
     groups: dict[str, list] = {}

@@ -20,6 +20,11 @@ Headers live in this folder (no `m2c/mcp/` prefix).
   seconds spent, and the message names the latest stage the command reported, which the engine
   sends as `rpc.progress` and `engineEvent` takes in ("surface.build: making the faces, 12 s").
   Tools whose command writes a file are not marked read-only.
+  A `notifications/cancelled` naming the tool call that runs stops it (`setCancel`: an
+  `rpc.cancel` for the engine request), and that call gets no response, as MCP asks.
+  `mesh2cad-mcp` reads on one thread and handles messages in order on another, so the
+  cancellation reaches the call while it runs. Connected to the app on Windows, the cancel goes
+  out with the next line the app sends, since the pipe serialises a write behind a pending read.
 
 The executable (`main.cpp`) chooses the engine:
 

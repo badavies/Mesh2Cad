@@ -10,7 +10,7 @@ document. Built only when Qt 6 is found (`MESH2CAD_BUILD_APP`, default `AUTO`).
 Headers live in this folder (no `m2c/app/` prefix); everything is in namespace `m2c::app`.
 `m2c_app` holds everything but `main()`, so `tests/app` can drive the real window.
 
-- `Engine.h`: `Engine` (owns the `Document` and `CommandRegistry`, runs commands in order on one worker thread, serves the local socket and writes the session file) and `DocSnapshot`.
+- `Engine.h`: `Engine` (owns the `Document` and `CommandRegistry`, runs commands in order on one worker thread, serves the local socket and writes the session file; `cancel` stops the running command, the person's or an agent's, and answers an agent's `rpc.cancel` on the UI thread at once) and `DocSnapshot`.
 - `MainWindow.h`: `MainWindow`, the window and menus; `openFiles` imports meshes or opens a project.
 - `Viewport.h`: `Viewport` (OpenGL 3.3 view of a `DocSnapshot`), interaction `Mode` and `Hit`.
 - `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema: drop-downs for objects, comma-separated numbers for points and id lists, and JSON (with an example) for lists of objects.

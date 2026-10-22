@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -345,6 +346,67 @@ TEST_CASE("MCP server reports progress while a slow tool runs", "[mcp]") {
         request(3, "tools/call", {{"name", "doc_list"}, {"_meta", {{"progressToken", 7}}}}));
     REQUIRE(sent.size() > count);
     CHECK(sent.back()["params"]["progressToken"] == 7);
+}
+
+TEST_CASE("MCP notifications/cancelled stops the tool call it names", "[mcp]") {
+    Engine e;
+    std::atomic<bool> started{false};
+    REQUIRE(e.registry
+                .add(Command{
+                    .name = "test.wait",
+                    .summary = "Waits to be cancelled.",
+                    .paramsSchema = {{"type", "object"}},
+                    .handler = [&started](CommandContext& context, const Json&) -> Result<Json> {
+                        started = true;
+                        const auto until =
+                            std::chrono::steady_clock::now() + std::chrono::seconds(10);
+                        while (std::chrono::steady_clock::now() < until) {
+                            if (auto go = checkCancelled(context.progress, "waiting"); !go)
+                                return std::unexpected(go.error());
+                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
+                        return Json{{"cancelled", false}};
+                    }})
+                .has_value());
+    RpcServer rpc(e.registry, e.context);
+    std::atomic<int> current{0};
+    McpServer mcp([&](const std::string& method, const Json& params) -> Result<Json> {
+        return *rpc.handle(request(++current, method, params));
+    });
+    int engineCancels = 0;
+    mcp.setCancel([&] {
+        ++engineCancels;
+        (void)rpc.cancel(Json(current.load()));
+    });
+    REQUIRE(mcp.handle(request(1, "tools/list")).has_value());
+    const auto cancelled = [](const Json& requestId) {
+        return Json{{"jsonrpc", "2.0"},
+                    {"method", "notifications/cancelled"},
+                    {"params", {{"requestId", requestId}, {"reason", "the user stopped it"}}}};
+    };
+    CHECK(McpServer::isCancel(cancelled(1)));
+    CHECK_FALSE(McpServer::isCancel(request(1, "ping")));
+    CHECK_FALSE(mcp.handle(cancelled(1)).has_value()); // nothing runs: nothing to stop
+    CHECK(engineCancels == 0);
+
+    // From the thread that reads the client while the call runs on another.
+    std::optional<Json> reply;
+    std::thread worker(
+        [&] { reply = mcp.handle(request(2, "tools/call", {{"name", "test_wait"}})); });
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (!started && std::chrono::steady_clock::now() < until)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    CHECK_FALSE(mcp.handle(cancelled(9)).has_value()); // another request: ignored
+    CHECK(engineCancels == 0);
+    CHECK_FALSE(mcp.handle(cancelled(2)).has_value());
+    CHECK_FALSE(mcp.handle(cancelled(2)).has_value()); // once is enough
+    worker.join();
+    CHECK(engineCancels == 1);
+    CHECK_FALSE(reply.has_value()); // a cancelled request gets no response
+
+    // The next call runs as usual.
+    const Json listed = *mcp.handle(request(3, "tools/call", {{"name", "doc_list"}}));
+    CHECK(listed["result"]["isError"] == false);
 }
 
 TEST_CASE("Long commands report progress over JSON-RPC and MCP", "[rpc][mcp]") {
