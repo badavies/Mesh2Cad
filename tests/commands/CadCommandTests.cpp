@@ -163,28 +163,28 @@ TEST_CASE("quad.remesh validates its input", "[commands][quad]") {
 
 TEST_CASE("surface.build keeps a sharp-edged block's edges sharp", "[commands][surface]") {
     // Issue #64: a block with a hole, its skin roughened by up to 0.15 mm, in a cage aligned to
-    // its edges. Kept sharp, the edges stay where the true block's are; fitted smooth, the
-    // surface rounds them and bulges past them.
+    // its edges (as quad.remesh crease_angle_deg aims to make one). Kept sharp, the edges stay
+    // where the true block's are; fitted smooth, the surface rounds them and bulges past them.
     Session s;
     const TempDir dir;
     const ObjectId block =
         s.import(dir, addNoise(makeBlockWithHole(30, 30, 10, 6, 24, 8, 8), 0.15), "block");
     const ObjectId truth = s.import(dir, makeBlockWithHole(30, 30, 10, 6, 32, 10, 10), "truth");
-    const Json cage =
-        s.run("quad.remesh", {{"id", block}, {"target_faces", 800}, {"crease_angle_deg", 30}});
-    const Json sharp = s.run("surface.build", {{"id", cage["id"]}, {"mesh_id", block}});
-    CHECK(sharp["sharp_edges"].get<int>() > 100);
+    const auto cage = s.document.add("cage", QuadLayoutData{blockWithHoleCage(30, 30, 10, 6)});
+    REQUIRE(cage);
+    const Json sharp = s.run("surface.build", {{"id", *cage}, {"mesh_id", block}});
+    CHECK(sharp["sharp_edges"] == 140);
     CHECK(sharp["seams"]["max_normal_angle_deg"].get<double>() < 10.0);
     const Json smooth =
-        s.run("surface.build", {{"id", cage["id"]}, {"mesh_id", block}, {"crease_angle_deg", 0}});
+        s.run("surface.build", {{"id", *cage}, {"mesh_id", block}, {"crease_angle_deg", 0}});
     CHECK(smooth["sharp_edges"] == 0);
     const auto worst = [&s, truth](const Json& built) {
         const Json stats =
             s.run("deviation.compute", {{"id", truth}, {"reference_id", built["id"]}})["stats"];
         return std::max(-stats["min_mm"].get<double>(), stats["max_mm"].get<double>());
     };
-    CHECK(worst(sharp) < 0.2);
-    CHECK(worst(smooth) > 0.3);
+    CHECK(worst(sharp) < 0.15);
+    CHECK(worst(smooth) > 0.5);
 }
 
 TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][surface]") {

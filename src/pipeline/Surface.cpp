@@ -9,6 +9,7 @@
 #include <expected>
 #include <map>
 #include <memory>
+#include <numbers>
 #include <string>
 #include <unordered_set>
 #include <utility>
@@ -159,6 +160,71 @@ Result<Faces> wallFaces(const QuadLayout& wall,
     return mergedFaces(wall, std::move(all), worst, merge, fences);
 }
 
+// The scan's normal under a cage face: the area-weighted normal of the scan triangles near its
+// centre and near the points halfway to its corners.
+Vec3d scanNormalUnder(const QuadLayout& cage, std::size_t f, const TriMesh& scan) {
+    const auto& p = cage.positions();
+    const auto face = cage.face(f);
+    Vec3d centre{}, area{};
+    for (std::size_t i = 0; i < face.size(); ++i) {
+        centre = centre + p[face[i]];
+        area = area + cross(p[face[i]], p[face[(i + 1) % face.size()]]);
+    }
+    centre = centre * (1.0 / static_cast<double>(face.size()));
+    const double radius = 0.1 * std::sqrt(0.5 * length(area));
+    const SpatialIndex& index = scan.spatialIndex();
+    const auto& q = scan.positions();
+    const auto& tri = scan.indices();
+    Vec3d normal{};
+    auto add = [&](const Vec3d& at) {
+        for (const std::uint32_t t : index.facesWithin(index.closestPoint(at).point, radius)) {
+            const Vec3d& a = q[tri[3 * t]];
+            normal = normal + cross(q[tri[3 * t + 1]] - a, q[tri[3 * t + 2]] - a);
+        }
+    };
+    add(centre);
+    for (const std::uint32_t v : face) add((centre + p[v]) * 0.5);
+    return normal;
+}
+
+// The cage's sharp edges that are sharp on the scan too: where the cage is distorted (a coarse
+// layout around a hole), its own faces can meet at a steep angle on a smooth stretch of the part,
+// and a crease there crumples the surface. An edge stays only if the scan's normals under its two
+// faces differ by more than half the angle: where the cage cuts across a real edge, a face lies
+// over both sides of it and its scan normal is in between, while on a smooth stretch the two
+// normals are close.
+std::vector<std::array<std::uint32_t, 2>>
+confirmedOnScan(const QuadLayout& cage,
+                std::vector<std::array<std::uint32_t, 2>> edges,
+                const TriMesh& scan,
+                const double angleDeg) {
+    std::map<std::array<std::uint32_t, 2>, std::vector<std::size_t>> sides;
+    for (const auto& edge : edges) sides[edge];
+    for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+        const auto face = cage.face(f);
+        for (std::size_t i = 0; i < face.size(); ++i) {
+            const auto [a, b] = std::minmax(face[i], face[(i + 1) % face.size()]);
+            if (const auto it = sides.find({a, b}); it != sides.end()) it->second.push_back(f);
+        }
+    }
+    std::map<std::size_t, Vec3d> normals;
+    auto normalOf = [&](std::size_t f) -> const Vec3d& {
+        auto it = normals.find(f);
+        if (it == normals.end()) it = normals.emplace(f, scanNormalUnder(cage, f, scan)).first;
+        return it->second;
+    };
+    const double limit = std::cos(0.5 * angleDeg * std::numbers::pi / 180.0);
+    std::erase_if(edges, [&](const std::array<std::uint32_t, 2>& edge) {
+        const auto& faces = sides[edge];
+        if (faces.size() != 2) return true;
+        const Vec3d& n0 = normalOf(faces[0]);
+        const Vec3d& n1 = normalOf(faces[1]);
+        const double size = length(n0) * length(n1);
+        return !(size > 0.0 && dot(n0, n1) < limit * size);
+    });
+    return edges;
+}
+
 } // namespace
 
 Result<QuadLayout> thickenCage(const QuadLayout& sheet, const double thicknessMm) {
@@ -268,10 +334,14 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
     // gets one Catmull-Clark step, which keeps the surface and its layout, and is fitted again.
     CageFitParams fitting = params.fitting;
     fitting.open = sheet;
-    // Sharp edges of a closed part, where the cage turns: the limit surface has a crease along
-    // them, which each refinement keeps.
+    // Sharp edges of a closed part, where the cage turns (and the scan does too, when there is
+    // one): the limit surface has a crease along them, which each refinement keeps.
     if (!sheet && params.creaseAngleDeg > 0.0) {
         fitting.creases = sharpCageEdges(cage, params.creaseAngleDeg);
+        if (scan != nullptr) {
+            fitting.creases =
+                confirmedOnScan(cage, std::move(fitting.creases), *scan, params.creaseAngleDeg);
+        }
     }
     QuadLayout start = cage;
     unsigned tries = 0;

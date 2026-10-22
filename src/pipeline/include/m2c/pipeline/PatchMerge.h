@@ -37,6 +37,8 @@ struct QuadPartition {
 /// line (a motorcycle graph). Faces with other than four sides are in no rectangle. Fences,
 /// edges given as vertex pairs (such as sharp edges between surfaces), bound rectangles too but
 /// do not stop the lines, so the rectangles on both sides of a fence break at the same vertices.
+/// Where fences meet other than as one straight line (three at a part's corner, or one that
+/// ends or turns), the vertex is a corner too, and lines leave it along its other edges.
 /// Deterministic.
 [[nodiscard]] QuadPartition
 partitionQuads(const QuadLayout& cage,

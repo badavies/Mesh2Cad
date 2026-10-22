@@ -16,6 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "m2c/core/QuadLayout.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -298,6 +299,22 @@ inline TriMesh makeBlockWithHole(
         }
     }
     return makeMesh(std::move(p), std::move(idx));
+}
+
+/// makeBlockWithHole() as a quad cage (each pair of its triangles one quad): a layout aligned to
+/// the block's edges, with all its vertices regular, as quad.remesh aims to make one.
+inline QuadLayout blockWithHoleCage(
+    double sx, double sy, double sz, double r, int m = 8, int rings = 2, int levels = 3) {
+    const TriMesh mesh = makeBlockWithHole(sx, sy, sz, r, m, rings, levels);
+    const auto& t = mesh.indices();
+    std::vector<std::uint32_t> starts{0}, vertices;
+    for (std::size_t k = 0; k + 5 < t.size(); k += 6) {
+        vertices.insert(vertices.end(), {t[k], t[k + 1], t[k + 2], t[k + 5]});
+        starts.push_back(static_cast<std::uint32_t>(vertices.size()));
+    }
+    auto cage = QuadLayout::create(mesh.positions(), std::move(starts), std::move(vertices));
+    REQUIRE(cage);
+    return std::move(*cage);
 }
 
 /// Concatenates meshes into one (separate shells).

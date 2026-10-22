@@ -56,7 +56,9 @@ struct SurfaceBuildParams {
     double maxFoldAngleDeg{90.0};
     /// Of a closed cage: edges where its faces turn by more than this (sharpCageEdges()) are
     /// sharp edges of the surface, as a part's sharp edges are where the cage was aligned to
-    /// them (quad.remesh crease_angle_deg). The fit, the faces and the merge keep them sharp, and
+    /// them (quad.remesh crease_angle_deg). With a scan, an edge stays only where the scan's
+    /// normals under the two faces differ by more than half the angle too, so a distorted cage
+    /// gets no crease on a smooth stretch. The fit, the faces and the merge keep them sharp, and
     /// the angle checks leave them out. 0 = none: the surface is smooth everywhere.
     double creaseAngleDeg{60.0};
     /// Check that the finished solid's surface does not cross itself, on the kernel's

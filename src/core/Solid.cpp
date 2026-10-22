@@ -138,25 +138,38 @@ Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
     };
     std::unordered_map<Cell, std::vector<std::size_t>, CellHash> grid;
     for (std::size_t i = 0; i < samples.size(); ++i) grid[cell(samples[i].p)].push_back(i);
-    for (const auto& [pointA, normalA, faceA, capA, sharpA] : samples) {
-        const Cell c = cell(pointA);
-        bool found = false;
+    const auto forNear = [&](const Vec3d& p, const auto& visit) {
+        const Cell c = cell(p);
         for (long long dx = -1; dx <= 1; ++dx) {
             for (long long dy = -1; dy <= 1; ++dy) {
                 for (long long dz = -1; dz <= 1; ++dz) {
                     const auto it = grid.find({c[0] + dx, c[1] + dy, c[2] + dz});
                     if (it == grid.end()) continue;
-                    for (const std::size_t j : it->second) {
-                        const auto& [pointB, normalB, faceB, capB, sharpB] = samples[j];
-                        const double gap = length(pointA - pointB);
-                        if (faceB == faceA || gap > toleranceMm) continue;
-                        found = true;
-                        out.maxGapMm = std::max(out.maxGapMm, gap);
-                        if (!sharpA && !sharpB) record(angleDeg(normalA, normalB), capA || capB);
-                    }
+                    for (const std::size_t j : it->second) visit(j);
                 }
             }
         }
+    };
+    // A point on a sharp edge is sharp for every face that reaches it: at a crease vertex with
+    // more than four faces, a face may touch it only between two smooth edges of its own.
+    std::vector<bool> nearSharp(samples.size(), false);
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        if (!samples[i].sharp) continue;
+        forNear(samples[i].p, [&](const std::size_t j) {
+            if (length(samples[j].p - samples[i].p) <= toleranceMm) nearSharp[j] = true;
+        });
+    }
+    for (std::size_t i = 0; i < samples.size(); ++i) {
+        const auto& [pointA, normalA, faceA, capA, sharpA] = samples[i];
+        bool found = false;
+        forNear(pointA, [&](const std::size_t j) {
+            const auto& [pointB, normalB, faceB, capB, sharpB] = samples[j];
+            const double gap = length(pointA - pointB);
+            if (faceB == faceA || gap > toleranceMm) return;
+            found = true;
+            out.maxGapMm = std::max(out.maxGapMm, gap);
+            if (!nearSharp[i] && !nearSharp[j]) record(angleDeg(normalA, normalB), capA || capB);
+        });
         if (!found) ++out.unmatchedSamples;
     }
     return out;
