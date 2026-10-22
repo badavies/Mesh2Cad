@@ -9,6 +9,7 @@ Trimming fitted primitives into a solid (#48) triangulates the result with Open 
 ## Decision
 - With `MESH2CAD_SANITIZE`, alignment reports are recoverable (`-fsanitize-recover=alignment`); every other UBSan check stays fatal at compile time. UBSan ignores suppressions for fatal checks, so this is needed for the next point.
 - `cmake/ubsan-suppressions.txt` drops alignment reports located in Open CASCADE's headers (`alignment:/opencascade/`) and nothing else.
+- Addendum, 2026-10-22: meshing B-spline faces (the crossing check of `surface.build`, #64) moves `NCollection_LocalArray`s that live in the same misaligned blocks, and their move constructor calls `std::min<unsigned long>`. UBSan matches a suppression against the innermost frame only, which is in libstdc++'s `<bits/stl_algobase.h>`, so that function is suppressed for alignment too (`alignment:std::min<unsigned long>`).
 - The `linux-gcc-sanitize` test preset sets `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1:suppressions=...`, so any other alignment report still stops the test. The nightly fuzz step sets `halt_on_error=1` the same way.
 - The suppression is removed once the vcpkg baseline ships an Open CASCADE whose allocator aligns.
 
@@ -18,6 +19,6 @@ Trimming fitted primitives into a solid (#48) triangulates the result with Open 
 - **Turn off `-fsanitize=alignment`:** hides our own misaligned accesses too.
 
 ## Consequences
-- An alignment bug of our own inside an Open CASCADE header call, on an object we misaligned, would be hidden; our code allocates OCCT objects only with `new` and on the stack.
+- An alignment bug of our own inside an Open CASCADE header call, on an object we misaligned, would be hidden; our code allocates OCCT objects only with `new` and on the stack. The same goes for a misaligned `std::min<unsigned long>` argument anywhere.
 - A sanitized executable run outside `ctest --preset linux-gcc-sanitize` reports alignment errors but carries on, unless `UBSAN_OPTIONS` contains `halt_on_error=1`.
 - Raising the vcpkg baseline past a fixed Open CASCADE means deleting the suppression, the recover flag and the `UBSAN_OPTIONS` entries.
