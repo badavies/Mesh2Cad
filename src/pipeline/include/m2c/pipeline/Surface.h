@@ -54,6 +54,11 @@ struct SurfaceBuildParams {
     /// Faces of the kept try that meet at a larger angle fold the surface over itself; the build
     /// then fails rather than return a solid that crosses itself.
     double maxFoldAngleDeg{90.0};
+    /// Check that the finished solid's surface does not cross itself, on the kernel's
+    /// triangulation (occt::weldedTriangulation(), cgal::selfIntersects()), and fail if it does.
+    /// A surface can cross itself with no fold the angle check sees, as a fit can that overshoots
+    /// a sharp edge; booleans on such a solid go wrong.
+    bool checkCrossing{true};
     /// Deviation-driven refinement: while the fit's 95th-percentile sample distance is above
     /// this, the fitted cage gets one Catmull-Clark step (four times the quads, same layout) and
     /// is fitted again, up to maxRefinements times. 0 = off.

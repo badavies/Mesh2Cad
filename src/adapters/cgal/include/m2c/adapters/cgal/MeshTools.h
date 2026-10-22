@@ -33,6 +33,10 @@ struct RepairResult {
 /// are left open; see fillHoles().
 [[nodiscard]] Result<RepairResult> repair(const TriMesh& input, const RepairParams& params);
 
+/// Whether two faces of the mesh cross each other. Faces that only touch, as coincident copies
+/// of a point or edge do, do not count.
+[[nodiscard]] Result<bool> selfIntersects(const TriMesh& mesh);
+
 struct HoleFillParams {
     double maxPerimeterMm{0.0}; ///< Holes with a longer boundary are left open; 0 = no limit.
     std::size_t maxEdges{0};    ///< Holes with more boundary edges are left open; 0 = no limit.

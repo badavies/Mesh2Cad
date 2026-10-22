@@ -10,8 +10,11 @@
 #include <string>
 #include <vector>
 
+#include "m2c/adapters/cgal/MeshTools.h"
+#include "m2c/adapters/occt/Brep.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/MeshStats.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
@@ -525,6 +528,38 @@ TEST_CASE("A torus cage without fitting becomes a solid with a hole", "[stages][
     CHECK(built->capPieces == 0);
     p.fit = true;
     CHECK_FALSE(buildSurface(torusCage(30.0, 10.0, 24, 12), nullptr, p));
+}
+
+TEST_CASE("A surface that passes through itself gives no solid", "[stages][surface]") {
+    // A spindle torus: its tube (radius 15) is wider than its ring (radius 10), so the inner side
+    // of the tube passes through itself around the axis. The surface is smooth everywhere, so
+    // no fold shows where faces meet, and the kernel's checker accepts the solid.
+    SurfaceBuildParams p;
+    p.fit = false;
+    const QuadLayout cage = torusCage(10.0, 15.0, 16, 12);
+    const auto built = buildSurface(cage, nullptr, p);
+    REQUIRE_FALSE(built);
+    CHECK(built.error().code == ErrorCode::InvalidState);
+    CHECK(built.error().message.find("faces cross each other") != std::string::npos);
+
+    p.checkCrossing = false;
+    const auto unchecked = buildSurface(cage, nullptr, p);
+    REQUIRE(unchecked);
+    CHECK(unchecked->solid.summary().valid);
+    CHECK(unchecked->seams.maxNormalAngleDeg < p.maxFoldAngleDeg);
+    const auto crossing = occt::weldedTriangulation(unchecked->solid);
+    REQUIRE(crossing);
+    CHECK(computeStats(*crossing).isWatertight());
+    CHECK(cgal::selfIntersects(*crossing) == true);
+
+    // A ring torus (tube narrower than the ring) passes the check, its triangulation closed.
+    p.checkCrossing = true;
+    const auto ring = buildSurface(torusCage(30.0, 10.0, 24, 12), nullptr, p);
+    REQUIRE(ring);
+    const auto clean = occt::weldedTriangulation(ring->solid);
+    REQUIRE(clean);
+    CHECK(computeStats(*clean).isWatertight());
+    CHECK(cgal::selfIntersects(*clean) == false);
 }
 
 TEST_CASE("A torus scan becomes a valid closed solid of the right volume", "[stages][surface]") {

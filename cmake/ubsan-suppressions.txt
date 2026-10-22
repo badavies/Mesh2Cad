@@ -4,3 +4,7 @@
 # constructors of TopoDS_Shape and friends in Open CASCADE's own headers. Only alignment reports
 # located in those headers are dropped. Remove this once the vcpkg baseline ships a fixed OCCT.
 alignment:/opencascade/
+# The same misaligned blocks reach libstdc++'s std::min from NCollection_LocalArray's move
+# constructor when BRepMesh meshes B-spline faces (surface.build's crossing check, #64); the report
+# is located in <bits/stl_algobase.h>, so it is matched by the function instead.
+alignment:std::min<unsigned long>

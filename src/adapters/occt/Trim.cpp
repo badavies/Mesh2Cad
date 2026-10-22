@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <iomanip>
 #include <ios>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <sstream>
@@ -53,6 +54,7 @@
 #include <gp_Trsf.hxx>
 #include <gp_Vec.hxx>
 
+#include "m2c/adapters/occt/Brep.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/Solid.h"
@@ -188,6 +190,28 @@ Result<FaceTessellation> triangulate(const TopoDS_Shape& solid) {
     return FaceTessellation{.mesh = std::move(*mesh),
                             .triangleFaces = std::move(triangleFaces),
                             .vertexUvs = std::move(uvs)};
+}
+
+Result<TriMesh> weldedTriangulation(const Solid& solid) {
+    return guarded("triangulating the solid", [&]() -> Result<TriMesh> {
+        auto faces = triangulate(solid.shape().shape);
+        if (!faces) return std::unexpected(faces.error());
+        // A face's nodes on an edge are the edge's own points, so equal points are one vertex.
+        std::map<std::array<double, 3>, std::uint32_t> ids;
+        std::vector<Vec3d> positions;
+        std::vector<std::uint32_t> vertex;
+        vertex.reserve(faces->mesh.vertexCount());
+        for (const Vec3d& p : faces->mesh.positions()) {
+            const auto [it, added] =
+                ids.try_emplace({p.x, p.y, p.z}, static_cast<std::uint32_t>(positions.size()));
+            if (added) positions.push_back(p);
+            vertex.push_back(it->second);
+        }
+        std::vector<std::uint32_t> indices;
+        indices.reserve(faces->mesh.indices().size());
+        for (const std::uint32_t v : faces->mesh.indices()) indices.push_back(vertex[v]);
+        return TriMesh::create(std::move(positions), std::move(indices));
+    });
 }
 
 Result<Solid> kernelSolid(const TopoDS_Shape& solid, const std::string& what) {

@@ -16,6 +16,7 @@ target.
   - `remesh` with `RemeshParams`: isotropic remeshing that keeps sharp edges.
   - `shrinkWrap` with `WrapParams`: 3D alpha wrapping to a watertight, manifold mesh.
   - `slice`: the polylines where a plane cuts a mesh (`Polygon_mesh_slicer`), closed or open.
+  - `selfIntersects`: whether two faces cross (faces that only touch do not count).
 - `m2c/adapters/cgal/RegionGrowing.h` (namespace `m2c::cgal`):
   - `growRegions` with `GrowParams` and `GrownRegion`: Shape_detection region growing of planes,
     cylinders or spheres over the free faces of a mesh, for segmentation.
@@ -58,6 +59,8 @@ target.
     solid, sketches as wires and fitted planes as bounded faces, each a named product, ADR-034)
     and `readStep`, which reads a STEP file as `StepContents`: a `SolidSummary` of its solids and
     counts of the faces and edges outside them.
+  - `weldedTriangulation`: the kernel's triangulation of a solid as one mesh, welded where faces
+    meet, for checks such as `cgal::selfIntersects`.
 - `m2c/adapters/occt/Surface.h` (namespace `m2c::occt`):
   - `surfaceDistances`: distances from points to a fitted primitive made as an unbounded Open
     CASCADE surface (`Geom_Plane`, `Geom_CylindricalSurface`, `Geom_SphericalSurface`,

@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "m2c/adapters/cgal/MeshTools.h"
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshSelection.h"
@@ -346,6 +347,18 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                                      std::make_shared<const FaceTessellation>(std::move(*display)),
                                      occt::SewParams{params.sewToleranceMm});
         if (!solid) return std::unexpected(solid.error());
+        if (params.checkCrossing) {
+            report(progress, "checking that no faces cross");
+            auto mesh = occt::weldedTriangulation(*solid);
+            if (!mesh) return std::unexpected(mesh.error());
+            auto crossed = cgal::selfIntersects(*mesh);
+            if (!crossed) return std::unexpected(crossed.error());
+            if (*crossed) {
+                return fail(ErrorCode::InvalidState,
+                            "the surface's faces cross each other, so its inside is not well "
+                            "defined; the fit overshoots an edge sharper than the cage can follow");
+            }
+        }
         return SurfaceBuildResult{.solid = std::move(*solid),
                                   .cage = std::move(used),
                                   .fit = std::move(fit),

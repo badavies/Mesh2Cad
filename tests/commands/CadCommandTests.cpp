@@ -179,10 +179,11 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
 
     const Json result = s.run("surface.build", {{"id", cage}, {"mesh_id", mesh}});
     const auto solid = result["id"].get<ObjectId>();
-    REQUIRE(stages.size() == 4);
+    REQUIRE(stages.size() == 5);
     CHECK(stages[0].starts_with("fitting the cage ("));
     CHECK(stages[1] == "making the faces");
-    CHECK(stages.back() == "sewing the solid");
+    CHECK(stages[3] == "sewing the solid");
+    CHECK(stages.back() == "checking that no faces cross");
     CHECK(result["summary"]["valid"] == true);
     CHECK(result["summary"]["free_edges"] == 0);
     CHECK(result["summary"]["closed"] == true);
