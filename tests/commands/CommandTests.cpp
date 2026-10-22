@@ -150,6 +150,7 @@ TEST_CASE("commands.list describes the registry", "[commands]") {
     const auto result = s.run("commands.list");
     REQUIRE(result.has_value());
     CHECK((*result)["commands"].size() == s.registry.list().size());
+    CHECK((*result)["api_version"] == "1.0");
 }
 
 TEST_CASE("Import, inspect, export and undo through commands", "[commands]") {

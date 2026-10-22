@@ -58,22 +58,23 @@ Json historyJson(const std::vector<HistoryStep>& steps) {
 } // namespace
 
 void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& out) {
-    out.push_back(
-        makeCommand("commands.list",
-                    "List every registered command with its summary and parameter schema.",
-                    kNoParams,
-                    false,
-                    [&registry](CommandContext&, const Json&) -> Result<Json> {
-                        Json commands = Json::array();
-                        for (const Command* c : registry.list()) {
-                            commands.push_back(Json{{"name", c->name},
-                                                    {"summary", c->summary},
-                                                    {"mutates_document", c->mutatesDocument},
-                                                    {"writes_files", c->writesFiles},
-                                                    {"params_schema", c->paramsSchema}});
-                        }
-                        return Json{{"commands", std::move(commands)}};
-                    }));
+    out.push_back(makeCommand(
+        "commands.list",
+        "List every registered command with its summary and parameter schema, and "
+        "the command API version.",
+        kNoParams,
+        false,
+        [&registry](CommandContext&, const Json&) -> Result<Json> {
+            Json commands = Json::array();
+            for (const Command* c : registry.list()) {
+                commands.push_back(Json{{"name", c->name},
+                                        {"summary", c->summary},
+                                        {"mutates_document", c->mutatesDocument},
+                                        {"writes_files", c->writesFiles},
+                                        {"params_schema", c->paramsSchema}});
+            }
+            return Json{{"api_version", kCommandApiVersion}, {"commands", std::move(commands)}};
+        }));
 
     out.push_back(makeCommand(
         "doc.list",

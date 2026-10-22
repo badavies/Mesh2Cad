@@ -5,6 +5,10 @@ Every command works the same from the desktop app (Tools menu), `mesh2cad run`/`
 JSON-RPC (`mesh2cad-rpc` or the app's local socket) and MCP (`mesh2cad-mcp`, where dots
 become underscores: `mesh.repair` is the tool `mesh_repair`).
 
+Command API version 1.0: the major number changes when a command or
+parameter is removed or changes meaning, the minor number when one is added. `commands.list`
+and `rpc.hello` report it.
+
 Lengths are millimetres; objects are referred to by id (see `doc.list`).
 
 Long commands (`quad.remesh`, `surface.build`, `deviation.compute`, `mesh.simplify`,
@@ -73,7 +77,7 @@ Apply a rigid transform (rotation matrix and translation) to a mesh. *(changes t
 
 ### `commands.list`
 
-List every registered command with its summary and parameter schema. *(read-only)*
+List every registered command with its summary and parameter schema, and the command API version. *(read-only)*
 
 ## deviation
 

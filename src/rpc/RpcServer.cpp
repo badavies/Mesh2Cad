@@ -119,6 +119,7 @@ std::optional<Json> RpcServer::handleOne(const Json& request) {
     if (method == "rpc.hello") {
         return ok(Json{{"server", "mesh2cad"},
                        {"version", MESH2CAD_VERSION},
+                       {"api_version", kCommandApiVersion},
                        {"auth_required", !authenticated_},
                        {"source", context_.source}});
     }

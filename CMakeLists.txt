@@ -17,7 +17,7 @@ if(MESH2CAD_USE_VCPKG AND NOT CMAKE_TOOLCHAIN_FILE)
 endif()
 
 project(Mesh2Cad
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Scan-to-CAD reverse engineering: meshes in, editable CAD solids out"
     LANGUAGES CXX)
 

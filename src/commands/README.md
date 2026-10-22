@@ -44,4 +44,8 @@ Must not depend on: `adapters`, `app`, `cli`, `rpc`, `mcp`, Qt, and kernel libra
 - The schema is published by `commands.list` but not enforced by the dispatcher. Handlers
   validate their own parameters with the `detail/Params.h` helpers and return errors; they do
   not throw on bad input.
+- The command set is a public API at version `kCommandApiVersion` (`Command.h`, 1.0 since
+  v1.0.0), which `commands.list` and `rpc.hello` report as `api_version`. Adding a command or
+  an optional parameter raises the minor number; removing or renaming one, or changing what it
+  means, raises the major number and needs a decision record.
 - A failed mutating command leaves the document unchanged (the undo step is aborted).

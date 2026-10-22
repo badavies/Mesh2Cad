@@ -3,11 +3,10 @@ name: Packages
 # Builds the installers (issue #122) and installs each one on a clean machine: the .deb on Ubuntu
 # and the NSIS installer on Windows, then smoke-tests and uninstalls it. The packages are kept as
 # workflow artifacts. Pull requests run it only when the packaging changes; it runs on every push
-# to main and on version tags.
+# to main, and the Release workflow runs it for version tags.
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   pull_request:
     paths:
       - CMakeLists.txt
@@ -15,6 +14,7 @@ on:
       - packaging/**
       - scripts/package/**
       - .github/workflows/package.yml
+      - .github/workflows/release.yml
   workflow_dispatch:
   workflow_call:
 
