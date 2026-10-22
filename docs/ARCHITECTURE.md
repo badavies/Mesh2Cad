@@ -248,9 +248,9 @@ Prismatic parts are a first-class case, not an add-on. For a cube or bracket, ev
 | Format | Target | Implementation | Key settings |
 | --- | --- | --- | --- |
 | STEP AP242 | Fusion 360 (primary) | OCCT STEP writer | Units mm, one solid per body, validity check before writing; sketches as wires and fitted planes as faces beside it, each a named product (ADR-034) |
-| glTF / GLB | Blender | OCCT tessellation, then OCCT glTF writer | Chord deviation and angle, in mm and degrees |
-| OBJ | Blender, general | OCCT tessellation, then OCCT OBJ writer | Same tessellation settings |
-| STL | 3D printing | OCCT tessellation, then STL writer | Binary by default |
+| glTF / GLB | Blender | OCCT tessellation, then our own glTF writer (ADR-037); metres, Y up | Chord deviation and angle, in mm and degrees; crease angle for normals |
+| OBJ | Blender, general | OCCT tessellation, then our OBJ writer | Same tessellation settings |
+| STL | 3D printing | OCCT tessellation, then our STL writer | Binary |
 | PLY / OBJ (raw mesh) | Exporting the repaired scan itself | Own writer from `TriMesh` | Unchanged mesh data |
 
 **Export acceptance.** Every STEP export is re-imported by OCCT in the test suite and must pass `BRepCheck_Analyzer` as one closed solid, with as many sketch edges and plane faces outside it as were written. At each milestone gate, the golden-set STEP files are also opened in Fusion 360 by hand, using a written checklist.
@@ -503,6 +503,8 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-033 | Scanned fillets are reconstructed exactly, at a radius fitted to the scan | Accepted | Constant-radius fillets between analytic faces with Open CASCADE's `BRepFilletAPI_MakeFillet`; fillet modelling stays a non-goal; see `docs/adr/0033-fitted-fillets.md` |
 | ADR-034 | Sketches and planes go into the STEP file as named products beside the solid | Accepted | `solid.export` writes sketches as wires and plane primitives as bounded faces, each its own product; the readback counts them; see `docs/adr/0034-sketches-and-planes-in-the-step-file.md` |
 | ADR-035 | Deviation hotspots: out-of-tolerance faces clustered by sign | Accepted | `deviation.compute` reports connected out-of-tolerance patches, largest first, and can make them selections; see `docs/adr/0035-deviation-hotspots.md` |
+| ADR-036 | oneTBB for deterministic parallel loops | Accepted | Fixed chunks and ordered reductions give the same results on any number of threads; see `docs/adr/0036-onetbb-parallel-chunks.md` |
+| ADR-037 | Our own glTF writer; Open CASCADE only triangulates | Accepted | OCCT's writer needs RapidJSON and the XCAF toolkits, which our builds leave out; see `docs/adr/0037-own-gltf-writer.md` |
 
 ## 15. Review log
 

@@ -616,6 +616,18 @@ Write a solid, sketches and planes to a STEP AP242 file in millimetres (ADR-034)
 | `product_name` | string |  | The solid's product name in the file; the object name if omitted. |
 | `sketch_ids` | array |  | Sketches to write as wires. |
 
+### `solid.export.mesh`
+
+Write a solid as a triangle mesh for Blender or 3D printing: GLB or glTF (metres, Y up, as the format requires, so Blender shows it at its true size and the right way up; smooth normals split where the surface turns more than crease_angle_deg), OBJ, or binary STL (millimetres, Z up). The triangles are at most chord_mm from the surface and turn at most angle_deg from their neighbours on a face; faces are welded where they meet. Fails, writing nothing, unless the mesh is closed. The result gives the triangle count and the mesh's volume error against the solid, with the limit it stays within (the solid's area times chord_mm, over its volume). *(writes a file)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `angle_deg` | number |  | Largest angle between neighbouring triangles on a face. Default `10`. |
+| `chord_mm` | number |  | Largest distance from a triangle to the surface. Default `0.01`. |
+| `crease_angle_deg` | number |  | GLB and glTF: edges where the surface turns more than this are shaded sharp. Default `30`. |
+| `id` | solid id | yes | The solid. |
+| `path` | string | yes | The file to write; the extension (.glb, .gltf, .obj, .stl) selects the format. Files: `.glb`, `.gltf`, `.obj`, `.stl`. |
+
 ### `solid.extrude`
 
 Extrude a sketch's profile (its largest loop less the loops inside it) along the sketch plane's normal into a solid. one_sided goes distance_mm along the normal (against it when negative), symmetric distance_mm in all, half each way, and two_sided distance_mm along the normal and back_distance_mm against it. Lines and arcs stay exact. Adds a solid object; fails for an open profile. *(changes the document)*
