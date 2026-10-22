@@ -154,3 +154,15 @@ jobs:
         run: cmake --build build
       - name: Test (the app tests open a window on Xvfb)
         run: xvfb-run -a -s "-screen 0 1600x1000x24" ctest --test-dir build --output-on-failure
+      # The M5 gate's Blender check (issue #121): test solids exported as GLB and glTF must import
+      # into Blender as one closed mesh at their true size, Z up and smooth-shaded.
+      - name: Install Blender
+        run: sudo apt-get install -y blender python3-numpy
+      - name: Exported GLB files open cleanly in Blender
+        run: python3 scripts/blender/check_exports.py --rpc build/src/rpc/mesh2cad-rpc --out glb-check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: glb-check
+          path: glb-check
+          if-no-files-found: ignore
