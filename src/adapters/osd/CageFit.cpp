@@ -74,10 +74,11 @@ void holdOnPlanes(std::vector<Vec3d>& positions, const std::vector<HeldPlane>& h
     }
 }
 
-constexpr int kSearchGrid = 4;           // tessellation per patch for the closest-point search
-constexpr double kHoldWeight = 10.0;     // stiffness of the held-plane term, per vertex
-constexpr double kPointWeight = 0.1;     // share of point-to-point distance in the fit
-constexpr double kSolveTolerance = 1e-9; // relative residual of each round's solve
+constexpr int kSearchGrid = 4;               // tessellation per patch for the closest-point search
+constexpr double kHoldWeight = 10.0;         // stiffness of the held-plane term, per vertex
+constexpr double kPointWeight = 0.1;         // share of point-to-point distance in the fit
+constexpr double kSolveTolerance = 1e-9;     // relative residual of each round's solve
+constexpr double kSampleSpacing = 1.0 / 3.0; // most spacing of samples, in mean cage edges
 
 } // namespace
 
@@ -96,28 +97,62 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
                         "a held plane needs a unit normal and vertices of the cage");
         }
     }
-    auto limit = Limit::create(cage, params.isolationLevel, params.open);
+    auto limit = Limit::create(cage, params.isolationLevel, params.open, {}, params.creases);
     if (!limit) return std::unexpected(limit.error());
 
+    double gate = params.maxSampleDistanceMm;
+    double edgeSum = 0.0;
+    for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+        const auto face = cage.face(f);
+        for (std::size_t i = 0; i < face.size(); ++i) {
+            edgeSum +=
+                length(cage.positions()[face[i]] - cage.positions()[face[(i + 1) % face.size()]]);
+        }
+    }
+    const double meanEdge = edgeSum / static_cast<double>(cage.faceVertices().size());
+    if (gate == 0.0) gate = meanEdge;
     const std::size_t stride = (scan.vertexCount() + params.maxSamples - 1) / params.maxSamples;
     std::vector<Vec3d> samples;
     for (std::size_t v = 0; v < scan.vertexCount(); v += std::max<std::size_t>(stride, 1)) {
         samples.push_back(scan.positions()[v]);
     }
-    const auto n = static_cast<Eigen::Index>(cage.vertexCount());
-    const auto m = static_cast<Eigen::Index>(samples.size());
-    double gate = params.maxSampleDistanceMm;
-    if (gate == 0.0) {
-        double sum = 0.0;
-        for (std::size_t f = 0; f < cage.faceCount(); ++f) {
-            const auto face = cage.face(f);
-            for (std::size_t i = 0; i < face.size(); ++i) {
-                sum += length(cage.positions()[face[i]] -
-                              cage.positions()[face[(i + 1) % face.size()]]);
+    // A coarse scan (such as a CAD export, with long triangles across flat sides) has too few
+    // vertices to hold the surface between them, which then bulges out past sharp edges.
+    // Triangles longer than the spacing add points on a grid across them, within the budget.
+    if (const double spacing = kSampleSpacing * meanEdge; spacing > 0.0) {
+        std::vector<std::pair<std::size_t, int>> divided; // triangle, divisions per side
+        std::size_t extra = 0;
+        for (std::size_t f = 0; f < scan.faceCount(); ++f) {
+            const auto [a, b, c] = scan.face(f);
+            const auto& p = scan.positions();
+            const double longest =
+                std::max({length(p[b] - p[a]), length(p[c] - p[b]), length(p[a] - p[c])});
+            if (longest <= spacing) continue;
+            const int k = static_cast<int>(std::ceil(longest / spacing));
+            divided.emplace_back(f, k);
+            extra += static_cast<std::size_t>((k + 1) * (k + 2) / 2 - 3);
+        }
+        const std::size_t budget =
+            params.maxSamples > samples.size() ? params.maxSamples - samples.size() : 0;
+        // Over budget, every triangle gets proportionally fewer divisions.
+        const double scale =
+            extra > budget ? std::sqrt(static_cast<double>(budget) / static_cast<double>(extra))
+                           : 1.0;
+        for (const auto& [f, divisions] : divided) {
+            const int k = std::max(1, static_cast<int>(std::floor(divisions * scale)));
+            const auto [a, b, c] = scan.face(f);
+            const auto& p = scan.positions();
+            for (int i = 0; i <= k; ++i) {
+                for (int j = 0; i + j <= k; ++j) {
+                    if ((i == 0 && j == 0) || i == k || j == k) continue; // its corners
+                    const double u = static_cast<double>(i) / k, v = static_cast<double>(j) / k;
+                    samples.push_back(p[a] + (p[b] - p[a]) * u + (p[c] - p[a]) * v);
+                }
             }
         }
-        gate = sum / static_cast<double>(cage.faceVertices().size());
     }
+    const auto n = static_cast<Eigen::Index>(cage.vertexCount());
+    const auto m = static_cast<Eigen::Index>(samples.size());
     const SparseMatrix l = laplacian(cage);
     const SparseMatrix ltl = SparseMatrix(l.transpose()) * l;
     const double mu = params.smoothing * static_cast<double>(m) / static_cast<double>(n);

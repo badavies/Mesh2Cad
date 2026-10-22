@@ -89,6 +89,7 @@ TEST_CASE("Merging faces leaves the surface as it was", "[stages][merge]") {
     SurfaceBuildParams p;
     p.fit = false;
     p.merge = false;
+    p.creaseAngleDeg = 0.0; // the cube cage's smooth limit surface, not a sharp-edged box
     const auto single = buildSurface(cage, nullptr, p);
     REQUIRE(single);
     p.merge = true;

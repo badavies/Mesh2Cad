@@ -306,22 +306,40 @@ QuadPartition partitionQuads(const QuadLayout& cage,
         }
         return false;
     };
+    // A regular vertex where fences meet other than as one straight line is a corner too: at a
+    // part's corner three sharp edges meet, and the faces on each side turn there although the
+    // quads run straight on. Lines leave it along the edges that are not fences.
+    std::unordered_set<EdgeKey> fenced;
+    std::vector<std::vector<std::uint32_t>> fencesAt(cage.vertexCount());
+    for (const auto& [a, b] : fences) {
+        if (fenced.insert(key(a, b)).second) {
+            fencesAt[a].push_back(b);
+            fencesAt[b].push_back(a);
+        }
+    }
+    std::vector<bool> corner = topo.singular;
+    for (std::uint32_t v = 0; v < cage.vertexCount(); ++v) {
+        const auto& at = fencesAt[v];
+        if (!corner[v] && !at.empty())
+            corner[v] = at.size() != 2 || topo.straightOn(v, at[0]) != at[1];
+    }
     QuadPartition out;
     for (std::uint32_t v = 0; v < cage.vertexCount(); ++v) {
-        if (!topo.singular[v]) continue;
+        if (!corner[v]) continue;
         for (const std::uint32_t first : topo.neighbours[v]) {
             if (cut.contains(key(v, first))) continue;
+            if (!topo.singular[v] && fenced.contains(key(v, first))) continue;
             ++out.lines;
             std::uint32_t prev = v, cur = first;
             cut.insert(key(prev, cur));
-            while (!topo.singular[cur] && !touchesCut(cur, prev)) {
+            while (!corner[cur] && !touchesCut(cur, prev)) {
                 const std::uint32_t next = topo.straightOn(cur, prev);
                 cut.insert(key(cur, next));
                 prev = std::exchange(cur, next);
             }
         }
     }
-    for (const auto& [a, b] : fences) cut.insert(key(a, b));
+    cut.insert(fenced.begin(), fenced.end());
     // Regions: quads joined across edges that are not partition lines or fences.
     std::vector region(cage.faceCount(), UINT32_MAX);
     for (std::uint32_t seed = 0; seed < cage.faceCount(); ++seed) {

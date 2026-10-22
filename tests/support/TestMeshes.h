@@ -16,6 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "m2c/core/QuadLayout.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -231,6 +232,89 @@ inline TriMesh makeCylinder(double r, double h, int n = 64, int rings = 16) {
         idx.insert(idx.end(), {bottom + 1, at(rings, i), at(rings, i + 1)});
     }
     return makeMesh(std::move(p), std::move(idx));
+}
+
+/// Closed, welded block [0,sx] x [0,sy] x [0,sz] with a round hole of radius r along z through its
+/// middle, outward: 4m vertices around (m along each side of the square, and as many on the
+/// hole's circle, at the same angles), `rings` bands of quads from hole to square on the top and
+/// bottom, and `levels` bands up the outer and hole walls.
+inline TriMesh makeBlockWithHole(
+    double sx, double sy, double sz, double r, int m = 16, int rings = 6, int levels = 6) {
+    const Vec3d c{sx / 2, sy / 2, 0.0};
+    const int n = 4 * m;
+    const auto square = [&](int k) {
+        k %= n;
+        const int side = k / m;
+        const double t = static_cast<double>(k % m) / m;
+        switch (side) {
+        case 0:
+            return Vec3d{sx * t, 0.0, 0.0};
+        case 1:
+            return Vec3d{sx, sy * t, 0.0};
+        case 2:
+            return Vec3d{sx * (1 - t), sy, 0.0};
+        default:
+            return Vec3d{0.0, sy * (1 - t), 0.0};
+        }
+    };
+    const auto circle = [&](int k) {
+        const Vec3d d = square(k) - c;
+        return c + d * (r / length(d));
+    };
+    std::vector<Vec3d> p;
+    std::vector<std::uint32_t> idx;
+    std::map<std::array<double, 3>, std::uint32_t> ids;
+    const auto id = [&](const Vec3d& v) {
+        const auto [it, added] =
+            ids.try_emplace({v.x, v.y, v.z}, static_cast<std::uint32_t>(p.size()));
+        if (added) p.push_back(v);
+        return it->second;
+    };
+    const auto quad = [&](const Vec3d& a, const Vec3d& b, const Vec3d& q, const Vec3d& d) {
+        idx.insert(idx.end(), {id(a), id(b), id(q)});
+        idx.insert(idx.end(), {id(a), id(q), id(d)});
+    };
+    const auto ring = [&](int j, int k, double z) {
+        const Vec3d a = circle(k), b = square(k);
+        const Vec3d v = j == rings ? b : a + (b - a) * (static_cast<double>(j) / rings);
+        return v + Vec3d{0.0, 0.0, z};
+    };
+    const auto lift = [&](const Vec3d& v, int l) {
+        return v + Vec3d{0.0, 0.0, l == levels ? sz : sz * l / levels};
+    };
+    for (int k = 0; k < n; ++k) {
+        for (int j = 0; j < rings; ++j) {
+            quad(ring(j, k, sz), ring(j + 1, k, sz), ring(j + 1, k + 1, sz), ring(j, k + 1, sz));
+            quad(ring(j, k, 0), ring(j, k + 1, 0), ring(j + 1, k + 1, 0), ring(j + 1, k, 0));
+        }
+        for (int l = 0; l < levels; ++l) {
+            quad(lift(square(k), l),
+                 lift(square(k + 1), l),
+                 lift(square(k + 1), l + 1),
+                 lift(square(k), l + 1));
+            quad(lift(circle(k), l),
+                 lift(circle(k), l + 1),
+                 lift(circle(k + 1), l + 1),
+                 lift(circle(k + 1), l));
+        }
+    }
+    return makeMesh(std::move(p), std::move(idx));
+}
+
+/// makeBlockWithHole() as a quad cage (each pair of its triangles one quad): a layout aligned to
+/// the block's edges, with all its vertices regular, as quad.remesh aims to make one.
+inline QuadLayout blockWithHoleCage(
+    double sx, double sy, double sz, double r, int m = 8, int rings = 2, int levels = 3) {
+    const TriMesh mesh = makeBlockWithHole(sx, sy, sz, r, m, rings, levels);
+    const auto& t = mesh.indices();
+    std::vector<std::uint32_t> starts{0}, vertices;
+    for (std::size_t k = 0; k + 5 < t.size(); k += 6) {
+        vertices.insert(vertices.end(), {t[k], t[k + 1], t[k + 2], t[k + 5]});
+        starts.push_back(static_cast<std::uint32_t>(vertices.size()));
+    }
+    auto cage = QuadLayout::create(mesh.positions(), std::move(starts), std::move(vertices));
+    REQUIRE(cage);
+    return std::move(*cage);
 }
 
 /// Concatenates meshes into one (separate shells).

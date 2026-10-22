@@ -2,6 +2,8 @@
 // One uniform Catmull-Clark step of a cage (deviation-driven refinement, ARCHITECTURE.md
 // section 6): four times the quads, the same limit surface and the same irregular vertices. And
 // the limit surface's normals at the cage vertices, for thickening a sheet.
+#include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -16,6 +18,7 @@
 #include <opensubdiv/far/topologyLevel.h>
 #include <opensubdiv/far/topologyRefiner.h>
 #include <opensubdiv/far/topologyRefinerFactory.h>
+#include <opensubdiv/sdc/crease.h>
 #include <opensubdiv/sdc/options.h>
 #include <opensubdiv/sdc/types.h>
 
@@ -38,8 +41,10 @@ struct Point {
     void AddWithWeight(const Point& src, const double w) { p = p + src.p * w; }
 };
 
-/// The cage's topology for OpenSubdiv, boundaries as in the rest of the adapter.
-std::unique_ptr<Far::TopologyRefiner> refinerOf(const QuadLayout& cage) {
+/// The cage's topology for OpenSubdiv, boundaries as in the rest of the adapter, with
+/// infinitely sharp creases.
+std::unique_ptr<Far::TopologyRefiner>
+refinerOf(const QuadLayout& cage, const std::vector<std::array<std::uint32_t, 2>>& creases = {}) {
     std::vector<int> sizes(cage.faceCount());
     for (std::size_t f = 0; f < cage.faceCount(); ++f) {
         sizes[f] = static_cast<int>(cage.face(f).size());
@@ -50,6 +55,14 @@ std::unique_ptr<Far::TopologyRefiner> refinerOf(const QuadLayout& cage) {
     desc.numFaces = static_cast<int>(cage.faceCount());
     desc.numVertsPerFace = sizes.data();
     desc.vertIndicesPerFace = indices.data();
+    std::vector<int> creasePairs;
+    for (const auto& [a, b] : creases) {
+        creasePairs.insert(creasePairs.end(), {static_cast<int>(a), static_cast<int>(b)});
+    }
+    const std::vector<float> creaseWeights(creases.size(), Sdc::Crease::SHARPNESS_INFINITE);
+    desc.numCreases = static_cast<int>(creases.size());
+    desc.creaseVertexIndexPairs = creasePairs.data();
+    desc.creaseWeights = creaseWeights.data();
     Sdc::Options sdc;
     sdc.SetVtxBoundaryInterpolation(Sdc::Options::VTX_BOUNDARY_EDGE_AND_CORNER);
     return std::unique_ptr<Far::TopologyRefiner>(
@@ -61,16 +74,27 @@ std::unique_ptr<Far::TopologyRefiner> refinerOf(const QuadLayout& cage) {
 
 } // namespace
 
-Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
+Result<QuadLayout> subdivideCage(const QuadLayout& cage,
+                                 std::vector<std::array<std::uint32_t, 2>>* creases) {
     if (!cageStats(cage).orientedManifold()) {
         return fail(ErrorCode::InvalidArgument,
                     "the cage must be a consistently oriented manifold");
     }
+    if (creases != nullptr) {
+        for (const auto& [a, b] : *creases) {
+            if (a >= cage.vertexCount() || b >= cage.vertexCount()) {
+                return fail(ErrorCode::InvalidArgument, "no such crease");
+            }
+        }
+    }
     try {
-        const std::unique_ptr<Far::TopologyRefiner> refiner = refinerOf(cage);
+        const std::unique_ptr<Far::TopologyRefiner> refiner = refinerOf(
+            cage, creases != nullptr ? *creases : std::vector<std::array<std::uint32_t, 2>>{});
         if (!refiner)
             return fail(ErrorCode::InvalidArgument, "OpenSubdiv rejected the cage topology");
-        refiner->RefineUniform(Far::TopologyRefiner::UniformOptions(1));
+        Far::TopologyRefiner::UniformOptions once(1);
+        once.fullTopologyInLastLevel = creases != nullptr; // its edges, to find the creases
+        refiner->RefineUniform(once);
         const Far::TopologyLevel& fine = refiner->GetLevel(1);
         std::vector<Point> points(cage.vertexCount() +
                                   static_cast<std::size_t>(fine.GetNumVertices()));
@@ -92,6 +116,17 @@ Result<QuadLayout> subdivideCage(const QuadLayout& cage) {
                 vertices.push_back(static_cast<std::uint32_t>(v));
             }
             starts.push_back(static_cast<std::uint32_t>(vertices.size()));
+        }
+        if (creases != nullptr) {
+            creases->clear();
+            for (int e = 0; e < fine.GetNumEdges(); ++e) {
+                if (!Sdc::Crease::IsInfinite(fine.GetEdgeSharpness(e))) continue;
+                const auto ends = fine.GetEdgeVertices(e);
+                const auto a = static_cast<std::uint32_t>(ends[0]);
+                const auto b = static_cast<std::uint32_t>(ends[1]);
+                creases->push_back({std::min(a, b), std::max(a, b)});
+            }
+            std::ranges::sort(*creases);
         }
         return QuadLayout::create(std::move(positions), std::move(starts), std::move(vertices));
     } catch (const std::exception& e) {

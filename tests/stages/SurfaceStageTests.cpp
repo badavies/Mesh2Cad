@@ -3,12 +3,16 @@
 // distance to known shapes, gaps between faces and the angle across cap edges.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <numbers>
 #include <string>
 #include <vector>
+
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/adapters/cgal/MeshTools.h"
 #include "m2c/adapters/occt/Brep.h"
@@ -365,6 +369,7 @@ TEST_CASE("Subdividing a cage keeps its limit surface", "[stages][surface]") {
     CHECK(cageStats(*finer).closed());
     SurfaceBuildParams p;
     p.fit = false;
+    p.creaseAngleDeg = 0.0; // the cube cage's smooth limit surface, not a sharp-edged box
     const auto coarse = buildSurface(cage, nullptr, p);
     const auto fine = buildSurface(*finer, nullptr, p);
     REQUIRE(coarse);
@@ -708,4 +713,134 @@ TEST_CASE("Flat areas need fitting, a selection of the scan and a unit normal",
     CHECK(fitCage(remeshed->cage, scan, f).error().code == ErrorCode::InvalidArgument);
     f.held[0] = HeldPlane{.point = {}, .normal = {0, 1, 1}, .vertices = {0}};
     CHECK(fitCage(remeshed->cage, scan, f).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("A cage's sharp edges stay sharp when subdivided", "[stages][surface]") {
+    const QuadLayout cube = cubeCage(10.0);
+    std::vector<std::array<std::uint32_t, 2>> creases = sharpCageEdges(cube, 60.0);
+    CHECK(creases.size() == 12);
+    CHECK(sharpCageEdges(cube, 95.0).empty());
+    const auto finer = subdivideCage(cube, &creases);
+    REQUIRE(finer);
+    CHECK(creases.size() == 24); // each edge in two halves
+    // Along the creases the step keeps the cube's edges: every crease vertex stays on one.
+    for (const auto& [a, b] : creases) {
+        for (const std::uint32_t v : {a, b}) {
+            const Vec3d p = finer->positions()[v];
+            int onFaces = 0;
+            for (const double c : {p.x, p.y, p.z}) onFaces += c < 1e-9 || c > 10.0 - 1e-9 ? 1 : 0;
+            CHECK(onFaces >= 2);
+        }
+    }
+    // Built with its creases, the cube cage is the cube: its faces' seams leave the sharp edges
+    // out, so they show no fold.
+    SurfaceBuildParams p;
+    p.fit = false;
+    const auto box = buildSurface(cube, nullptr, p);
+    REQUIRE(box);
+    CHECK(box->sharpEdges == 12);
+    CHECK_THAT(box->solid.summary().volumeMm3, Catch::Matchers::WithinRel(1000.0, 1e-6));
+    CHECK(box->seams.maxNormalAngleDeg < 1.0);
+    CHECK(box->solid.summary().faceCount == 6);
+}
+
+TEST_CASE("Faces that reach a sharp edge only at a corner show no fold there",
+          "[stages][surface]") {
+    // A point on a sharp edge where the top of a part (z = 0) meets its side (y = 0), with three
+    // flat faces around it on each side. The middle face of each side touches the point only
+    // between two smooth edges; its corner is still on the sharp edge, so the 90 degrees between
+    // the two middle faces is no fold.
+    const auto flat = [](Vec3d c00, Vec3d c10, Vec3d c11, Vec3d c01, const Vec3d& outward) {
+        if (dot(cross(c10 - c00, c01 - c00), outward) < 0.0) std::swap(c10, c01);
+        SurfacePatch face;
+        for (int j = 0; j <= 3; ++j) {
+            for (int i = 0; i <= 3; ++i) {
+                const double u = i / 3.0, v = j / 3.0;
+                face.poles.push_back(c00 * ((1 - u) * (1 - v)) + c10 * (u * (1 - v)) +
+                                     c11 * (u * v) + c01 * ((1 - u) * v));
+            }
+        }
+        return face;
+    };
+    std::vector<SurfacePatch> faces;
+    for (const auto& [side, outward] :
+         {std::pair{std::function([](double x, double t) { return Vec3d{x, t, 0.0}; }),
+                    Vec3d{0, 0, 1}},
+          std::pair{std::function([](double x, double t) { return Vec3d{x, 0.0, -t}; }),
+                    Vec3d{0, -1, 0}}}) {
+        const Vec3d o{};
+        faces.push_back(flat(o, side(1, 0), side(1, 1), side(0.5, 1), outward));
+        faces.push_back(flat(o, side(0.5, 1), side(0, 1.5), side(-0.5, 1), outward));
+        faces.push_back(flat(o, side(-0.5, 1), side(-1, 1), side(-1, 0), outward));
+    }
+    std::vector<std::array<bool, 4>> sharp;
+    for (const SurfacePatch& face : faces) {
+        const std::array corners{face.poles[0], face.poles[3], face.poles[12], face.poles[15]};
+        const auto onEdge = [&](std::size_t a, std::size_t b) {
+            return corners[a].y == 0.0 && corners[a].z == 0.0 && corners[b].y == 0.0 &&
+                   corners[b].z == 0.0;
+        };
+        sharp.push_back({onEdge(0, 1), onEdge(2, 3), onEdge(0, 2), onEdge(1, 3)});
+    }
+    const auto seams = measureSeams(faces, 4, 1e-6, {}, sharp);
+    REQUIRE(seams);
+    CHECK(seams->maxNormalAngleDeg < 1.0);
+}
+
+TEST_CASE("A noisy block with a hole keeps its sharp edges", "[stages][surface]") {
+    // Issue #64: a 30 x 30 x 10 block with a 12 mm hole, every vertex moved by up to 0.15 mm, in
+    // a cage aligned to its edges. Fitted smooth, the surface rounds the sharp edges and bulges
+    // past them.
+    const TriMesh ideal = makeBlockWithHole(30, 30, 10, 6, 32, 10, 10);
+    const auto distances = [&ideal](const Solid& solid) {
+        auto d = occt::signedDistances(solid, ideal.positions());
+        REQUIRE(d);
+        for (double& x : *d) x = std::abs(x);
+        std::ranges::sort(*d);
+        return std::pair{d->back(), (*d)[d->size() * 95 / 100]}; // worst, 95th percentile
+    };
+    const QuadLayout cage = blockWithHoleCage(30, 30, 10, 6);
+    // The top and bottom edges of the square and the hole, and the four corners up the sides.
+    REQUIRE(sharpCageEdges(cage, 60.0).size() == 140);
+    for (const auto& [scan, limitMm] :
+         {std::pair{addNoise(makeBlockWithHole(30, 30, 10, 6, 24, 8, 8), 0.15), 0.15},
+          // A coarse mesh, as a CAD export is: long triangles across the sides.
+          std::pair{addNoise(makeBlockWithHole(30, 30, 10, 6, 4, 1, 1), 0.15), 0.3}}) {
+        SurfaceBuildParams p;
+        const auto sharp = buildSurface(cage, &scan, p);
+        REQUIRE(sharp);
+        CHECK(sharp->sharpEdges == 140);
+        // Merged up to the sharp edges and the corners where they meet: four faces each for the
+        // top, the bottom, the sides and the hole.
+        CHECK(sharp->solid.summary().faceCount == 16);
+        const auto [worst, p95] = distances(sharp->solid);
+        CHECK(worst < limitMm);
+        CHECK(p95 < 0.15);
+        p.creaseAngleDeg = 0.0;
+        const auto smooth = buildSurface(cage, &scan, p);
+        REQUIRE(smooth);
+        CHECK(smooth->sharpEdges == 0);
+        CHECK(distances(smooth->solid).first > 0.5);
+    }
+}
+
+TEST_CASE("Sharp edges of the cage that the scan does not have stay smooth", "[stages][surface]") {
+    // A distorted cage, as quad.remesh can make around a hole: one vertex on the block's flat top
+    // stands 4 mm proud, so its quads meet at steep angles. The scan is flat there, so no crease
+    // is made there, and the fit flattens the bump.
+    const TriMesh scan = addNoise(makeBlockWithHole(30, 30, 10, 6, 24, 8, 8), 0.15);
+    const QuadLayout aligned = blockWithHoleCage(30, 30, 10, 6);
+    std::vector<Vec3d> moved = aligned.positions();
+    const auto bump = std::ranges::find_if(
+        moved, [](const Vec3d& v) { return length(v - Vec3d{15.0, 4.5, 10.0}) < 1e-9; });
+    REQUIRE(bump != moved.end());
+    *bump = *bump + Vec3d{0.0, 0.0, 4.0};
+    const auto distorted =
+        QuadLayout::create(std::move(moved), aligned.faceStarts(), aligned.faceVertices());
+    REQUIRE(distorted);
+    REQUIRE(sharpCageEdges(*distorted, 60.0).size() > 140);
+    const auto built = buildSurface(*distorted, &scan, SurfaceBuildParams{});
+    REQUIRE(built);
+    CHECK(built->sharpEdges == 140);
+    CHECK(built->fit.p95DistanceMm < 0.2);
 }

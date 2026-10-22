@@ -27,7 +27,7 @@ struct HeldPlane {
 struct CageFitParams {
     unsigned iterations{3};        ///< Rounds of closest-point parameters and least squares.
     double smoothing{0.05};        ///< Weight of keeping the cage's own shape; 0 = none.
-    std::size_t maxSamples{60000}; ///< Scan vertices used (evenly thinned beyond this).
+    std::size_t maxSamples{60000}; ///< Samples used (scan vertices evenly thinned beyond this).
     int isolationLevel{2};         ///< Adaptive refinement around irregular vertices (1-4).
     /// Samples farther than this from the surface are left out (parts of the scan the cage does
     /// not cover); 0 = the mean cage edge length.
@@ -37,6 +37,8 @@ struct CageFitParams {
     /// Vertices kept on planes: a stiff term in each solve, then an exact projection. A vertex on
     /// two planes ends up on (or near, for planes far from perpendicular) their intersection.
     std::vector<HeldPlane> held{};
+    /// Cage edges (vertex pairs) along which the surface has a sharp edge, as in PatchParams.
+    std::vector<std::array<std::uint32_t, 2>> creases{};
 };
 
 struct CageFitResult {
@@ -53,8 +55,10 @@ struct CageFitResult {
 /// closest point of the current limit surface, then the vertices solve one sparse least-squares
 /// problem (distance to the sample's tangent plane, plus a little of the distance to the sample),
 /// with a smoothing term on how far neighbouring vertices move apart. The best round is kept.
-/// Held vertices (params.held) start and stay on their planes. The cage must be closed, or open
-/// with params.open. Deterministic.
+/// Held vertices (params.held) start and stay on their planes. The samples are the scan's
+/// vertices, thinned to maxSamples, and points across triangles longer than a third of the mean
+/// cage edge (a coarse scan's), within the same budget. The cage must be closed, or open with
+/// params.open. Deterministic.
 [[nodiscard]] Result<CageFitResult>
 fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params);
 
@@ -72,6 +76,9 @@ struct PatchResult {
     std::vector<SurfacePatch> faces; ///< One per cage quad (n per n-sided cage face).
     /// Per face, which of its pieces (j * piecesU + i) are caps.
     std::vector<std::vector<bool>> caps;
+    /// Per face, which of its edges lie on a crease, in measureSeams() order: v = 0, v = 1,
+    /// u = 0, u = 1.
+    std::vector<std::array<bool, 4>> sharp;
     std::size_t regularPieces{0};
     std::size_t capPieces{0};
     double maxCapErrorMm{0.0}; ///< Largest distance from a cap to the limit surface it replaces.
@@ -87,8 +94,10 @@ struct PatchResult {
 /// One uniform Catmull-Clark step: every n-sided face becomes n quads. The limit surface is the
 /// same and so are the irregular vertices, so a fit of the result starts where the coarse fit
 /// ended, with four times the control. The cage must be a consistently oriented manifold
-/// (closed, or open with a boundary).
-[[nodiscard]] Result<QuadLayout> subdivideCage(const QuadLayout& cage);
+/// (closed, or open with a boundary). With creases (cage edges along which the surface is
+/// sharp), the step keeps them sharp and `creases` becomes the halves of each in the result.
+[[nodiscard]] Result<QuadLayout>
+subdivideCage(const QuadLayout& cage, std::vector<std::array<std::uint32_t, 2>>* creases = nullptr);
 
 /// Unit normal of the limit surface at the limit point of each cage vertex, on the side the
 /// cage's faces face (zero where the surface is degenerate). The cage must be a consistently

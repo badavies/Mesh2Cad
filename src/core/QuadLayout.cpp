@@ -2,12 +2,15 @@
 #include "m2c/core/QuadLayout.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <map>
 #include <memory>
+#include <numbers>
 #include <numeric>
 #include <ranges>
 #include <string>
@@ -223,6 +226,31 @@ std::vector<std::uint32_t> cageEdges(const QuadLayout& cage) {
         }
     }
     return edges;
+}
+
+std::vector<std::array<std::uint32_t, 2>> sharpCageEdges(const QuadLayout& cage,
+                                                         const double angleDeg) {
+    std::map<std::array<std::uint32_t, 2>, std::vector<Vec3d>> normals;
+    const auto& p = cage.positions();
+    for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+        const auto face = cage.face(f);
+        Vec3d area{};
+        for (std::size_t i = 0; i < face.size(); ++i) {
+            area = area + cross(p[face[i]], p[face[(i + 1) % face.size()]]);
+        }
+        for (std::size_t i = 0; i < face.size(); ++i) {
+            const auto [a, b] = std::minmax(face[i], face[(i + 1) % face.size()]);
+            normals[{a, b}].push_back(area);
+        }
+    }
+    const double limit = std::cos(angleDeg * std::numbers::pi / 180.0);
+    std::vector<std::array<std::uint32_t, 2>> sharp;
+    for (const auto& [edge, n] : normals) {
+        if (n.size() != 2) continue;
+        const double size = length(n[0]) * length(n[1]);
+        if (size > 0.0 && dot(n[0], n[1]) < limit * size) sharp.push_back(edge);
+    }
+    return sharp;
 }
 
 } // namespace m2c

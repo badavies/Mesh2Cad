@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -107,5 +108,11 @@ struct CageStats {
 /// Each edge of the faces once, as pairs of vertex indices (a closed cage has each edge in two
 /// faces, once in each direction; the lower-to-higher one is kept).
 [[nodiscard]] std::vector<std::uint32_t> cageEdges(const QuadLayout& cage);
+
+/// Edges of a closed cage where its faces turn by more than angleDeg (the angle between the two
+/// faces' area vectors): where a cage aligned to a part's sharp edges runs along them. Each as
+/// (lower, higher) vertex, in order. Edges without two faces are left out.
+[[nodiscard]] std::vector<std::array<std::uint32_t, 2>> sharpCageEdges(const QuadLayout& cage,
+                                                                       double angleDeg);
 
 } // namespace m2c

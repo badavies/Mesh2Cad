@@ -54,6 +54,13 @@ struct SurfaceBuildParams {
     /// Faces of the kept try that meet at a larger angle fold the surface over itself; the build
     /// then fails rather than return a solid that crosses itself.
     double maxFoldAngleDeg{90.0};
+    /// Of a closed cage: edges where its faces turn by more than this (sharpCageEdges()) are
+    /// sharp edges of the surface, as a part's sharp edges are where the cage was aligned to
+    /// them (quad.remesh crease_angle_deg). With a scan, an edge stays only where the scan's
+    /// normals under the two faces differ by more than half the angle too, so a distorted cage
+    /// gets no crease on a smooth stretch. The fit, the faces and the merge keep them sharp, and
+    /// the angle checks leave them out. 0 = none: the surface is smooth everywhere.
+    double creaseAngleDeg{60.0};
     /// Check that the finished solid's surface does not cross itself, on the kernel's
     /// triangulation (occt::weldedTriangulation(), cgal::selfIntersects()), and fail if it does.
     /// A surface can cross itself with no fold the angle check sees, as a fit can that overshoots
@@ -94,6 +101,7 @@ struct SurfaceBuildResult {
     /// The fit's 95th-percentile distance before each refinement; empty when none was made.
     std::vector<double> p95BeforeRefinementMm;
     std::vector<std::size_t> heldVertices; ///< Per flat area, cage vertices held in the last fit.
+    std::size_t sharpEdges{0}; ///< Cage edges kept sharp (creaseAngleDeg), of the final cage.
 };
 
 /// Closes an open cage (an oriented manifold sheet) into a wall: a copy of every vertex moved
