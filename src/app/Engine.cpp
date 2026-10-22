@@ -31,6 +31,7 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/document/Document.h"
 #include "m2c/rpc/RpcServer.h"
 #include "m2c/rpc/Session.h"
@@ -92,9 +93,6 @@ Engine::Engine(QObject* parent) : QObject(parent) {
     uiContext_ = std::make_unique<CommandContext>(document_);
     uiContext_->source = "ui";
     uiContext_->sessionLog = [this](const Json& entry) { writeLog(entry); };
-    uiContext_->progress = [this](std::string_view stage, double fraction) {
-        showProgress(uiContext_->currentCommand, stage, fraction);
-    };
 
     // Session log: every change from every source, one JSON object per line, replayable.
     const QString dir =
@@ -214,6 +212,16 @@ void Engine::run(const QString& command, const Json& params, Done done) {
     const std::string name = command.toStdString();
     post([this, name, params, done = std::move(done)] {
         const auto started = std::chrono::steady_clock::now();
+        const CancelToken token = CancelToken::make();
+        {
+            const std::scoped_lock lock(mutex_);
+            uiCancel_ = token;
+        }
+        uiContext_->progress = Progress(
+            [this](std::string_view stage, double fraction) {
+                showProgress(uiContext_->currentCommand, stage, fraction);
+            },
+            token);
         Result<Json> result = registry_.execute(*uiContext_, name, params);
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                             std::chrono::steady_clock::now() - started)
@@ -235,6 +243,14 @@ void Engine::run(const QString& command, const Json& params, Done done) {
             },
             Qt::QueuedConnection);
     });
+}
+
+void Engine::cancel() {
+    {
+        const std::scoped_lock lock(mutex_);
+        uiCancel_.cancel();
+    }
+    for (const auto& c : std::views::values(connections_)) c->rpc->cancelAll();
 }
 
 // ---- Local socket ----------------------------------------------------------------------------
@@ -306,6 +322,12 @@ void Engine::onReadyRead(int connectionId) {
         std::string line = c->buffer.left(nl).toStdString();
         c->buffer.remove(0, nl + 1);
         if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
+        // A cancel is answered here at once, not queued behind the request it stops.
+        if (const Json message = Json::parse(line, nullptr, false); RpcServer::isCancel(message)) {
+            if (const auto reply = c->rpc->handle(message))
+                c->socket->write(QByteArray::fromStdString(reply->dump() + "\n"));
+            continue;
+        }
         ++pending_;
         post([this, c, line = std::move(line), connectionId] {
             const Json request = Json::parse(line, nullptr, false);

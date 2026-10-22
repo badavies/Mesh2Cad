@@ -9,6 +9,7 @@
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
+#include <QPushButton>
 #include <QStringList>
 #include <QSurfaceFormat>
 #include <QToolButton>
@@ -24,10 +25,12 @@
 #include <map>
 #include <memory>
 #include <numbers>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "m2c/core/SelectionColors.h"
 #include "m2c/core/Sketch.h"
@@ -354,6 +357,85 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         CHECK(lines.back().contains("result"));
         REQUIRE(waitFor([&] { return !shown.isEmpty(); }));
         CHECK(shown.front() == "mesh.simplify: simplifying the mesh");
+    }
+
+    SECTION("the person and an agent cancel a long command") {
+        // Measuring a big scan against another takes long enough to be stopped part way.
+        const std::string bigPath = (dir.path() / "big.stl").string();
+        REQUIRE(writeMesh(makeBumpySphere(10.0, 300, 600), bigPath).has_value());
+        for (int i = 0; i < 2; ++i) {
+            window.openFiles({QString::fromStdString(bigPath)});
+            REQUIRE(waitFor([&] { return !engine.busy(); }));
+        }
+        const auto objects = engine.snapshot()->objects;
+        REQUIRE(objects.size() == 3);
+        const Json measure{{"id", objects[1].id}, {"reference_id", objects[2].id}};
+        auto* cancel = window.findChild<QPushButton*>("cancelCommand");
+        REQUIRE(cancel != nullptr);
+        CHECK_FALSE(cancel->isVisible());
+
+        // The person presses Cancel once the command says what it is doing.
+        const QObject listener;
+        bool shownWhileRunning = false;
+        QObject::connect(&engine, &Engine::progressChanged, &listener, [&] {
+            shownWhileRunning = cancel->isVisible();
+            cancel->click();
+        });
+        std::optional<Result<Json>> result;
+        engine.run("deviation.compute", measure, [&](const Result<Json>& r) { result = r; });
+        REQUIRE(waitFor([&] { return result.has_value(); }));
+        CHECK(shownWhileRunning);
+        REQUIRE_FALSE(result->has_value());
+        CHECK(result->error().code == ErrorCode::Cancelled);
+        REQUIRE(waitFor([&] { return !engine.busy(); }));
+        CHECK_FALSE(cancel->isVisible());
+        CHECK(countKind(*engine.snapshot(), "deviation") == 0);
+        QObject::disconnect(&engine, &Engine::progressChanged, &listener, nullptr);
+
+        // An agent sends rpc.cancel for its request when it hears the request's first stage.
+        REQUIRE(engine.startLocalServer().startsWith("Listening"));
+        const auto info = readSessionFile(defaultSessionFile());
+        REQUIRE(info.has_value());
+        std::atomic<bool> finished{false};
+        std::vector<Json> lines;
+        std::thread agent([&] {
+            if (auto client = LocalClient::connect(info->endpoint)) {
+                const auto send = [&](const Json& m) { (void)(*client)->writeLine(m.dump()); };
+                send(Json{{"jsonrpc", "2.0"},
+                          {"id", 1},
+                          {"method", "rpc.auth"},
+                          {"params", {{"token", info->token}}}});
+                send(Json{{"jsonrpc", "2.0"},
+                          {"id", 2},
+                          {"method", "deviation.compute"},
+                          {"params", measure}});
+                for (;;) {
+                    auto line = (*client)->readLine();
+                    if (!line) break;
+                    lines.push_back(Json::parse(*line, nullptr, false));
+                    if (lines.back().value("method", Json()) == "rpc.progress") {
+                        send(Json{{"jsonrpc", "2.0"},
+                                  {"id", 3},
+                                  {"method", "rpc.cancel"},
+                                  {"params", {{"id", 2}}}});
+                    }
+                    if (lines.back().value("id", Json()) == 2) break;
+                }
+            }
+            finished = true;
+        });
+        const bool done = waitFor([&] { return finished.load(); });
+        agent.join();
+        REQUIRE(done);
+        const auto reply = [&](int id) {
+            const auto it = std::ranges::find_if(
+                lines, [id](const Json& j) { return j.value("id", Json()) == id; });
+            return it != lines.end() ? *it : Json();
+        };
+        CHECK(reply(3)["result"]["cancelled"] == true);
+        CHECK(reply(2)["error"]["code"] == RpcServer::kCancelled);
+        CHECK(reply(2)["error"]["message"].get<std::string>().starts_with("cancelled while"));
+        CHECK(countKind(*engine.snapshot(), "deviation") == 0);
     }
 }
 

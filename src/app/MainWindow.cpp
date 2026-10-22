@@ -113,7 +113,13 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
 
     status_ = new QLabel;
     hover_ = new QLabel;
+    cancel_ = new QPushButton(tr("Cancel"));
+    cancel_->setObjectName("cancelCommand");
+    cancel_->setToolTip(tr("Stop the running command; the document stays as it was"));
+    cancel_->hide();
+    connect(cancel_, &QPushButton::clicked, &engine_, &Engine::cancel);
     statusBar()->addWidget(status_, 1);
+    statusBar()->addPermanentWidget(cancel_);
     statusBar()->addPermanentWidget(hover_);
 
     connect(&engine_, &Engine::documentChanged, this, &MainWindow::onDocumentChanged);
@@ -130,6 +136,7 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
     });
     connect(&engine_, &Engine::busyChanged, this, [this](const bool busy, const QString& command) {
         form_->setBusy(busy);
+        cancel_->setVisible(busy);
         status_->setText(busy ? tr("Running %1…").arg(command) : QString());
         if (busy) {
             QApplication::setOverrideCursor(Qt::BusyCursor);

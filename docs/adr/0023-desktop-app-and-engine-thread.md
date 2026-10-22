@@ -19,6 +19,6 @@ M0 needs the viewport and UI, and M1 needs agents to drive the running app (sect
 - Qt Quick: less mature for dense desktop tool panels; no gain for a custom GL viewport.
 
 ## Consequences
-- Long commands cannot be cancelled yet (jobs and `job.cancel` are still planned); the UI shows a busy state and queues further commands.
+- The UI shows a busy state and queues further commands while one runs. Addendum (#31): a Cancel button in the status bar stops the running command, the person's or an agent's (`Engine::cancel`); an agent's `rpc.cancel` is answered on the UI thread, not queued behind the request it stops.
 - On Windows the Qt build must match the compiler: use the MinGW kit from the Qt installer with that kit's own MinGW, or vcpkg's `qtbase` built by the same toolchain as the project. A Qt built by another MinGW version may fail to link.
 - The 10M-triangle, 30 fps gate has not been measured on real hardware yet.

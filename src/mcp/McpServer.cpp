@@ -195,14 +195,31 @@ Json McpServer::callTool(const Json& params) {
     return out;
 }
 
+bool McpServer::isCancel(const Json& message) {
+    return message.is_object() && message.contains("method") &&
+           message["method"] == "notifications/cancelled";
+}
+
 std::optional<Json> McpServer::handle(const Json& message) {
+    if (isCancel(message)) {
+        const Json params = message.value("params", Json::object());
+        // The engine is asked under the lock, so the call cannot finish and another start
+        // meanwhile.
+        const std::scoped_lock lock(callMutex_);
+        if (params.is_object() && params.contains("requestId") && callId_ &&
+            *callId_ == params["requestId"] && !callCancelled_) {
+            callCancelled_ = true;
+            if (cancel_) cancel_();
+        }
+        return std::nullopt;
+    }
     if (!message.is_object() || !message.contains("method")) {
         if (message.is_object() && message.contains("id")) {
             return std::make_optional(errorResponse(message["id"], -32600, "invalid request"));
         }
         return std::nullopt; // a response or junk: nothing to answer
     }
-    if (!message.contains("id")) return std::nullopt; // notifications (initialized, cancelled)
+    if (!message.contains("id")) return std::nullopt; // other notifications (initialized)
     const Json& id = message["id"];
     if (!message["method"].is_string()) {
         return std::make_optional(errorResponse(id, -32600, "invalid request"));
@@ -227,7 +244,18 @@ std::optional<Json> McpServer::handle(const Json& message) {
         if (!tools) return std::make_optional(errorResponse(id, -32603, tools.error().message));
         return std::make_optional(response(id, *tools));
     }
-    if (method == "tools/call") return std::make_optional(response(id, callTool(params)));
+    if (method == "tools/call") {
+        {
+            const std::scoped_lock lock(callMutex_);
+            callId_ = id;
+            callCancelled_ = false;
+        }
+        Json result = callTool(params);
+        const std::scoped_lock lock(callMutex_);
+        callId_.reset();
+        if (callCancelled_) return std::nullopt;
+        return std::make_optional(response(id, std::move(result)));
+    }
     return std::make_optional(errorResponse(id, -32601, "method not found: " + method));
 }
 

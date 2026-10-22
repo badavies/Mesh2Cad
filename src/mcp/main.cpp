@@ -9,17 +9,22 @@
 //   mesh2cad-mcp --connect       only connect to the running app; fail if it is not open
 //   mesh2cad-mcp --session <file> session file to use (default: the app's per-user location)
 
+#include <atomic>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <expected>
 #include <filesystem>
 #include <functional>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 #include "m2c/commands/Command.h"
@@ -55,24 +60,30 @@ struct HeadlessEngine {
             });
     }
 
-    Result<Json> call(const std::string& method, const Json& params) const {
-        static long long next = 1;
+    std::atomic<long long> current{0}; ///< The id of the latest call.
+
+    Result<Json> call(const std::string& method, const Json& params) {
+        const long long id = ++current;
         const auto reply = server->handle(
-            Json{{"jsonrpc", "2.0"}, {"id", next++}, {"method", method}, {"params", params}});
+            Json{{"jsonrpc", "2.0"}, {"id", id}, {"method", method}, {"params", params}});
         return reply.value_or(Json::object());
     }
+
+    /// Stops the call in progress; called on another thread.
+    void cancel() const { (void)server->cancel(Json(current.load())); }
 };
 
 /// The desktop app's engine over its local socket.
 struct RemoteEngine {
     std::unique_ptr<m2c::LocalClient> client;
-    long long next{1};
+    std::atomic<long long> current{0}; ///< The id of the latest call.
+    std::mutex writeMutex;             ///< A cancel is written while a call reads.
     EventSink onEvent;
 
     Result<Json> call(const std::string& method, const Json& params) {
-        const long long id = next++;
+        const long long id = ++current;
         const Json request{{"jsonrpc", "2.0"}, {"id", id}, {"method", method}, {"params", params}};
-        if (auto ok = client->writeLine(request.dump()); !ok) return std::unexpected(ok.error());
+        if (auto ok = write(request); !ok) return std::unexpected(ok.error());
         while (true) {
             auto line = client->readLine();
             if (!line) return std::unexpected(line.error());
@@ -82,6 +93,18 @@ struct RemoteEngine {
             if (reply.value("id", Json()) == Json(id)) return reply;
             if (reply.contains("method") && !reply.contains("id") && onEvent) onEvent(reply);
         }
+    }
+
+    /// Stops the call in progress; called on another thread. On Windows the pipe serialises
+    /// this write behind the call's pending read, so it goes out with the next line the app sends.
+    void cancel() {
+        (void)write(Json{
+            {"jsonrpc", "2.0"}, {"method", "rpc.cancel"}, {"params", {{"id", current.load()}}}});
+    }
+
+    Result<void> write(const Json& message) {
+        const std::scoped_lock lock(writeMutex);
+        return client->writeLine(message.dump());
     }
 
     static Result<std::unique_ptr<RemoteEngine>> open(const std::filesystem::path& sessionFile) {
@@ -143,12 +166,13 @@ int main(int argc, char** argv) {
         std::cerr << "mesh2cad-mcp: using a headless document\n";
     }
 
-    const auto send = [](const Json& message) {
+    std::mutex outMutex;
+    const auto send = [&outMutex](const Json& message) {
+        const std::scoped_lock lock(outMutex);
         std::cout << message.dump(-1, ' ', false, Json::error_handler_t::replace) << '\n'
                   << std::flush;
     };
-    // Progress notifications go out while a tool runs; the server never writes them while it is
-    // sending a response, so the two writers do not interleave.
+    // Progress notifications go out from another thread while a tool runs.
     m2c::McpServer server(
         [&](const std::string& method, const Json& params) -> Result<Json> {
             return remote ? remote->call(method, params) : headless->call(method, params);
@@ -158,18 +182,53 @@ int main(int argc, char** argv) {
     const EventSink forward = [&server](const Json& n) { server.engineEvent(n); };
     if (remote) remote->onEvent = forward;
     if (headless) headless->onEvent = forward;
+    server.setCancel([&] { remote ? remote->cancel() : headless->cancel(); });
+
+    // Messages are handled in order on a worker thread while this one reads, so a
+    // notifications/cancelled reaches the tool call it names while that runs.
+    std::mutex queueMutex;
+    std::condition_variable wake;
+    std::deque<Json> queue;
+    bool done = false;
+    std::thread worker([&] {
+        for (;;) {
+            Json message;
+            {
+                std::unique_lock lock(queueMutex);
+                wake.wait(lock, [&] { return done || !queue.empty(); });
+                if (queue.empty()) return; // input ended and every message was handled
+                message = std::move(queue.front());
+                queue.pop_front();
+            }
+            if (const auto reply = server.handle(message)) send(*reply);
+        }
+    });
 
     std::string line;
     while (std::getline(std::cin, line)) {
         if (line.find_first_not_of(" \t\r") == std::string::npos) continue;
-        const Json message = Json::parse(line, nullptr, false);
+        Json message = Json::parse(line, nullptr, false);
         if (message.is_discarded()) {
             send(Json{{"jsonrpc", "2.0"},
                       {"id", nullptr},
                       {"error", {{"code", -32700}, {"message", "parse error"}}}});
             continue;
         }
-        if (const auto reply = server.handle(message)) send(*reply);
+        if (m2c::McpServer::isCancel(message)) {
+            (void)server.handle(message);
+            continue;
+        }
+        {
+            const std::scoped_lock lock(queueMutex);
+            queue.push_back(std::move(message));
+        }
+        wake.notify_one();
     }
+    {
+        const std::scoped_lock lock(queueMutex);
+        done = true;
+    }
+    wake.notify_one();
+    worker.join();
     return 0;
 }
