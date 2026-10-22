@@ -182,6 +182,67 @@ TEST_CASE("mesh.segment stores each primitive region as a selection", "[commands
     CHECK_FALSE(s.tryRun("mesh.segment", {{"id", id}, {"kinds", {"cone"}}}).has_value());
 }
 
+TEST_CASE("mesh.segment creates the fitted primitives and reports coverage",
+          "[commands][segment]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId box = s.import(dir, makeBox(30, 20, 10, 6), "box");
+
+    // Without the option: selections only, as before.
+    const std::size_t before = s.document.objects().size();
+    const Json plain = s.run("mesh.segment", {{"id", box}});
+    CHECK(s.document.objects().size() == before + 6);
+    for (const Json& r : plain["regions"]) CHECK_FALSE(r.contains("primitive_id"));
+    CHECK(plain["unclassified_face_count"] == 0);
+    CHECK(plain["covered_area_fraction"].get<double>() >= 0.98);
+    REQUIRE(s.document.undo());
+
+    // One undo takes the selections and the primitives.
+    s.run("mesh.segment", {{"id", box}, {"create_primitives", true}});
+    CHECK(s.document.objects().size() == before + 12);
+    REQUIRE(s.document.undo());
+    CHECK(s.document.objects().size() == before);
+
+    const Json result = s.run("mesh.segment", {{"id", box}, {"create_primitives", true}});
+    const Json& regions = result["regions"];
+    REQUIRE(regions.size() == 6);
+    for (const Json& r : regions) {
+        CAPTURE(r.dump());
+        const auto primitive = s.document.find(r["primitive_id"].get<ObjectId>());
+        REQUIRE(primitive);
+        REQUIRE(primitive->primitive() != nullptr);
+        CHECK(primitive->name == "Plane fit");
+        CHECK(primitive->provenance.command == "mesh.segment");
+        CHECK(primitive->provenance.inputs ==
+              std::vector<ObjectId>{r["selection_id"].get<ObjectId>(), box});
+        // The same plane primitive.fit finds on the selection.
+        const Primitive& made = primitive->primitive()->fit.surface;
+        const Json fit = s.run("primitive.fit", {{"selection_id", r["selection_id"]}});
+        REQUIRE(fit["kind"] == "plane");
+        const Vec3d normal{fit["normal"][0].get<double>(),
+                           fit["normal"][1].get<double>(),
+                           fit["normal"][2].get<double>()};
+        const Vec3d point{fit["point"][0].get<double>(),
+                          fit["point"][1].get<double>(),
+                          fit["point"][2].get<double>()};
+        CHECK(length(made.direction - normal) < 1e-6);
+        CHECK(std::abs(dot(made.direction, made.point) - dot(normal, point)) < 1e-6);
+    }
+
+    // A bump on the top is organic: coverage drops.
+    TriMesh bumpy = makeBox(30, 20, 10, 12);
+    std::vector<Vec3d> p = bumpy.positions();
+    for (Vec3d& v : p) {
+        const double r2 = (v.x - 15) * (v.x - 15) + (v.y - 10) * (v.y - 10);
+        if (v.z > 9.99) v.z += 2.0 * std::exp(-r2 / 8.0);
+    }
+    const ObjectId bump = s.import(dir, makeMesh(std::move(p), bumpy.indices()), "bump");
+    const Json organic = s.run("mesh.segment", {{"id", bump}});
+    CHECK(organic["unclassified_face_count"].get<int>() > 0);
+    CHECK(organic["covered_area_fraction"].get<double>() <
+          plain["covered_area_fraction"].get<double>());
+}
+
 TEST_CASE("primitive.fit adds an exact primitive fitted to a selection", "[commands][fit]") {
     Session s;
     const TempDir dir;

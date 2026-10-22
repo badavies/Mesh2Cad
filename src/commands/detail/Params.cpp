@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "detail/Params.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -22,6 +23,7 @@
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
+#include "m2c/pipeline/PrimitiveFit.h"
 
 namespace m2c::cmd {
 
@@ -211,6 +213,28 @@ PrimitiveData primitiveData(const FittedPrimitive& fit) {
     auto display = primitiveDisplay(fit);
     return {.fit = fit,
             .display = display ? std::make_shared<const TriMesh>(std::move(*display)) : nullptr};
+}
+
+Result<FittedPrimitive> fitRegionPrimitive(const TriMesh& mesh,
+                                           const std::vector<std::uint32_t>& faces,
+                                           const RegionFitParams& params) {
+    M2C_TRY(fit, fitRegion(mesh, faces, params));
+    FittedPrimitive fitted{
+        .surface = fit->primitive, .rmsMm = fit->rmsMm, .maxMm = fit->maxMm, .p95Mm = fit->p95Mm};
+    const std::vector<Vec3d> points = regionPoints(mesh, faces);
+    Aabb& box = fitted.extent;
+    box = {.min = points.front(), .max = points.front()};
+    for (const Vec3d& q : points) {
+        box.min = {std::min(box.min.x, q.x), std::min(box.min.y, q.y), std::min(box.min.z, q.z)};
+        box.max = {std::max(box.max.x, q.x), std::max(box.max.y, q.y), std::max(box.max.z, q.z)};
+    }
+    return fitted;
+}
+
+std::string fittedName(const PrimitiveKind kind) {
+    std::string name = primitiveKindName(kind);
+    name[0] = static_cast<char>(name[0] - 'a' + 'A');
+    return name + " fit";
 }
 
 Json describe(const DocumentObject& object) {
