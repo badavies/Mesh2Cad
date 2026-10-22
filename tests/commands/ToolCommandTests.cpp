@@ -2,20 +2,25 @@
 // Every M1 command run end to end through the registry, as the UI, CLI, JSON channel and MCP
 // server all do.
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <map>
 #include <numbers>
 #include <string>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/commands/Command.h"
+#include "m2c/core/SelectionColors.h"
 #include "m2c/io/MeshIO.h"
 
 #include "TestMeshes.h"
+#include "TestPng.h"
 
 using namespace m2c;
 using namespace m2c::test;
@@ -385,6 +390,59 @@ TEST_CASE("view.render draws the visible objects to a PNG", "[commands][render]"
     CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}, {"direction", {0, 0, 0}}}));
     CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}, {"width", 8}}));
     CHECK_FALSE(s.tryRun("view.render", {{"path", (dir.path() / "no" / "x.png").string()}}));
+}
+
+TEST_CASE("view.render colours each listed selection as the app does", "[commands][render]") {
+    Session s;
+    const TempDir dir;
+    const auto path = dir.path() / "regions.png";
+    const ObjectId box = s.import(dir, makeBox(20, 10, 6, 4), "box");
+    const Json regions = s.run("mesh.segment", {{"id", box}})["regions"];
+    REQUIRE(regions.size() == 6);
+    Json ids = Json::array();
+    for (const Json& r : regions) ids.push_back(r["selection_id"]);
+
+    const Json view = s.run("view.render", {{"path", path.string()}, {"selection_ids", ids}});
+    const Json& legend = view["color_legend"];
+    REQUIRE(legend.size() == 6);
+    for (std::size_t k = 0; k < 6; ++k) {
+        CHECK(legend[k]["id"] == ids[k]);
+        const Rgb c = selectionColor(ids[k].get<ObjectId>());
+        CHECK(legend[k]["rgb"] == Json::array({c.r, c.g, c.b}));
+        CHECK(legend[k]["name"].is_string());
+    }
+
+    // The three faces in sight from iso meet at a corner; each shows in its own colour, on the
+    // grey mesh and shaded (shading scales the channels alike, so compare their ratios).
+    const auto image = readPng(path);
+    REQUIRE(image.has_value());
+    const auto chroma = [](const Rgb& c) {
+        const double top = std::max({c.r, c.g, c.b, 1e-9});
+        return std::array<double, 3>{c.r / top, c.g / top, c.b / top};
+    };
+    std::map<ObjectId, int> seen;
+    for (int y = 0; y < image->height; ++y) {
+        for (int x = 0; x < image->width; ++x) {
+            const auto p = chroma(image->at(x, y));
+            for (const Json& id : ids) {
+                const Rgb c = selectionColor(id.get<ObjectId>());
+                const auto e = chroma(
+                    {0.2 * 0.80 + 0.8 * c.r, 0.2 * 0.82 + 0.8 * c.g, 0.2 * 0.86 + 0.8 * c.b});
+                if (std::abs(p[0] - e[0]) + std::abs(p[1] - e[1]) + std::abs(p[2] - e[2]) < 0.03)
+                    ++seen[id.get<ObjectId>()];
+            }
+        }
+    }
+    int shown = 0;
+    for (const auto& [id, pixels] : seen) shown += pixels > 2000 ? 1 : 0;
+    CHECK(shown == 3);
+
+    // selection_id alone draws as before, orange, and is listed in orange.
+    const Json single = s.run("view.render", {{"path", path.string()}, {"selection_id", ids[0]}});
+    REQUIRE(single["color_legend"].size() == 1);
+    CHECK(single["color_legend"][0]["rgb"] == Json::array({1.0, 0.5, 0.1}));
+    CHECK(s.run("view.render", {{"path", path.string()}})["color_legend"].empty());
+    CHECK_FALSE(s.tryRun("view.render", {{"path", path.string()}, {"selection_ids", {box}}}));
 }
 
 TEST_CASE("Selections, face deletion and datum alignment through commands", "[commands][align]") {

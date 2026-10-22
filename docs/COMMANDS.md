@@ -664,7 +664,7 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 
 ### `view.render`
 
-Draw the visible objects to a PNG file, as the app's viewport shows them, so an agent can see the document: meshes grey (red where a back face shows, deviation colours when a deviation of the mesh is visible), solids blue, primitives green, quad layout edges orange and sketches cyan over everything. selection_id marks a selection's faces orange and highlight_id draws one object yellow. The view is orthographic and framed on what is drawn. Needs no GPU or display. Over MCP the picture is also returned as an image. *(writes a file)*
+Draw the visible objects to a PNG file, as the app's viewport shows them, so an agent can see the document: meshes grey (red where a back face shows, deviation colours when a deviation of the mesh is visible), solids blue, primitives green, quad layout edges orange and sketches cyan over everything. selection_id marks a selection's faces orange, selection_ids marks each listed selection in its own colour (the app's, listed in color_legend), and highlight_id draws one object yellow. The view is orthographic and framed on what is drawn. Needs no GPU or display. Over MCP the picture is also returned as an image. *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -672,6 +672,7 @@ Draw the visible objects to a PNG file, as the app's viewport shows them, so an 
 | `height` | integer |  | Default `600`. |
 | `highlight_id` | object id |  | An object drawn in yellow. |
 | `path` | string | yes | PNG file to write. Files: `.png`. |
-| `selection_id` | selection id |  | A selection whose faces are marked. |
+| `selection_id` | selection id |  | A selection whose faces are marked orange. |
+| `selection_ids` | array |  | Selections whose faces are marked, each in its own colour; selection_id wins where they overlap. |
 | `view` | `iso` \| `front` \| `back` \| `left` \| `right` \| `top` \| `bottom` |  | Default `"iso"`. |
 | `width` | integer |  | Default `800`. |

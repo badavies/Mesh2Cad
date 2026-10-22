@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The software rasteriser and PNG writer behind view.render.
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <miniz.h>
@@ -10,6 +11,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/core/Raster.h"
+#include "m2c/core/SelectionColors.h"
 #include "m2c/io/Png.h"
 
 #include "TestMeshes.h"
@@ -95,4 +97,47 @@ TEST_CASE("PNG files hold the image's pixels", "[io][raster]") {
     mz_free(raw);
     CHECK(equal);
     CHECK_FALSE(encodePng(Image{}));
+}
+
+TEST_CASE("Selection colours are distinct, stable and never the current orange", "[core][raster]") {
+    const auto distance = [](const Rgb& a, const Rgb& b) {
+        return std::sqrt((a.r - b.r) * (a.r - b.r) + (a.g - b.g) * (a.g - b.g) +
+                         (a.b - b.b) * (a.b - b.b));
+    };
+    for (std::uint64_t id = 1; id <= 32; ++id) {
+        CAPTURE(id);
+        const Rgb c = selectionColor(id);
+        CHECK(same(c, selectionColor(id)));
+        CHECK(distance(c, kCurrentSelectionColor) >= 0.15);
+        if (id > 1) CHECK(distance(c, selectionColor(id - 1)) >= 0.15);
+        for (std::uint64_t other = 1; other < id; ++other)
+            CHECK_FALSE(same(c, selectionColor(other)));
+    }
+
+    // A mark n draws in markColors[n - 1]; marks past the list stay orange.
+    const TriMesh box = makeBox(40, 20, 10, 2);
+    const std::vector<Rgb> colors{selectionColor(5)};
+    Raster raster(100, 100, box.bounds(), {0, 0, 1}, {0, 1, 0}, kBackground);
+    raster.triangles(box.positions(),
+                     box.indices(),
+                     kFront,
+                     kBack,
+                     {},
+                     std::vector<std::uint8_t>(box.faceCount(), 1),
+                     0.0,
+                     colors);
+    const Rgb& c = colors[0];
+    CHECK(
+        same(raster.image().at(50, 50),
+             {0.2 * kFront.r + 0.8 * c.r, 0.2 * kFront.g + 0.8 * c.g, 0.2 * kFront.b + 0.8 * c.b}));
+    Raster beyond(100, 100, box.bounds(), {0, 0, 1}, {0, 1, 0}, kBackground);
+    beyond.triangles(box.positions(),
+                     box.indices(),
+                     kFront,
+                     kBack,
+                     {},
+                     std::vector<std::uint8_t>(box.faceCount(), 2),
+                     0.0,
+                     colors);
+    CHECK(same(beyond.image().at(50, 50), {0.96, 0.52, 0.16}));
 }

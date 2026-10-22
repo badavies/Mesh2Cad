@@ -14,6 +14,7 @@
 #include "m2c/core/DeviationColors.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Raster.h"
+#include "m2c/core/SelectionColors.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Png.h"
@@ -95,7 +96,9 @@ void addViewCommands(std::vector<Command>& out) {
         "can see the document: meshes grey (red where a back face shows, deviation colours "
         "when a deviation of the mesh is visible), solids blue, primitives green, quad layout "
         "edges orange and sketches cyan over everything. selection_id marks a selection's "
-        "faces orange and highlight_id draws one object yellow. The view is orthographic and "
+        "faces orange, selection_ids marks each listed selection in its own colour (the app's, "
+        "listed in color_legend), and highlight_id draws one object yellow. The view is "
+        "orthographic and "
         "framed on what is drawn. Needs no GPU or display. Over MCP the picture is also "
         "returned as an image.",
         R"({
@@ -106,7 +109,8 @@ void addViewCommands(std::vector<Command>& out) {
                 "direction":{"type":"array","items":{"type":"number"},"minItems":3,"maxItems":3,"description":"From the part towards the camera, instead of a standard view."},
                 "width":{"type":"integer","minimum":16,"maximum":4096,"default":800},
                 "height":{"type":"integer","minimum":16,"maximum":4096,"default":600},
-                "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"A selection whose faces are marked."},
+                "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"A selection whose faces are marked orange."},
+                "selection_ids":{"type":"array","items":{"type":"integer","x-object":"selection","minimum":0},"maxItems":254,"description":"Selections whose faces are marked, each in its own colour; selection_id wins where they overlap."},
                 "highlight_id":{"type":"integer","x-object":"any","minimum":0,"description":"An object drawn in yellow."}
             },
             "required":["path"],"additionalProperties":false})",
@@ -133,6 +137,34 @@ void addViewCommands(std::vector<Command>& out) {
             M2C_TRY(height, optionalInteger(params, "height", 600, 16, 4096));
             M2C_TRY(selection, optionalSelection(context, params, "selection_id"));
             M2C_TRY(highlight, optionalId(params, "highlight_id"));
+            // Marks: 1 is selection_id in orange, 2 onwards the listed selections' colours.
+            std::vector<SelectionRef> marked;
+            std::vector<Rgb> markColors{kCurrentSelectionColor};
+            Json legend = Json::array();
+            if (params.contains("selection_ids")) {
+                const Json& ids = params["selection_ids"];
+                if (!ids.is_array() || ids.size() > 254) {
+                    return fail(ErrorCode::InvalidArgument,
+                                "selection_ids must list at most 254 selections");
+                }
+                for (const Json& id : ids) {
+                    M2C_TRY(ref, requireSelection(context, Json{{"id", id}}, "id"));
+                    const Rgb c = selectionColor(ref->id);
+                    marked.push_back(std::move(*ref));
+                    markColors.push_back(c);
+                }
+            }
+            if (*selection) {
+                marked.push_back(**selection);
+                markColors.push_back(kCurrentSelectionColor);
+            }
+            for (std::size_t k = 0; k < marked.size(); ++k) {
+                const auto object = context.document.find(marked[k].id);
+                const Rgb& c = markColors[k + 1];
+                legend.push_back({{"id", marked[k].id},
+                                  {"name", object ? object->name : std::string()},
+                                  {"rgb", Json::array({c.r, c.g, c.b})}});
+            }
 
             const std::vector<DocumentObject> objects = context.document.objects();
             std::optional<Aabb> box;
@@ -175,12 +207,14 @@ void addViewCommands(std::vector<Command>& out) {
             for (const DocumentObject& o : objects) {
                 const MeshData* m = o.mesh();
                 if (!o.visible || m == nullptr) continue;
+                // Later marks win, so selection_id (last) shows over the listed selections.
                 std::vector<std::uint8_t> marks;
-                if (*selection && (*selection)->meshId == o.id) {
+                for (std::size_t k = 0; k < marked.size(); ++k) {
+                    if (marked[k].meshId != o.id) continue;
                     marks.resize(m->mesh->faceCount());
-                    for (std::size_t f = 0; f < marks.size(); ++f) {
-                        marks[f] = (*selection)->faces->test(f) ? 1 : 0;
-                    }
+                    const bool current = *selection && k + 1 == marked.size();
+                    const auto mark = static_cast<std::uint8_t>(current ? 1 : k + 2);
+                    for (const std::uint32_t f : marked[k].faces->indices()) marks[f] = mark;
                 }
                 std::vector<Rgb> colors = deviationColors(objects, o.id);
                 if (*highlight && **highlight == o.id) colors.clear();
@@ -189,7 +223,9 @@ void addViewCommands(std::vector<Command>& out) {
                                  color(o, kMesh),
                                  kBack,
                                  colors,
-                                 marks);
+                                 marks,
+                                 0.0,
+                                 markColors);
                 drawn.push_back(o.id);
             }
             for (const DocumentObject& o : objects) {
@@ -231,6 +267,7 @@ void addViewCommands(std::vector<Command>& out) {
                         {"height", *height},
                         {"view_direction", toJson(view.from * (1.0 / length(view.from)))},
                         {"drawn_ids", std::move(drawn)},
+                        {"color_legend", std::move(legend)},
                         {"image", {{"path", *path}, {"mime_type", "image/png"}}}};
         });
     render.writesFiles = true;

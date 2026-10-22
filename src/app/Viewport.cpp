@@ -40,6 +40,7 @@
 #include "m2c/core/DeviationField.h"
 #include "m2c/core/DisplayProxy.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/SelectionColors.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/core/TriMesh.h"
@@ -82,6 +83,7 @@ uniform int hasSelection;
 uniform int hasColors;
 uniform int lineMode;
 uniform usamplerBuffer selection;
+uniform vec3 selectionColors[128];
 out vec4 fragColor;
 void main() {
     if (lineMode == 1) { fragColor = vec4(lineColor, 1.0); return; }
@@ -93,7 +95,7 @@ void main() {
     if (hasSelection == 1) {
         uint s = texelFetch(selection, gl_PrimitiveID).r;
         if (s == 1u) color = mix(color, vec3(1.0, 0.50, 0.10), 0.8);
-        else if (s == 2u) color = mix(color, vec3(0.25, 0.60, 1.00), 0.6);
+        else if (s >= 2u) color = mix(color, selectionColors[s - 2u], 0.8);
     }
     fragColor = vec4(color * (0.25 + 0.75 * diffuse), 1.0);
 }
@@ -360,22 +362,31 @@ void Viewport::upload(const GpuMesh& gpu,
 }
 
 void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
-    std::vector<std::pair<const MeshSelection*, bool>> key;
+    std::vector<SelectionKey> key;
     for (const DocumentObject& o : snapshot_->objects) {
         const SelectionData* s = o.selection();
         if (s == nullptr || s->meshId != mesh.id || !o.visible) continue;
-        key.emplace_back(s->faces.get(), o.id == currentSelection_);
+        key.push_back({s->faces.get(), o.id, o.id == currentSelection_});
     }
     if (key == gpu.selectionKey && (gpu.hasSelection || key.empty())) return;
     gpu.selectionKey = key;
     gpu.hasSelection = false;
+    gpu.selectionColors.clear();
     const std::size_t faces = mesh.mesh()->mesh->faceCount();
     if (key.empty() || std::cmp_greater(faces, maxTextureBuffer_)) return;
     std::vector<std::uint8_t> bytes(faces, 0);
-    // Other selections first, so the current one wins where they overlap.
-    std::ranges::stable_sort(key, [](const auto& a, const auto& b) { return a.second < b.second; });
-    for (const auto& [sel, current] : key) {
-        const std::uint8_t value = current ? 1 : 2;
+    // Other selections first, so the current one wins where they overlap. The current one is 1;
+    // the others are 2 onwards, each with its palette colour, the last colour shared past
+    // kSelectionSlots.
+    std::ranges::stable_sort(key,
+                             [](const auto& a, const auto& b) { return a.current < b.current; });
+    for (const auto& [sel, id, current] : key) {
+        if (!current && gpu.selectionColors.size() < kSelectionSlots) {
+            const Rgb c = selectionColor(id);
+            gpu.selectionColors.emplace_back(
+                static_cast<float>(c.r), static_cast<float>(c.g), static_cast<float>(c.b));
+        }
+        const auto value = static_cast<std::uint8_t>(current ? 1 : 1 + gpu.selectionColors.size());
         for (const std::uint32_t f : sel->indices()) bytes[f] = value;
     }
     if (gpu.selBuffer == 0) {
@@ -612,6 +623,11 @@ void Viewport::paintGL() {
             if (!proxy && gpu.hasSelection) {
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_BUFFER, gpu.selTexture);
+                if (!gpu.selectionColors.empty()) {
+                    program_.setUniformValueArray("selectionColors",
+                                                  gpu.selectionColors.data(),
+                                                  static_cast<int>(gpu.selectionColors.size()));
+                }
             }
             glBindVertexArray(proxy ? gpu.pvao : gpu.vao);
             const GLsizei count = proxy ? gpu.proxyIndexCount : gpu.indexCount;

@@ -38,15 +38,16 @@ public:
 
     /// Triangles with front faces in `front`, or `vertexColors` (one per position) blended across
     /// them, back faces in `back`, and faces with a nonzero `marks` entry (one per face) mixed
-    /// with the selection orange. `biasMm` moves them towards the camera to draw over a surface
-    /// they lie on.
+    /// with `markColors[mark - 1]`, or the selection orange where there is no such colour.
+    /// `biasMm` moves them towards the camera to draw over a surface they lie on.
     void triangles(std::span<const Vec3d> positions,
                    std::span<const std::uint32_t> indices,
                    Rgb front,
                    Rgb back,
                    std::span<const Rgb> vertexColors = {},
                    std::span<const std::uint8_t> marks = {},
-                   double biasMm = 0.0);
+                   double biasMm = 0.0,
+                   std::span<const Rgb> markColors = {});
 
     /// One-pixel lines between pairs of points; `onTop` draws them over everything.
     void lines(std::span<const Vec3d> points,

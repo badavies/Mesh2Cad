@@ -15,15 +15,18 @@
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
 #include <iostream>
+#include <map>
 #include <numbers>
 #include <set>
 #include <thread>
 #include <utility>
 
+#include "m2c/core/SelectionColors.h"
 #include "m2c/io/MeshIO.h"
 #include "m2c/rpc/Session.h"
 
@@ -554,6 +557,74 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
     run("object.delete", {{"id", sketchId}});
     CHECK(waitFor([&] { return id->count() == 1; }));
     CHECK_FALSE(form->params().has_value()); // id is required
+}
+
+TEST_CASE("The viewport colours each selection", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto box = dir.path() / "box.stl";
+    REQUIRE(writeMesh(makeBox(30, 20, 10, 4), box).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(box.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    Json regions;
+    bool done = false;
+    engine.run("mesh.segment", {{"id", mesh}}, [&](const Result<Json>& r) {
+        if (r) regions = (*r)["regions"];
+        done = true;
+    });
+    REQUIRE(waitFor([&] { return done && !engine.busy(); }));
+    REQUIRE(regions.size() == 6);
+
+    // One region current, the five others visible: each pixel is matched to the colour it is
+    // closest to once shading is divided out (shading scales all three channels alike).
+    Viewport* view = window.viewport();
+    const auto current = regions[0]["selection_id"].get<ObjectId>();
+    view->setCurrent(mesh, current);
+    view->fitAll();
+    QApplication::processEvents();
+    const QImage frame = view->grabFramebuffer();
+    const auto chroma = [](double r, double g, double b) {
+        const double top = std::max({r, g, b, 1e-9});
+        return std::array<double, 3>{r / top, g / top, b / top};
+    };
+    const Rgb base{0.80, 0.82, 0.86};
+    const auto onMesh = [&](const Rgb& c) {
+        return chroma(0.2 * base.r + 0.8 * c.r, 0.2 * base.g + 0.8 * c.g, 0.2 * base.b + 0.8 * c.b);
+    };
+    std::vector<std::pair<ObjectId, std::array<double, 3>>> expected{
+        {current, onMesh(kCurrentSelectionColor)}};
+    for (const Json& r : regions) {
+        const auto id = r["selection_id"].get<ObjectId>();
+        if (id != current) expected.emplace_back(id, onMesh(selectionColor(id)));
+    }
+    std::map<ObjectId, int> counts;
+    for (int y = 0; y < frame.height(); y += 2) {
+        for (int x = 0; x < frame.width(); x += 2) {
+            const QColor p = frame.pixelColor(x, y);
+            if (std::max({p.red(), p.green(), p.blue()}) < 60) continue; // background, dark
+            const auto c = chroma(p.redF(), p.greenF(), p.blueF());
+            for (const auto& [id, e] : expected) {
+                if (std::abs(c[0] - e[0]) + std::abs(c[1] - e[1]) + std::abs(c[2] - e[2]) < 0.06)
+                    ++counts[id];
+            }
+        }
+    }
+    screenshot(view, "selection-colours");
+    CHECK(counts[current] > 200);
+    int others = 0;
+    for (const auto& [id, n] : counts) {
+        if (id != current && n > 200) ++others;
+    }
+    CHECK(others >= 2); // at least two other faces of the box are in view
 }
 
 TEST_CASE("Tool forms are generated from command schemas", "[app]") {
