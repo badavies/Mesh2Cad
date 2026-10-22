@@ -241,8 +241,7 @@ Result<TriMesh> exportTriangulation(const Solid& solid, const ExportTessellation
     return guarded("triangulating the solid for export", [&]() -> Result<TriMesh> {
         // A copy of the topology without triangulations: BRepMesh keeps a face's triangulation
         // when it is already finer than asked, and the solid's own display stays as it was.
-        const TopoDS_Shape copy =
-            BRepBuilderAPI_Copy(solid.shape().shape, Standard_False, Standard_False).Shape();
+        const TopoDS_Shape copy = BRepBuilderAPI_Copy(solid.shape().shape, false, false).Shape();
         BRepMesh_IncrementalMesh const mesher(
             copy, params.chordMm, false, params.angleDeg * std::numbers::pi / 180.0, false);
         auto faces = faceTriangulations(copy);
