@@ -5,6 +5,9 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCoreApplication>
+#include <QDesktopServices>
+#include <QDir>
 #include <QDockWidget>
 #include <QDoubleSpinBox>
 #include <QDragEnterEvent>
@@ -29,9 +32,11 @@
 #include <QScrollArea>
 #include <QStatusBar>
 #include <QString>
+#include <QTextBrowser>
 #include <QToolBar>
 #include <QTreeWidget>
 #include <QTreeWidgetItemIterator>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <Qt>
@@ -98,6 +103,19 @@ QString groupTitle(const std::string& prefix) {
     };
     const auto it = titles.find(prefix);
     return it != titles.end() ? it->second : QString::fromStdString(prefix);
+}
+
+/// The user guide's first page: installed beside the program (doc/user on Windows,
+/// share/mesh2cad/user on Linux), else in the source tree of a build that isn't installed.
+QString userGuideIndex() {
+    const QDir bin(QCoreApplication::applicationDirPath());
+    for (const QString& dir : {bin.filePath(QStringLiteral("../doc/user")),
+                               bin.filePath(QStringLiteral("../share/mesh2cad/user")),
+                               QStringLiteral(MESH2CAD_SOURCE_DIR "/docs/user")}) {
+        const QFileInfo index(QDir(dir).filePath(QStringLiteral("README.md")));
+        if (index.isFile()) return index.canonicalFilePath();
+    }
+    return {};
 }
 
 } // namespace
@@ -438,6 +456,29 @@ void MainWindow::buildMenus() {
     }
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));
+    QAction* guideAction = help->addAction(tr("User guide"), this, [this] {
+        auto* guide = findChild<QTextBrowser*>(QStringLiteral("userGuide"));
+        if (guide == nullptr) {
+            const QString index = userGuideIndex();
+            if (index.isEmpty()) {
+                QDesktopServices::openUrl(QUrl(QStringLiteral(
+                    "https://github.com/badavies/Mesh2Cad/blob/main/docs/user/README.md")));
+                return;
+            }
+            // Its own window, which shows the Markdown pages and follows the links between them.
+            guide = new QTextBrowser(this);
+            guide->setObjectName(QStringLiteral("userGuide"));
+            guide->setWindowFlag(Qt::Window);
+            guide->setWindowTitle(tr("Mesh2Cad user guide"));
+            guide->setOpenExternalLinks(true);
+            guide->setSource(QUrl::fromLocalFile(index));
+            guide->resize(900, 700);
+        }
+        guide->show();
+        guide->raise();
+        guide->activateWindow();
+    });
+    guideAction->setShortcut(QKeySequence::HelpContents);
     help->addAction(tr("Connect an AI agent…"), this, [this] {
         QMessageBox::information(
             this,

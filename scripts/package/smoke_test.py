@@ -69,7 +69,7 @@ def main() -> int:
     examples = args.docs / "examples"
     work = Path(tempfile.mkdtemp(prefix="mesh2cad-smoke-"))
 
-    for doc in ("LICENSE", "THIRD_PARTY.md", "COMMANDS.md", "README.md"):
+    for doc in ("LICENSE", "THIRD_PARTY.md", "COMMANDS.md", "README.md", "user/README.md"):
         check((args.docs / doc).is_file(), f"{doc} is installed")
 
     cli = program(args.bin, "mesh2cad")

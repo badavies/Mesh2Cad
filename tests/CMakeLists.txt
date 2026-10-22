@@ -19,6 +19,11 @@ if(Python3_Interpreter_FOUND)
     add_test(NAME layering
              COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_layers.py)
     set_tests_properties(layering PROPERTIES LABELS "layering")
+    # Runs every example session in docs/user against the command-line tool (issue #123).
+    add_test(NAME user_guide
+             COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_user_guide.py
+                     $<TARGET_FILE:mesh2cad>)
+    set_tests_properties(user_guide PROPERTIES LABELS "docs")
 endif()
 
 # `cmake --build <dir> --target check` builds everything and runs the whole suite.
