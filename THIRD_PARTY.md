@@ -28,6 +28,9 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 | --- | --- | --- |
 | [vcpkg](https://github.com/microsoft/vcpkg) | MIT | Dependency management; the baseline in `vcpkg.json` pins versions |
 | CMake, Ninja | BSD-3-Clause, Apache-2.0 | Build |
+| CPack (part of CMake) | BSD-3-Clause | Installers and archives (`cmake/Mesh2CadPackaging.cmake`) |
+| [NSIS](https://nsis.sourceforge.io) | zlib (its installer stub is part of the Windows installer) | Windows installer |
+| [install-qt-action](https://github.com/jurplel/install-qt-action) and aqtinstall | MIT | A prebuilt Qt for the Windows installer build in CI |
 
 ## Planned (not yet used; each needs its decision record before first use)
 

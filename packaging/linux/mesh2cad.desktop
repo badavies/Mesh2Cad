@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Mesh2Cad
+GenericName=Scan to CAD
+Comment=Turn scanned meshes into editable CAD solids
+Exec=mesh2cad-app %F
+Terminal=false
+Categories=Graphics;3DGraphics;Engineering;
+MimeType=model/stl;model/obj;
+Keywords=scan;mesh;STEP;CAD;reverse engineering;

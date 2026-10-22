@@ -13,6 +13,15 @@ The CAD surfacing pipeline (M2 onwards) comes next; see [`docs/ARCHITECTURE.md`]
 
 Licence: GPL-3.0-or-later (see [`LICENSE`](LICENSE)).
 
+## Installing
+
+Installers are built by the [Packages workflow](.github/workflows/package.yml) and kept as its artifacts (and attached to each release):
+
+- **Windows 10 and 11**: run `mesh2cad-<version>-windows-x64.exe`. It installs the app, the command-line tools and the MCP server under `C:\Program Files\Mesh2Cad`, adds a Start menu entry, and can put `bin` on the `PATH`. The `.zip` holds the same files for use without installing.
+- **Ubuntu 24.04**: `sudo apt install ./mesh2cad_<version>_amd64.deb` installs the programs in `/usr/bin` and pulls in Qt, Open CASCADE, OpenSubdiv and oneTBB from Ubuntu. Examples and the command reference go to `/usr/share/mesh2cad`. `sudo apt remove mesh2cad` uninstalls it.
+
+To make them yourself from a Release build: `cpack` in the build folder (NSIS must be installed on Windows).
+
 ## Building in CLion
 
 Requirements: CMake 3.25+, Ninja, git, and a C++23 compiler: CLion's bundled **MinGW** (GCC 13+) or **MSVC 17.10+** (Visual Studio 2022) on Windows, **GCC 13+** on Linux. Clang is only supported with libc++ (see [ADR 0019](docs/adr/0019-linux-compilers.md)).
