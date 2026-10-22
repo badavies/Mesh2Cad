@@ -163,6 +163,7 @@ void MainWindow::buildDocks() {
     tree_->header()->setStretchLastSection(false);
     tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     tree_->setContextMenuPolicy(Qt::CustomContextMenu);
     tree_->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::SelectedClicked);
     connect(tree_, &QTreeWidget::itemSelectionChanged, this, &MainWindow::onTreeSelection);
@@ -174,8 +175,9 @@ void MainWindow::buildDocks() {
                 const auto id = item->data(0, kIdRole).value<ObjectId>();
                 const DocumentObject* o = snapshot_->find(id);
                 if (o == nullptr) return;
+                // Toggling a selected row shows or hides every selected row, as one step.
                 if (const bool visible = item->checkState(0) == Qt::Checked; visible != o->visible)
-                    run("object.show", {{"id", id}, {"visible", visible}});
+                    run("object.show", {{"ids", rowsFor(id)}, {"visible", visible}});
                 if (const std::string name = item->text(0).trimmed().toStdString();
                     !name.empty() && name != o->name)
                     run("object.rename", {{"id", id}, {"name", name}});
@@ -203,7 +205,10 @@ void MainWindow::buildDocks() {
         if (o != nullptr && infoCommand(*o) != nullptr)
             menu.addAction(tr("Info"), this, [this, id] { showInfo(id); });
         menu.addSeparator();
-        menu.addAction(tr("Delete"), this, [this, id] { run("object.delete", {{"id", id}}); });
+        const std::vector<ObjectId> rows = rowsFor(id);
+        menu.addAction(rows.size() > 1 ? tr("Delete %1 objects").arg(rows.size()) : tr("Delete"),
+                       this,
+                       [this, rows] { run("object.delete", {{"ids", rows}}); });
         menu.exec(tree_->viewport()->mapToGlobal(pos));
     });
     auto* objects = new QDockWidget(tr("Objects"), this);
@@ -548,22 +553,45 @@ void MainWindow::refreshTree() {
             tree_->addTopLevelItem(item);
         }
     }
-    if (selected_ != 0) {
-        for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
-            if ((*it)->data(0, kIdRole).value<ObjectId>() == selected_) {
-                tree_->setCurrentItem(*it);
-                break;
-            }
-        }
+    // Select the rows selected before, the first of them current; selected_ may have been set
+    // on its own (a new selection adopted from a tool).
+    std::erase_if(selectedIds_, [this](ObjectId id) { return snapshot_->find(id) == nullptr; });
+    if (selected_ != 0 && (selectedIds_.empty() || selectedIds_.front() != selected_))
+        selectedIds_.assign(1, selected_);
+    if (selected_ == 0) selectedIds_.clear();
+    for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
+        const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
+        if (id == selected_) tree_->setCurrentItem(*it);
+    }
+    for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
+        if (std::ranges::find(selectedIds_, (*it)->data(0, kIdRole).value<ObjectId>()) !=
+            selectedIds_.end())
+            (*it)->setSelected(true);
     }
     updatingTree_ = false;
 }
 
 void MainWindow::onTreeSelection() {
     if (updatingTree_) return;
-    const QList<QTreeWidgetItem*> items = tree_->selectedItems();
-    selected_ = items.isEmpty() ? 0 : items.front()->data(0, kIdRole).value<ObjectId>();
+    // Keep the order rows were selected in: those still selected, then the new ones.
+    std::vector<ObjectId> now;
+    for (const QTreeWidgetItem* item : tree_->selectedItems())
+        now.push_back(item->data(0, kIdRole).value<ObjectId>());
+    std::erase_if(selectedIds_,
+                  [&](ObjectId id) { return std::ranges::find(now, id) == now.end(); });
+    for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
+        const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
+        if ((*it)->isSelected() && std::ranges::find(selectedIds_, id) == selectedIds_.end())
+            selectedIds_.push_back(id);
+    }
+    selected_ = selectedIds_.empty() ? 0 : selectedIds_.front();
+    form_->setSelectedObjects(selectedIds_);
     showCurrent();
+}
+
+std::vector<ObjectId> MainWindow::rowsFor(const ObjectId id) const {
+    if (std::ranges::find(selectedIds_, id) == selectedIds_.end()) return {id};
+    return selectedIds_;
 }
 
 void MainWindow::showCurrent() const {
@@ -572,6 +600,7 @@ void MainWindow::showCurrent() const {
 
 void MainWindow::chooseObject(const ObjectId id) {
     selected_ = id;
+    selectedIds_.assign(1, id);
     refreshTree();
     showCurrent();
 }

@@ -35,6 +35,11 @@ public:
     /// while their objects exist.
     void setObjects(std::shared_ptr<const DocSnapshot> snapshot);
     [[nodiscard]] const Command* command() const noexcept { return command_; }
+    /// Fills object fields from objects selected in the Objects list, in selection order: an id
+    /// list gets the selected ids of its kinds, and single object fields take the selected ids
+    /// of their kinds one each, id first and then by name (so solid.boolean's id, then tool_id).
+    /// A field none of the selected objects fits is left as it is.
+    void setSelectedObjects(const std::vector<ObjectId>& ids);
 
     /// Reads the fields. Fails with a message naming the bad field.
     [[nodiscard]] Result<Json> params() const;
@@ -56,7 +61,7 @@ private:
         std::string type; ///< integer, number, boolean, string, enum, vec3, ids, json, object
         QWidget* editor{nullptr};
         bool required{false};
-        std::vector<std::string> kinds; ///< object: the kinds offered; empty for any
+        std::vector<std::string> kinds; ///< object, ids: the kinds offered; empty for any
     };
 
     void fillObjects(const Field& field, ObjectId chosen) const;

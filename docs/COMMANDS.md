@@ -289,11 +289,12 @@ Build a watertight, manifold mesh around a badly damaged scan (alpha wrapping) a
 
 ### `object.delete`
 
-Delete an object. Deleting a mesh also deletes its selections and measurements. *(changes the document)*
+Delete an object, or several (ids) as one undo step. Deleting a mesh also deletes its selections and measurements. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | object id | yes | Object id. |
+| `id` | object id |  | Object id. |
+| `ids` | array |  | Several objects, instead of id. |
 
 ### `object.rename`
 
@@ -306,11 +307,12 @@ Rename an object. *(changes the document)*
 
 ### `object.show`
 
-Show or hide an object in the viewport. *(changes the document)*
+Show or hide an object in the viewport, or several (ids) as one undo step. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `id` | object id | yes |  |
+| `id` | object id |  |  |
+| `ids` | array |  | Several objects, instead of id. |
 | `visible` | boolean | yes |  |
 
 ## plane
