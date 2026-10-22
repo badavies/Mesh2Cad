@@ -8,6 +8,7 @@
 #include <miniz.h>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -449,6 +450,56 @@ TEST_CASE("deviation.compute measures a mesh against a solid or a mesh", "[comma
     // Removing the reference removes the deviation.
     s.run("object.delete", {{"id", solid}});
     CHECK_FALSE(s.document.find(dev));
+}
+
+TEST_CASE("deviation.compute reports hotspots and selects them", "[commands][deviation]") {
+    // A ball moved 1 mm along x against itself: outside on +x, inside on -x, in tolerance between.
+    Session s;
+    const TempDir dir;
+    const ObjectId reference = s.import(dir, makeSphere(20.0, 4), "reference");
+    const ObjectId moved = s.import(dir, makeSphere(20.0, 4, {1, 0, 0}), "moved");
+    const std::size_t objects = s.document.objects().size();
+    const Json result =
+        s.run("deviation.compute",
+              {{"id", moved}, {"reference_id", reference}, {"select_hotspots", true}});
+    const Json& hotspots = result["hotspots"];
+    REQUIRE(hotspots.size() == 2);
+    CHECK(hotspots[0]["area_mm2"].get<double>() >= hotspots[1]["area_mm2"].get<double>());
+    CHECK(std::set<std::string>{hotspots[0]["sign"], hotspots[1]["sign"]} ==
+          std::set<std::string>{"+", "-"});
+    for (const Json& h : hotspots) {
+        CAPTURE(h.dump());
+        const auto selection = s.document.find(h["selection_id"].get<ObjectId>());
+        REQUIRE(selection);
+        REQUIRE(selection->selection() != nullptr);
+        CHECK(selection->selection()->meshId == moved);
+        CHECK(selection->selection()->faces->count() == h["face_count"].get<std::size_t>());
+        CHECK(selection->name == "Deviation " + h["sign"].get<std::string>() + "1");
+        const bool outside = h["sign"] == "+";
+        CHECK((h["centroid"][0].get<double>() > 10.0) == outside);
+        CHECK((h["max_signed_mm"].get<double>() > 0.9) == outside);
+        CHECK((h["max_signed_mm"].get<double>() < -0.9) == !outside);
+    }
+    // deviation.info reports the same hotspots.
+    Json plain = hotspots;
+    for (Json& h : plain) h.erase("selection_id");
+    CHECK(s.run("deviation.info", {{"id", result["id"]}})["hotspots"] == plain);
+
+    // One undo takes the deviation and its selections.
+    CHECK(s.document.objects().size() == objects + 3);
+    REQUIRE(s.document.undo());
+    CHECK(s.document.objects().size() == objects);
+
+    // A limit, none, and none to find.
+    CHECK(s.run("deviation.compute",
+                {{"id", moved}, {"reference_id", reference}, {"max_hotspots", 1}})["hotspots"]
+              .size() == 1);
+    CHECK(s.run("deviation.compute",
+                {{"id", moved}, {"reference_id", reference}, {"max_hotspots", 0}})["hotspots"]
+              .empty());
+    CHECK(s.run("deviation.compute",
+                {{"id", moved}, {"reference_id", reference}, {"tolerance_mm", 2.0}})["hotspots"]
+              .empty());
 }
 
 namespace {

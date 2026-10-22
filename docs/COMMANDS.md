@@ -72,18 +72,20 @@ List every registered command with its summary and parameter schema. *(read-only
 
 ### `deviation.compute`
 
-Signed distance from every vertex of a mesh to a solid (exact, onto its B-spline faces) or to another mesh, positive outside the reference, with statistics. Adds a deviation object that belongs to the mesh: it goes when the mesh or the reference is removed or changed. *(changes the document)*
+Signed distance from every vertex of a mesh to a solid (exact, onto its B-spline faces) or to another mesh, positive outside the reference, with statistics. Adds a deviation object that belongs to the mesh: it goes when the mesh or the reference is removed or changed. Also reports where it is out of tolerance: hotspots, the connected patches of faces beyond tolerance_mm on one side (+ outside: material the reference lacks; - inside: material it has that the scan lacks), largest first, each with its area, worst distance, centroid and bounds; select_hotspots makes each a selection, ready for primitive.fit. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `id` | mesh id | yes | The mesh whose vertices are measured. |
+| `max_hotspots` | integer |  | How many hotspots to report, largest first; 0 for none. Default `10`. |
 | `name` | string |  |  |
 | `reference_id` | solid or mesh id | yes | The solid or mesh to measure to. |
+| `select_hotspots` | boolean |  | Make each reported hotspot a selection on the mesh (Deviation +1, Deviation -1, ...). Default `false`. |
 | `tolerance_mm` | number |  | Distances within this count as in tolerance. Default `0.1`. |
 
 ### `deviation.info`
 
-Describe a deviation: the mesh it measures and the statistics deviation.compute returned. *(read-only)*
+Describe a deviation: the mesh it measures, and the statistics and largest hotspots deviation.compute returned. *(read-only)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
