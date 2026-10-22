@@ -31,11 +31,12 @@ enum class Mode {
     Measure
 };
 
-/// A point under the cursor on a visible mesh.
+/// A point under the cursor on a visible object: a mesh, or (pickObject) a solid or primitive.
 struct Hit {
-    ObjectId meshId{0};
-    std::uint32_t face{0};
+    ObjectId meshId{0};    ///< The mesh hit; 0 when it is a solid or primitive.
+    std::uint32_t face{0}; ///< Of the mesh, or of the solid's or primitive's display mesh.
     Vec3d point;
+    ObjectId objectId{0}; ///< The object hit, mesh or not.
 };
 
 /// OpenGL 3.3 view of the document snapshot (ARCHITECTURE.md section 9).
@@ -90,6 +91,10 @@ public:
     [[nodiscard]] Mat4d viewProjection() const;
     [[nodiscard]] Vec3d eye() const { return camera_.eye(); }
 
+    /// The nearest visible mesh, solid or primitive under a widget position. The selection tools
+    /// pick meshes only.
+    [[nodiscard]] std::optional<Hit> pickObject(const QPointF& pos) const;
+
     /// True once every drawn mesh that needs a coarse proxy (see above) has one on the GPU, so
     /// camera moves draw the proxy. Used by the frame-rate test.
     [[nodiscard]] bool proxiesReady() const;
@@ -101,6 +106,8 @@ signals:
     /// A finished lasso, in normalised device coordinates.
     void lassoDrawn(const QPolygonF& ndc, bool subtract, bool add);
     void faceClicked(m2c::app::Hit hit, bool subtract, bool add);
+    /// A click (no drag) in Navigate mode on a mesh, solid or primitive.
+    void objectClicked(m2c::app::Hit hit);
     void measured(m2c::app::Hit a, m2c::app::Hit b);
     void hoverChanged(const QString& text);
     void brushRadiusChanged(double mm);
@@ -169,6 +176,8 @@ private:
     void drawOverlay();
 
     [[nodiscard]] std::optional<Hit> pick(const QPointF& pos) const;
+    /// The nearest hit on visible meshes, and with `surfaces` on solids and primitives too.
+    [[nodiscard]] std::optional<Hit> pickAmong(const QPointF& pos, bool surfaces) const;
     [[nodiscard]] QPointF ndc(const QPointF& pos) const;
     [[nodiscard]] std::optional<QPointF> project(const Vec3d& p) const;
     [[nodiscard]] double pixelsPerMm(const Vec3d& at) const;
@@ -206,6 +215,7 @@ private:
     QPointF lastPos_;
     QPointF pressPos_;
     Qt::KeyboardModifiers pressMods_;
+    Qt::MouseButton pressButton_{Qt::NoButton};
     std::optional<Hit> hover_;
     std::vector<Vec3d> stroke_;
     ObjectId strokeMesh_{0};

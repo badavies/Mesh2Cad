@@ -859,6 +859,14 @@ QPointF Viewport::ndc(const QPointF& pos) const {
 }
 
 std::optional<Hit> Viewport::pick(const QPointF& pos) const {
+    return pickAmong(pos, false);
+}
+
+std::optional<Hit> Viewport::pickObject(const QPointF& pos) const {
+    return pickAmong(pos, true);
+}
+
+std::optional<Hit> Viewport::pickAmong(const QPointF& pos, const bool surfaces) const {
     if (!snapshot_) return std::nullopt;
     const QPointF n = ndc(pos);
     Vec3d origin;
@@ -867,11 +875,19 @@ std::optional<Hit> Viewport::pick(const QPointF& pos) const {
     std::optional<Hit> best;
     double bestDistance = std::numeric_limits<double>::infinity();
     for (const DocumentObject& o : snapshot_->objects) {
-        if (!isMesh(o) || !o.visible) continue;
-        if (const auto hit = o.mesh()->mesh->spatialIndex().raycast(origin, direction);
+        if (!o.visible) continue;
+        const TriMesh* surface = isMesh(o)              ? o.mesh()->mesh.get()
+                                 : !surfaces            ? nullptr
+                                 : o.solid() != nullptr ? &o.solid()->solid.display()
+                                                        : primitiveDisplay(o);
+        if (surface == nullptr || surface->faceCount() == 0) continue;
+        if (const auto hit = surface->spatialIndex().raycast(origin, direction);
             hit && hit->distance < bestDistance) {
             bestDistance = hit->distance;
-            best = Hit{.meshId = o.id, .face = hit->face, .point = hit->point};
+            best = Hit{.meshId = isMesh(o) ? o.id : 0,
+                       .face = hit->face,
+                       .point = hit->point,
+                       .objectId = o.id};
         }
     }
     return best;
@@ -893,6 +909,7 @@ void Viewport::markInteracting() {
 void Viewport::mousePressEvent(QMouseEvent* event) {
     lastPos_ = pressPos_ = event->position();
     pressMods_ = event->modifiers();
+    pressButton_ = event->button();
     const bool left = event->button() == Qt::LeftButton;
     const bool shift = event->modifiers().testFlag(Qt::ShiftModifier);
     const bool ctrl = event->modifiers().testFlag(Qt::ControlModifier);
@@ -983,10 +1000,15 @@ void Viewport::mouseMoveEvent(QMouseEvent* event) {
     update();
 }
 
-void Viewport::mouseReleaseEvent(QMouseEvent*) {
+void Viewport::mouseReleaseEvent(QMouseEvent* event) {
     const bool shift = pressMods_.testFlag(Qt::ShiftModifier);
     const bool ctrl = pressMods_.testFlag(Qt::ControlModifier);
-    if (drag_ == Drag::Brush && !stroke_.empty()) {
+    // A left click that did not drag, in Navigate mode, picks the object under it.
+    const bool click = mode_ == Mode::Navigate && pressButton_ == Qt::LeftButton &&
+                       drag_ == Drag::Orbit && QLineF(pressPos_, event->position()).length() < 4.0;
+    if (click) {
+        if (const auto hit = pickObject(event->position())) emit objectClicked(*hit);
+    } else if (drag_ == Drag::Brush && !stroke_.empty()) {
         emit brushStroke(strokeMesh_, stroke_, ctrl, shift);
     } else if (drag_ == Drag::Lasso && lasso_.size() >= 3) {
         QPolygonF polygon;

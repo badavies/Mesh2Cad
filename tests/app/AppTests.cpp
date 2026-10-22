@@ -721,6 +721,105 @@ TEST_CASE("Selecting rows in the Objects list fills the open form", "[app][fit]"
     CHECK(tree->selectedItems().size() == 3);
 }
 
+TEST_CASE("Clicks pick solids and primitives, and mark fillet edges", "[app][fit]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto can = dir.path() / "can.stl";
+    REQUIRE(writeMesh(makeCylinder(10.0, 30.0, 96, 30), can).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(can.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    const auto run = [&](const char* command, const Json& params) {
+        Json out;
+        bool done = false;
+        engine.run(command, params, [&](const Result<Json>& r) {
+            if (r) out = *r;
+            done = true;
+        });
+        REQUIRE(waitFor([&] { return done && !engine.busy(); }, 120000));
+        return out;
+    };
+    const Json regions =
+        run("mesh.segment", {{"id", mesh}, {"create_primitives", true}})["regions"];
+    REQUIRE(regions.size() == 3);
+    std::vector<ObjectId> primitives;
+    for (const Json& r : regions) primitives.push_back(r["primitive_id"].get<ObjectId>());
+    const auto box =
+        run("primitive.box", {{"size_mm", {20, 20, 20}}, {"center", {60, 0, 15}}})["id"]
+            .get<ObjectId>();
+    const Json hidden{{"ids", {mesh, primitives[0], primitives[1], primitives[2]}},
+                      {"visible", false}};
+    run("object.show", hidden);
+
+    // With only the box showing, the centre of the view is on it.
+    Viewport* view = window.viewport();
+    view->fitAll();
+    QApplication::processEvents();
+    const QPointF c(view->width() / 2.0, view->height() / 2.0);
+    const auto hit = view->pickObject(c);
+    REQUIRE(hit.has_value());
+    CHECK(hit->objectId == box);
+    CHECK(hit->meshId == 0);
+    const Vec3d local = hit->point - Vec3d{60, 0, 15};
+    CHECK(std::abs(std::max({std::abs(local.x), std::abs(local.y), std::abs(local.z)}) - 10.0) <
+          1e-3);
+
+    // The brush still paints meshes only: a stroke over the solid selects nothing.
+    const std::size_t selections = countKind(*engine.snapshot(), "selection");
+    view->setMode(Mode::Brush);
+    drag(view, {c, c + QPointF(10, 0), c + QPointF(20, 0)});
+    QApplication::processEvents();
+    CHECK_FALSE(engine.busy());
+    CHECK(countKind(*engine.snapshot(), "selection") == selections);
+    view->setMode(Mode::Navigate);
+
+    // With fillet.fit open, two clicks on the solid are two edge points; Clear empties them.
+    for (QAction* a : window.findChildren<QAction*>()) {
+        if (a->text() == "fillet.fit") a->trigger();
+    }
+    auto* form = window.findChild<ParamForm*>();
+    REQUIRE(form != nullptr);
+    const QPointF a = c + QPointF(-20, -10), b = c + QPointF(25, 15);
+    const auto pa = view->pickObject(a), pb = view->pickObject(b);
+    REQUIRE(pa.has_value());
+    REQUIRE(pb.has_value());
+    drag(view, {a});
+    drag(view, {b});
+    auto* points = form->findChild<QLineEdit*>("edge_points");
+    REQUIRE(points != nullptr);
+    const Json picked = Json::parse(points->text().toStdString());
+    REQUIRE(picked.size() == 2);
+    CHECK(picked[0] == Json::array({pa->point.x, pa->point.y, pa->point.z}));
+    CHECK(picked[1] == Json::array({pb->point.x, pb->point.y, pb->point.z}));
+    form->findChild<QToolButton*>("clear")->click();
+    CHECK(points->text().isEmpty());
+
+    // With another tool open, a click on a primitive selects its row.
+    for (QAction* action : window.findChildren<QAction*>()) {
+        if (action->text() == "solid.info") action->trigger();
+    }
+    run("object.show", {{"id", box}, {"visible", false}});
+    run("object.show", {{"id", primitives[2]}, {"visible", true}});
+    view->fitAll();
+    QApplication::processEvents();
+    const auto onCan = view->pickObject(c);
+    REQUIRE(onCan.has_value());
+    CHECK(onCan->objectId == primitives[2]);
+    drag(view, {c});
+    QApplication::processEvents();
+    auto* tree = window.findChild<QTreeWidget*>();
+    REQUIRE(tree->currentItem() != nullptr);
+    CHECK(tree->currentItem()->data(0, Qt::UserRole + 1).value<ObjectId>() == primitives[2]);
+}
+
 TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     application();
     CommandRegistry registry;

@@ -145,6 +145,7 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
     connect(viewport_, &Viewport::brushStroke, this, &MainWindow::onBrushStroke);
     connect(viewport_, &Viewport::lassoDrawn, this, &MainWindow::onLasso);
     connect(viewport_, &Viewport::faceClicked, this, &MainWindow::onFaceClicked);
+    connect(viewport_, &Viewport::objectClicked, this, &MainWindow::onObjectClicked);
     connect(viewport_, &Viewport::measured, this, &MainWindow::onMeasured);
     connect(viewport_, &Viewport::hoverChanged, hover_, &QLabel::setText);
     connect(viewport_, &Viewport::brushRadiusChanged, brushRadius_, &QDoubleSpinBox::setValue);
@@ -785,6 +786,20 @@ void MainWindow::onLasso(const QPolygonF& ndc, const bool subtract, const bool a
     p["eye"] = toJson(viewport_->eye());
     p["visible_only"] = true;
     run("select.lasso", p, [this](const Result<Json>& r) { adoptSelection(r); });
+}
+
+void MainWindow::onObjectClicked(const Hit hit) {
+    // With fillet.fit open a click on a solid marks an edge to round (a point near it);
+    // otherwise it selects what was clicked, which also fills the open form.
+    const DocumentObject* o = snapshot_ ? snapshot_->find(hit.objectId) : nullptr;
+    if (o == nullptr) return;
+    if (const Command* c = form_->command();
+        c != nullptr && c->name == "fillet.fit" && o->solid() != nullptr) {
+        form_->appendPoint("edge_points", hit.point);
+        return;
+    }
+    chooseObject(hit.objectId);
+    form_->setSelectedObjects(selectedIds_);
 }
 
 void MainWindow::onFaceClicked(Hit hit, const bool subtract, const bool add) {

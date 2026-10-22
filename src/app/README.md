@@ -35,6 +35,9 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
   Shift for several) fill the open form: id lists get the selected ids of their kinds in the
   order they were picked, single object fields one each (`ParamForm::setSelectedObjects`).
   Showing, hiding or deleting one of several selected rows acts on all of them, as one step.
+- In Navigate mode a click (no drag) on a mesh, solid or primitive selects it in the Objects
+  list; with `fillet.fit` open a click on a solid adds the point to `edge_points` instead (the
+  command takes a point near each edge). The selection tools still pick meshes only.
 - A path field's browse button filters on the parameter's `x-file-types` and opens a Save dialog
   when the command writes files, an Open dialog otherwise (ADR-031).
 - The log panel shows every command that changes the document or writes a file (with the path),
