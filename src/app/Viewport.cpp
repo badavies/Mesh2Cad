@@ -87,6 +87,7 @@ uniform vec3 selectionColors[128];
 out vec4 fragColor;
 void main() {
     if (lineMode == 1) { fragColor = vec4(lineColor, 1.0); return; }
+    if (lineMode == 2) { fragColor = vec4(vertexColor, 1.0); return; }
     // Flat shading: the face normal from screen-space derivatives of the view position.
     vec3 n = normalize(cross(dFdx(viewPos), dFdy(viewPos)));
     vec3 toEye = normalize(-viewPos);
@@ -167,7 +168,100 @@ Aabb drawnBounds(const DocumentObject& o) {
     return o.quadLayout()->cage.bounds();
 }
 
+/// The deviation that colours a mesh: its newest visible one.
+const DocumentObject* shownDeviation(const DocSnapshot& snapshot, ObjectId meshId) {
+    const DocumentObject* deviation = nullptr;
+    for (const DocumentObject& o : snapshot.objects) {
+        if (o.deviation() != nullptr && o.deviation()->meshId == meshId && o.visible) {
+            deviation = &o;
+        }
+    }
+    return deviation;
+}
+
+/// The deviation at a point on a face: its vertices' distances weighted by the point's
+/// barycentric coordinates (the nearest vertex's on a degenerate face).
+double
+deviationAt(const TriMesh& mesh, const DeviationField& field, std::uint32_t face, const Vec3d& p) {
+    const std::vector<Vec3d>& positions = mesh.positions();
+    const std::vector<std::uint32_t>& indices = mesh.indices();
+    const std::array<std::uint32_t, 3> v{indices[3 * std::size_t{face}],
+                                         indices[3 * std::size_t{face} + 1],
+                                         indices[3 * std::size_t{face} + 2]};
+    const std::vector<double>& d = field.distances();
+    const Vec3d e0 = positions[v[1]] - positions[v[0]];
+    const Vec3d e1 = positions[v[2]] - positions[v[0]];
+    const Vec3d e2 = p - positions[v[0]];
+    const double d00 = dot(e0, e0), d01 = dot(e0, e1), d11 = dot(e1, e1);
+    const double denominator = d00 * d11 - d01 * d01;
+    if (denominator <= 1e-24 * std::max(d00 * d11, 1e-300)) {
+        std::size_t nearest = 0;
+        for (std::size_t k = 1; k < 3; ++k) {
+            if (length(positions[v[k]] - p) < length(positions[v[nearest]] - p)) nearest = k;
+        }
+        return d[v[nearest]];
+    }
+    const double b1 = (d11 * dot(e2, e0) - d01 * dot(e2, e1)) / denominator;
+    const double b2 = (d00 * dot(e2, e1) - d01 * dot(e2, e0)) / denominator;
+    return (1.0 - b1 - b2) * d[v[0]] + b1 * d[v[1]] + b2 * d[v[2]];
+}
+
 } // namespace
+
+QVector3D sketchCurveColor(CurveKind kind) noexcept {
+    switch (kind) {
+    case CurveKind::Line:
+        return {0.75f, 0.95f, 0.30f};
+    case CurveKind::Arc:
+        return {0.30f, 0.85f, 0.95f};
+    case CurveKind::Spline:
+        return {0.95f, 0.45f, 0.85f};
+    }
+    return {0.30f, 0.85f, 0.95f};
+}
+
+SketchScene buildSketchScene(const Sketch& sketch) {
+    SketchScene scene;
+    const auto append = [&](const SketchLines& lines, const QVector3D& color) {
+        const auto first = static_cast<std::uint32_t>(scene.points.size());
+        scene.points.insert(scene.points.end(), lines.points.begin(), lines.points.end());
+        scene.colors.insert(scene.colors.end(), lines.points.size(), color);
+        for (const std::uint32_t i : lines.segments) scene.segments.push_back(first + i);
+    };
+    constexpr double kGapMm = 1e-6;
+    for (const SketchLoop& loop : sketch.loops) {
+        for (std::size_t i = 0; i < loop.curves.size(); ++i) {
+            const SketchCurve& curve = loop.curves[i];
+            append(sketchLines(Sketch{.plane = sketch.plane, .loops = {SketchLoop{{curve}}}}),
+                   sketchCurveColor(curve.kind));
+            // A gap after this curve ends one chain and starts the next: a dot on each side.
+            const SketchCurve& next = loop.curves[(i + 1) % loop.curves.size()];
+            if (length(next.start() - curve.end()) > kGapMm) {
+                scene.openEnds.push_back(sketch.plane.toWorld(curve.end()));
+                scene.openEnds.push_back(sketch.plane.toWorld(next.start()));
+            }
+        }
+    }
+    // The arrow: a shaft from the origin and a two-stroke head, in the plane of normal and u.
+    // The plane's axes are unit length, so its normal is too.
+    const Vec3d n = sketch.plane.normal();
+    const Vec3d u = sketch.plane.u;
+    double size = 1.0;
+    if (!scene.points.empty()) {
+        const auto [min, max] = pointBounds(scene.points);
+        size = std::max(0.3 * length(max - min), 1e-3);
+    }
+    scene.arrowTail = sketch.plane.origin;
+    scene.arrowTip = sketch.plane.origin + n * size;
+    const Vec3d back = scene.arrowTip - n * (0.25 * size);
+    SketchLines arrow{.points = {scene.arrowTail,
+                                 scene.arrowTip,
+                                 back + u * (0.12 * size),
+                                 back - u * (0.12 * size)},
+                      .segments = {0, 1, 1, 2, 1, 3}};
+    append(arrow, QVector3D(0.95f, 0.95f, 0.95f));
+    return scene;
+}
 
 Viewport::Viewport(QWidget* parent) : QOpenGLWidget(parent) {
     setFocusPolicy(Qt::StrongFocus);
@@ -404,18 +498,26 @@ void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
 }
 
 void Viewport::syncColors(GpuMesh& gpu, const DocumentObject& mesh) {
-    // The newest visible deviation of this mesh colours it.
-    const DocumentObject* deviation = nullptr;
-    for (const DocumentObject& o : snapshot_->objects) {
-        if (o.deviation() != nullptr && o.deviation()->meshId == mesh.id && o.visible) {
-            deviation = &o;
-        }
-    }
+    const DocumentObject* deviation = shownDeviation(*snapshot_, mesh.id);
     const DeviationField* field = deviation ? &deviation->deviation()->field : nullptr;
     const std::pair key{field, colorBlind_};
     if (key == gpu.colorKey) return;
     gpu.colorKey = key;
     gpu.hasColors = false;
+    gpu.markers.clear();
+    if (field != nullptr) {
+        const std::vector<double>& d = field->distances();
+        const auto largest = std::ranges::max_element(d);
+        const auto smallest = std::ranges::min_element(d);
+        for (const auto& [it, isLargest] : {std::pair{largest, true}, std::pair{smallest, false}}) {
+            const auto vertex = static_cast<std::uint32_t>(it - d.begin());
+            gpu.markers.push_back(DeviationMarker{.meshId = mesh.id,
+                                                  .vertex = vertex,
+                                                  .point = mesh.mesh()->mesh->positions()[vertex],
+                                                  .valueMm = *it,
+                                                  .largest = isLargest});
+        }
+    }
     glBindVertexArray(gpu.vao);
     if (field == nullptr) {
         glDisableVertexAttribArray(1);
@@ -460,13 +562,27 @@ void Viewport::syncGpu() {
         if (isSketch(o)) {
             // A sketch never changes once made, so it is uploaded once.
             if (gpu.vao != 0) continue;
-            auto lines = std::make_shared<const SketchLines>(sketchLines(o.sketch()->sketch));
-            const auto [min, max] = pointBounds(lines->points);
+            auto scene = std::make_shared<const SketchScene>(buildSketchScene(o.sketch()->sketch));
+            const auto [min, max] = pointBounds(scene->points);
             gpu.offset = (min + max) * 0.5;
             gpu.lines = true;
-            gpu.source = lines.get();
-            upload(gpu, lines->points, lines->segments, gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
-            gpu.keepAlive = std::move(lines);
+            gpu.source = scene.get();
+            upload(gpu, scene->points, scene->segments, gpu.vao, gpu.vbo, gpu.ebo, gpu.indexCount);
+            // Colours per point, as deviation colours are (syncColors).
+            static_assert(sizeof(QVector3D) == 3 * sizeof(float));
+            glBindVertexArray(gpu.vao);
+            glGenBuffers(1, &gpu.colorBuffer);
+            glBindBuffer(GL_ARRAY_BUFFER, gpu.colorBuffer);
+            glBufferData(GL_ARRAY_BUFFER,
+                         static_cast<GLsizeiptr>(scene->colors.size() * sizeof(QVector3D)),
+                         scene->colors.data(),
+                         GL_STATIC_DRAW);
+            glEnableVertexAttribArray(1);
+            glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(QVector3D), nullptr);
+            glBindBuffer(GL_ARRAY_BUFFER, 0);
+            glBindVertexArray(0);
+            gpu.openEnds = scene->openEnds;
+            gpu.keepAlive = std::move(scene);
             continue;
         }
         if (o.solid() != nullptr || o.quadLayout() != nullptr || o.primitive() != nullptr) {
@@ -598,11 +714,10 @@ void Viewport::paintGL() {
             program_.setUniformValue("mvp", toQt(projection * mv));
             const bool highlighted = o.id == highlight_;
             if (gpu.lines) {
-                program_.setUniformValue("lineMode", 1);
+                // A sketch draws in its per-curve colours unless it is highlighted.
+                program_.setUniformValue("lineMode", isSketch(o) && !highlighted ? 2 : 1);
                 program_.setUniformValue("lineColor",
-                                         highlighted   ? highlight
-                                         : isSketch(o) ? QVector3D(0.30f, 0.85f, 0.95f)
-                                                       : QVector3D(0.95f, 0.60f, 0.20f));
+                                         highlighted ? highlight : QVector3D(0.95f, 0.60f, 0.20f));
                 if (isSketch(o)) glDisable(GL_DEPTH_TEST);
                 glBindVertexArray(gpu.vao);
                 glDrawElements(GL_LINES, gpu.indexCount, GL_UNSIGNED_INT, nullptr);
@@ -707,6 +822,41 @@ void Viewport::drawOverlay() {
             painter.drawRoundedRect(box.translated(mid), 3, 3);
             painter.setPen(QColor(255, 230, 120));
             painter.drawText(mid, label);
+        }
+    }
+
+    // The extremes of the shown deviations: a ring and the value, over everything.
+    for (const DeviationMarker& m : deviationMarkers()) {
+        const auto c = project(m.point);
+        if (!c) continue;
+        const QColor color = m.largest ? QColor(230, 60, 50) : QColor(60, 110, 230);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(QColor(20, 20, 24), 4.0));
+        painter.drawEllipse(*c, 7.0, 7.0);
+        painter.setPen(QPen(color, 2.0));
+        painter.drawEllipse(*c, 7.0, 7.0);
+        const QString label =
+            QString::asprintf("%s %+.3f mm", m.largest ? "max" : "min", m.valueMm);
+        const QPointF at = *c + QPointF(10, -10);
+        const QRectF box = painter.fontMetrics().boundingRect(label).adjusted(-4, -2, 4, 2);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(QColor(20, 20, 24, 200));
+        painter.drawRoundedRect(box.translated(at), 3, 3);
+        painter.setPen(color.lighter(140));
+        painter.drawText(at, label);
+    }
+
+    // The ends of visible sketches' open chains.
+    if (snapshot_) {
+        painter.setPen(QPen(QColor(20, 20, 24), 1.0));
+        painter.setBrush(QColor(235, 60, 60));
+        for (const DocumentObject& o : snapshot_->objects) {
+            if (!o.visible || !isSketch(o)) continue;
+            const auto it = gpu_.find(o.id);
+            if (it == gpu_.end()) continue;
+            for (const Vec3d& p : it->second.openEnds) {
+                if (const auto c = project(p)) painter.drawEllipse(*c, 4.0, 4.0);
+            }
         }
     }
 
@@ -985,12 +1135,7 @@ void Viewport::mouseMoveEvent(QMouseEvent* event) {
         if (mode_ != Mode::Navigate && mode_ != Mode::Lasso) {
             hover_ = pick(pos);
             if (hover_) {
-                emit hoverChanged(QStringLiteral("Object %1, face %2   (%3, %4, %5) mm")
-                                      .arg(hover_->meshId)
-                                      .arg(hover_->face)
-                                      .arg(hover_->point.x, 0, 'f', 3)
-                                      .arg(hover_->point.y, 0, 'f', 3)
-                                      .arg(hover_->point.z, 0, 'f', 3));
+                emit hoverChanged(hoverText(*hover_));
             } else {
                 emit hoverChanged({});
             }
@@ -1036,6 +1181,35 @@ void Viewport::wheelEvent(QWheelEvent* event) {
     camera_.zoom(std::pow(0.85, event->angleDelta().y() / 120.0));
     markInteracting();
     update();
+}
+
+QString Viewport::hoverText(const Hit& hit) const {
+    QString text = QStringLiteral("Object %1, face %2   (%3, %4, %5) mm")
+                       .arg(hit.meshId)
+                       .arg(hit.face)
+                       .arg(hit.point.x, 0, 'f', 3)
+                       .arg(hit.point.y, 0, 'f', 3)
+                       .arg(hit.point.z, 0, 'f', 3);
+    const DocumentObject* mesh = snapshot_ ? snapshot_->find(hit.meshId) : nullptr;
+    if (mesh == nullptr || mesh->mesh() == nullptr) return text;
+    if (const DocumentObject* deviation = shownDeviation(*snapshot_, hit.meshId)) {
+        const double d =
+            deviationAt(*mesh->mesh()->mesh, deviation->deviation()->field, hit.face, hit.point);
+        text += QString::asprintf(" | dev: %+.3f mm", d);
+    }
+    return text;
+}
+
+std::vector<DeviationMarker> Viewport::deviationMarkers() const {
+    std::vector<DeviationMarker> markers;
+    if (!snapshot_) return markers;
+    for (const DocumentObject& o : snapshot_->objects) {
+        if (o.mesh() == nullptr || !o.visible) continue;
+        if (const auto it = gpu_.find(o.id); it != gpu_.end()) {
+            markers.insert(markers.end(), it->second.markers.begin(), it->second.markers.end());
+        }
+    }
+    return markers;
 }
 
 void Viewport::keyPressEvent(QKeyEvent* event) {

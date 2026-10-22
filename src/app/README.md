@@ -43,10 +43,16 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
 - The log panel shows every command that changes the document or writes a file (with the path),
   from any source. An agent's command still running after two seconds gets a "running" line,
   and its finishing line gives the time taken.
-- Sketches are listed under the mesh they were cut from and drawn as cyan lines over everything.
+- Sketches are listed under the mesh they were cut from and drawn over everything: lines green,
+  arcs cyan and splines pink, with a white arrow from the plane origin along the normal (the side a
+  positive `solid.extrude` distance goes) and a red dot at both ends of any open chain (the gap
+  `solid.extrude` would fail on).
 - Solids draw from their display mesh, quad layouts as orange edges. A mesh with a visible
   deviation object is coloured by its newest one (green within tolerance, warm outward, cold
   inward; **View > Colour-blind-safe deviation colours** switches to grey, orange and purple),
-  with a legend in the top right corner.
+  with a legend in the top right corner. Rings mark its largest (red) and smallest (blue)
+  distance, drawn over everything so a worst point on the back still shows, and the hover text
+  of the Measure, Brush and Crease tools ends with the distance at the cursor
+  (`| dev: +0.234 mm`).
 - `--screenshot out.png FILE` renders and quits (CI smoke test). `--no-agent-socket` turns the
   local socket off.
