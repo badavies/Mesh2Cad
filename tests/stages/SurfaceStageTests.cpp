@@ -3,12 +3,15 @@
 // distance to known shapes, gaps between faces and the angle across cap edges.
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <numbers>
 #include <string>
 #include <vector>
+
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/adapters/cgal/MeshTools.h"
 #include "m2c/adapters/occt/Brep.h"
@@ -365,6 +368,7 @@ TEST_CASE("Subdividing a cage keeps its limit surface", "[stages][surface]") {
     CHECK(cageStats(*finer).closed());
     SurfaceBuildParams p;
     p.fit = false;
+    p.creaseAngleDeg = 0.0; // the cube cage's smooth limit surface, not a sharp-edged box
     const auto coarse = buildSurface(cage, nullptr, p);
     const auto fine = buildSurface(*finer, nullptr, p);
     REQUIRE(coarse);
@@ -708,4 +712,66 @@ TEST_CASE("Flat areas need fitting, a selection of the scan and a unit normal",
     CHECK(fitCage(remeshed->cage, scan, f).error().code == ErrorCode::InvalidArgument);
     f.held[0] = HeldPlane{.point = {}, .normal = {0, 1, 1}, .vertices = {0}};
     CHECK(fitCage(remeshed->cage, scan, f).error().code == ErrorCode::InvalidArgument);
+}
+
+TEST_CASE("A cage's sharp edges stay sharp when subdivided", "[stages][surface]") {
+    const QuadLayout cube = cubeCage(10.0);
+    std::vector<std::array<std::uint32_t, 2>> creases = sharpCageEdges(cube, 60.0);
+    CHECK(creases.size() == 12);
+    CHECK(sharpCageEdges(cube, 95.0).empty());
+    const auto finer = subdivideCage(cube, &creases);
+    REQUIRE(finer);
+    CHECK(creases.size() == 24); // each edge in two halves
+    // Along the creases the step keeps the cube's edges: every crease vertex stays on one.
+    for (const auto& [a, b] : creases) {
+        for (const std::uint32_t v : {a, b}) {
+            const Vec3d p = finer->positions()[v];
+            int onFaces = 0;
+            for (const double c : {p.x, p.y, p.z}) onFaces += c < 1e-9 || c > 10.0 - 1e-9 ? 1 : 0;
+            CHECK(onFaces >= 2);
+        }
+    }
+    // Built with its creases, the cube cage is the cube: its faces' seams leave the sharp edges
+    // out, so they show no fold.
+    SurfaceBuildParams p;
+    p.fit = false;
+    const auto box = buildSurface(cube, nullptr, p);
+    REQUIRE(box);
+    CHECK(box->sharpEdges == 12);
+    CHECK_THAT(box->solid.summary().volumeMm3, Catch::Matchers::WithinRel(1000.0, 1e-6));
+    CHECK(box->seams.maxNormalAngleDeg < 1.0);
+    CHECK(box->solid.summary().faceCount == 6);
+}
+
+TEST_CASE("A noisy block with a hole keeps its sharp edges", "[stages][surface]") {
+    // Issue #64: a 30 x 30 x 10 block with a 12 mm hole, every vertex moved by up to 0.15 mm.
+    // Fitted smooth, the surface rounds the sharp edges and bulges past them.
+    const TriMesh ideal = makeBlockWithHole(30, 30, 10, 6, 32, 10, 10);
+    const auto worst = [&ideal](const Solid& solid) {
+        const auto d = occt::signedDistances(solid, ideal.positions());
+        REQUIRE(d);
+        double out = 0.0;
+        for (const double x : *d) out = std::max(out, std::abs(x));
+        return out;
+    };
+    QuadRemeshParams q;
+    q.targetFaces = 800;
+    q.creaseAngleDeg = 30.0;
+    for (const auto& [scan, limitMm] :
+         {std::pair{addNoise(makeBlockWithHole(30, 30, 10, 6, 24, 8, 8), 0.15), 0.2},
+          // A coarse mesh, as a CAD export is: long triangles across the sides.
+          std::pair{addNoise(makeBlockWithHole(30, 30, 10, 6, 4, 1, 1), 0.15), 0.3}}) {
+        const auto cage = quadRemesh(scan, q);
+        REQUIRE(cage);
+        SurfaceBuildParams p;
+        const auto sharp = buildSurface(cage->cage, &scan, p);
+        REQUIRE(sharp);
+        CHECK(sharp->sharpEdges > 100);
+        CHECK(worst(sharp->solid) < limitMm);
+        p.creaseAngleDeg = 0.0;
+        const auto smooth = buildSurface(cage->cage, &scan, p);
+        REQUIRE(smooth);
+        CHECK(smooth->sharpEdges == 0);
+        CHECK(worst(smooth->solid) > 0.3);
+    }
 }

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -172,6 +173,30 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
                 result.maxCapErrorMm = std::max(result.maxCapErrorMm,
                                                 length(limitAt(s, t) - evaluate(pieces[p], s, t)));
             }
+        }
+    }
+
+    // The ptex face of a cage quad runs u from its first vertex to its second and v from its
+    // first to its fourth; that of corner k of another face has its origin at vertex k, u along
+    // half the edge to vertex k + 1 and v along half the edge from vertex k - 1.
+    std::set<std::array<std::uint32_t, 2>> creases;
+    for (const auto& [a, b] : params.creases) creases.insert({std::min(a, b), std::max(a, b)});
+    const auto sharp = [&](const std::uint32_t a, const std::uint32_t b) {
+        return creases.contains({std::min(a, b), std::max(a, b)});
+    };
+    std::size_t corner = 0;
+    for (std::uint32_t f = 0; f < lim.ptexFaceCount(); ++f) {
+        corner = f > 0 && lim.cageFace(f) == lim.cageFace(f - 1) ? corner + 1 : 0;
+        const auto v = cage.face(lim.cageFace(f));
+        const std::size_t n = v.size();
+        if (n == 4) {
+            result.sharp.push_back(
+                {sharp(v[0], v[1]), sharp(v[3], v[2]), sharp(v[0], v[3]), sharp(v[1], v[2])});
+        } else {
+            result.sharp.push_back({sharp(v[corner], v[(corner + 1) % n]),
+                                    false,
+                                    sharp(v[(corner + n - 1) % n], v[corner]),
+                                    false});
         }
     }
 

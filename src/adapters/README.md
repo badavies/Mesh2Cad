@@ -33,10 +33,13 @@ target.
     Catmull-Clark limit surface follows a mesh (point-to-plane least squares through the limit
     stencils, with smoothing; mesh points beyond a distance gate are left out; `HeldPlane`s keep
     chosen vertices on a plane, so the limit surface is flat where all of a patch's vertices are
-    held).
+    held; creases keep it sharp along chosen cage edges; a coarse mesh's long triangles add
+    samples across them).
   - `extractPatches` with `PatchParams` and `PatchResult`: the limit surface as one
     `SurfacePatch` per ptex face, exact bicubics where the cage is regular and caps fitted to
-    OpenSubdiv's Gregory patches (positions and tangent planes along their edges) elsewhere.
+    OpenSubdiv's Gregory patches (positions and tangent planes along their edges) elsewhere, with
+    which face edges lie on a crease.
+  - `subdivideCage`: one uniform Catmull-Clark step, keeping creases sharp and splitting them.
   - `tessellateLimit`: the limit surface as triangles, for tests and checks.
 - `m2c/adapters/occt/Profile.h` (namespace `m2c::occt`): `extrudeSketch` and `revolveSketch`, a
   sketch's profile (largest loop less the holes in it) as a planar face, extruded along the normal

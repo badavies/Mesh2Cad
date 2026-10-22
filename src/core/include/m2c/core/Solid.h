@@ -90,11 +90,14 @@ struct SeamReport {
 /// samples of different faces that lie within toleranceMm of each other; knot lines inside a
 /// face are compared piece to piece. For faces of one cage quad each, before merging: merged
 /// faces' edge samples would not land on their neighbours'. `caps` says, per face, which pieces
-/// (j * piecesU + i) are caps; empty counts every piece as regular. A closed surface has no
-/// unmatched samples. Deterministic.
+/// (j * piecesU + i) are caps; empty counts every piece as regular. `sharp` says, per face, which
+/// of its edges (v = 0, v = 1, u = 0, u = 1) lie on a sharp edge of the surface: samples there
+/// count for gaps but not for normal angles. Empty means none. A closed surface has no unmatched
+/// samples. Deterministic.
 [[nodiscard]] Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
                                               int samplesPerEdge,
                                               double toleranceMm,
-                                              const std::vector<std::vector<bool>>& caps = {});
+                                              const std::vector<std::vector<bool>>& caps = {},
+                                              const std::vector<std::array<bool, 4>>& sharp = {});
 
 } // namespace m2c

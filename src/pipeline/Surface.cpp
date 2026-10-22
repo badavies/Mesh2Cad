@@ -268,6 +268,11 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
     // gets one Catmull-Clark step, which keeps the surface and its layout, and is fitted again.
     CageFitParams fitting = params.fitting;
     fitting.open = sheet;
+    // Sharp edges of a closed part, where the cage turns: the limit surface has a crease along
+    // them, which each refinement keeps.
+    if (!sheet && params.creaseAngleDeg > 0.0) {
+        fitting.creases = sharpCageEdges(cage, params.creaseAngleDeg);
+    }
     QuadLayout start = cage;
     unsigned tries = 0;
     std::vector<double> p95BeforeRefinement;
@@ -292,9 +297,14 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
         }
         ++tries;
         report(progress, "making the faces");
-        auto patches = extractPatches(fit.cage, PatchParams{fitting.isolationLevel, sheet});
+        auto patches = extractPatches(fit.cage,
+                                      PatchParams{.isolationLevel = fitting.isolationLevel,
+                                                  .open = sheet,
+                                                  .corners = {},
+                                                  .creases = fitting.creases});
         if (!patches) return std::unexpected(patches.error());
-        auto seams = measureSeams(patches->faces, kSeamSamples, kSeamToleranceMm, patches->caps);
+        auto seams = measureSeams(
+            patches->faces, kSeamSamples, kSeamToleranceMm, patches->caps, patches->sharp);
         if (!seams) return std::unexpected(seams.error());
         if (params.fit && seams->maxNormalAngleDeg > params.maxSeamAngleDeg &&
             tries < params.fitTries) {
@@ -311,7 +321,7 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
         }
         if (params.fit && params.refineToMm > 0.0 && fit.p95DistanceMm > params.refineToMm &&
             p95BeforeRefinement.size() < params.maxRefinements) {
-            auto finer = subdivideCage(fit.cage);
+            auto finer = subdivideCage(fit.cage, &fitting.creases);
             if (!finer) return std::unexpected(finer.error());
             p95BeforeRefinement.push_back(fit.p95DistanceMm);
             start = std::move(*finer);
@@ -325,11 +335,12 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
             used = std::move(*wall);
         }
         report(progress, "merging faces");
-        auto faces = sheet ? wallFaces(used,
-                                       fit.cage.faceCount(),
-                                       PatchParams{fitting.isolationLevel, true},
-                                       params.merge)
-                           : mergedFaces(used, std::move(*patches), *seams, params.merge);
+        auto faces =
+            sheet ? wallFaces(used,
+                              fit.cage.faceCount(),
+                              PatchParams{fitting.isolationLevel, true},
+                              params.merge)
+                  : mergedFaces(used, std::move(*patches), *seams, params.merge, fitting.creases);
         if (!faces) return std::unexpected(faces.error());
         auto& [faceSet, faceSeams, before, mergedCount, unmergedCount] = *faces;
         // The inner side is the outer one moved along its normals: it folds where the outer
@@ -372,7 +383,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                                   .mergedFaces = mergedCount,
                                   .unmergedQuads = unmergedCount,
                                   .p95BeforeRefinementMm = std::move(p95BeforeRefinement),
-                                  .heldVertices = heldCounts(fitting.held)};
+                                  .heldVertices = heldCounts(fitting.held),
+                                  .sharpEdges = fitting.creases.size()};
     }
 }
 
