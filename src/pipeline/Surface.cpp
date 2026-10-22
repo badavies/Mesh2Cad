@@ -38,6 +38,7 @@ std::vector<std::size_t> heldCounts(const std::vector<HeldPlane>& held) {
 
 constexpr int kSeamSamples = 8;           // samples per face edge for the seam report
 constexpr double kSeamToleranceMm = 1e-2; // edge samples closer than this are the same point
+constexpr int kFairnessSamples = 4;       // per cage quad and direction, for the fairness report
 
 /// Faces [begin, end) of a cage as a cage of their own; `remap` takes the cage's vertex indices
 /// to the part's (UINT32_MAX for vertices it does not use).
@@ -424,6 +425,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
         report(progress, "sewing the solid");
         auto display = tessellate(faceSet.faces, params.displayGrid);
         if (!display) return std::unexpected(display.error());
+        auto fairness = measureFairness(faceSet.faces, kFairnessSamples);
+        if (!fairness) return std::unexpected(fairness.error());
         auto solid = occt::makeSolid(std::move(faceSet.faces),
                                      std::make_shared<const FaceTessellation>(std::move(*display)),
                                      occt::SewParams{params.sewToleranceMm});
@@ -454,7 +457,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
                                   .unmergedQuads = unmergedCount,
                                   .p95BeforeRefinementMm = std::move(p95BeforeRefinement),
                                   .heldVertices = heldCounts(fitting.held),
-                                  .sharpEdges = fitting.creases.size()};
+                                  .sharpEdges = fitting.creases.size(),
+                                  .fairness = *fairness};
     }
 }
 

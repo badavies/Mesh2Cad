@@ -225,6 +225,13 @@ TEST_CASE("surface.build adds a valid solid from a quad layout", "[commands][sur
     CHECK(result["summary"]["volume_mm3"].get<double>() < 33600.0);
     CHECK(result["fit"]["rms_distance_mm"].get<double>() < 0.05);
     CHECK(result["fit"]["fits"] == 1);
+    // Fairness: the sphere's curvature, 1 / 20 mm, changing little across its faces.
+    CHECK_THAT(result["fairness"]["rms_mean_curvature"].get<double>(),
+               Catch::Matchers::WithinRel(1.0 / 20.0, 0.02));
+    CHECK(result["fairness"]["samples"].get<int>() > 0);
+    CHECK(result["fairness"]["p95_curvature_variation"].get<double>() <=
+          result["fairness"]["max_curvature_variation"].get<double>());
+    CHECK_FALSE(s.tryRun("surface.build", {{"id", cage}, {"mesh_id", mesh}, {"fairing", 51}}));
     CHECK(result["fit"]["smoothing"] == 0.05);
     CHECK(result["fit"]["refinements"] == 0);
     CHECK(result["fit"]["p95_distance_mm"].get<double>() <=

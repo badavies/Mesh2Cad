@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <expected>
 #include <limits>
+#include <map>
 #include <set>
 #include <utility>
 #include <vector>
@@ -79,6 +80,8 @@ constexpr double kHoldWeight = 10.0;         // stiffness of the held-plane term
 constexpr double kPointWeight = 0.1;         // share of point-to-point distance in the fit
 constexpr double kSolveTolerance = 1e-9;     // relative residual of each round's solve
 constexpr double kSampleSpacing = 1.0 / 3.0; // most spacing of samples, in mean cage edges
+constexpr double kTaubinShrink = 0.5;        // Taubin fairing: a smoothing step,
+constexpr double kTaubinInflate = -0.53;     // then a slightly larger step back
 
 } // namespace
 
@@ -186,6 +189,36 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         start(2 * n + v) = z;
     }
     Eigen::VectorXd current = start;
+    // The shape the smoothing term keeps: the starting cage, faired, so the scan's noise that
+    // its vertices picked up is not kept too. Vertices on the boundary or a crease stay put, so
+    // fairing does not round off an edge.
+    Eigen::VectorXd reference = start;
+    if (params.fairingRounds > 0) {
+        std::vector<bool> pinned(cage.vertexCount(), false);
+        for (const auto& [a, b] : params.creases) pinned[a] = pinned[b] = true;
+        std::map<std::pair<std::uint32_t, std::uint32_t>, int> edgeFaces;
+        for (std::size_t f = 0; f < cage.faceCount(); ++f) {
+            const auto face = cage.face(f);
+            for (std::size_t i = 0; i < face.size(); ++i) {
+                ++edgeFaces[std::minmax(face[i], face[(i + 1) % face.size()])];
+            }
+        }
+        for (const auto& [edge, count] : edgeFaces) {
+            if (count == 1) pinned[edge.first] = pinned[edge.second] = true;
+        }
+        for (unsigned round = 0; round < params.fairingRounds; ++round) {
+            for (const double step : {kTaubinShrink, kTaubinInflate}) {
+                for (Eigen::Index c = 0; c < 3; ++c) {
+                    const Eigen::VectorXd move = l * reference.segment(c * n, n);
+                    for (Eigen::Index v = 0; v < n; ++v) {
+                        if (!pinned[static_cast<std::size_t>(v)]) {
+                            reference(c * n + v) -= step * move(v);
+                        }
+                    }
+                }
+            }
+        }
+    }
     // The held-plane term: weight * (normal . p - normal . point)^2 per held vertex.
     std::vector<Eigen::Triplet<double>> holdEntries;
     Eigen::VectorXd holdRhs = Eigen::VectorXd::Zero(3 * n);
@@ -281,7 +314,7 @@ fitCage(const QuadLayout& cage, const TriMesh& scan, const CageFitParams& params
         const SparseMatrix normal = planeT * plane + kPointWeight * (pointT * point) + mu * smooth +
                                     anchor * identity + holdTerm;
         const Eigen::VectorXd rhs = planeT * planeTargets + kPointWeight * (pointT * pointTargets) +
-                                    mu * (smooth * start) + anchor * current + holdRhs;
+                                    mu * (smooth * reference) + anchor * current + holdRhs;
         // Conjugate gradients from the last round's positions converge in a few dozen
         // iterations: the point and smoothing terms keep the system well conditioned. A direct
         // factorisation costs most of the fit on large cages, so it is only the fallback.

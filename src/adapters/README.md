@@ -34,7 +34,7 @@ target.
     stencils, with smoothing; mesh points beyond a distance gate are left out; `HeldPlane`s keep
     chosen vertices on a plane, so the limit surface is flat where all of a patch's vertices are
     held; creases keep it sharp along chosen cage edges; a coarse mesh's long triangles add
-    samples across them).
+    samples across them; the shape the smoothing keeps is the starting cage faired).
   - `extractPatches` with `PatchParams` and `PatchResult`: the limit surface as one
     `SurfacePatch` per ptex face, exact bicubics where the cage is regular and caps fitted to
     OpenSubdiv's Gregory patches (positions and tangent planes along their edges) elsewhere, with

@@ -85,7 +85,9 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "(as where quad.remesh crease_angle_deg aligned it to a part's sharp edges), and the "
         "mesh turns by more than half that under the faces on either side, stay sharp "
         "edges of the surface: the fit follows them, faces are not merged across them and the "
-        "fold checks leave them out. Fails, adding nothing, unless the result is one valid closed "
+        "fold checks leave them out. Reports the surface's fairness: how fast its mean "
+        "curvature changes across each face, which zebra stripes show as waviness. Fails, adding "
+        "nothing, unless the result is one valid closed "
         "solid "
         "of positive volume whose faces, after the last fit, meet at no more than 90 degrees "
         "and (unless check_crossing is false) whose surface does not cross itself.",
@@ -97,6 +99,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "fit":{"type":"boolean","default":true,"description":"Fit the cage to the mesh first."},
                 "iterations":{"type":"integer","minimum":1,"maximum":10,"default":3,"description":"Rounds of fitting."},
                 "smoothing":{"type":"number","minimum":0,"maximum":10,"default":0.05,"description":"How strongly the cage keeps its own shape while fitting."},
+                "fairing":{"type":"integer","minimum":0,"maximum":50,"default":5,"description":"Rounds of fairing of the shape the smoothing keeps: the cage starts on the scan, noise and all, and fairing that shape first gives a calmer surface (zebra stripes) at the same distance to the mesh; 0 = keep the cage's own shape."},
                 "max_samples":{"type":"integer","minimum":100,"maximum":10000000,"default":60000,"description":"Mesh points used for fitting: its vertices (evenly thinned beyond this), plus points across triangles longer than a third of a cage edge, as a coarse mesh has, within the same number."},
                 "max_sample_distance_mm":{"type":"number","minimum":0,"default":0,"description":"Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length."},
                 "isolation_level":{"type":"integer","minimum":1,"maximum":4,"default":2,"description":"Refinement around irregular vertices: higher gives smaller caps and more faces' pieces."},
@@ -121,6 +124,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(iterations, optionalInteger(params, "iterations", 3, 1, 10));
             M2C_TRY(smoothing, optionalNumber(params, "smoothing", 0.05, 0.0, 10.0));
             M2C_TRY(samples, optionalInteger(params, "max_samples", 60000, 100, 10000000));
+            M2C_TRY(fairing, optionalInteger(params, "fairing", 5, 0, 50));
+            p.fitting.fairingRounds = static_cast<unsigned>(*fairing);
             M2C_TRY(level, optionalInteger(params, "isolation_level", 2, 1, 4));
             M2C_TRY(gate, optionalNumber(params, "max_sample_distance_mm", 0.0, 0.0, 1e6));
             p.fitting.maxSampleDistanceMm = *gate;
@@ -194,6 +199,12 @@ void addSurfaceCommands(std::vector<Command>& out) {
                           {"unmerged_quads", built->unmergedQuads}}},
                         {"max_cap_error_mm", built->maxCapErrorMm},
                         {"sharp_edges", built->sharpEdges},
+                        {"fairness",
+                         {{"samples", built->fairness.samples},
+                          {"rms_curvature_variation", built->fairness.rmsCurvatureVariation},
+                          {"p95_curvature_variation", built->fairness.p95CurvatureVariation},
+                          {"max_curvature_variation", built->fairness.maxCurvatureVariation},
+                          {"rms_mean_curvature", built->fairness.rmsMeanCurvature}}},
                         {"seams",
                          {{"max_gap_mm", built->seams.maxGapMm},
                           {"max_normal_angle_deg", built->seams.maxNormalAngleDeg},

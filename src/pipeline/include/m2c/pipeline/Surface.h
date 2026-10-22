@@ -102,6 +102,7 @@ struct SurfaceBuildResult {
     std::vector<double> p95BeforeRefinementMm;
     std::vector<std::size_t> heldVertices; ///< Per flat area, cage vertices held in the last fit.
     std::size_t sharpEdges{0}; ///< Cage edges kept sharp (creaseAngleDeg), of the final cage.
+    FairnessReport fairness;   ///< Of the faces, sampled 4 x 4 per cage quad.
 };
 
 /// Closes an open cage (an oriented manifold sheet) into a wall: a copy of every vertex moved

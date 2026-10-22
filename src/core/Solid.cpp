@@ -39,6 +39,37 @@ Vec3d unitNormal(const SurfacePatch& face, const double u, const double v) {
     return unit(normal(face.piece(i, j), s, t));
 }
 
+/// Mean curvature of a Bezier piece at (s, t), from its first and second derivatives; positive
+/// where it bends away from its normal (s x t), as a sphere seen from outside does.
+double meanCurvature(const BicubicPatch& piece, const double s, const double t) {
+    const auto second = [](const double x) {
+        const double y = 1.0 - x;
+        return std::array<double, 4>{6.0 * y, 6.0 * x - 12.0 * y, 6.0 * y - 12.0 * x, 6.0 * x};
+    };
+    const auto bu = bernstein(s), bv = bernstein(t);
+    const auto du = bernsteinDerivative(s), dv = bernsteinDerivative(t);
+    const auto ddu = second(s), ddv = second(t);
+    Vec3d pu{}, pv{}, puu{}, puv{}, pvv{};
+    for (std::size_t j = 0; j < 4; ++j) {
+        for (std::size_t i = 0; i < 4; ++i) {
+            const Vec3d& p = piece.poles[4 * j + i];
+            pu = pu + p * (du[i] * bv[j]);
+            pv = pv + p * (bu[i] * dv[j]);
+            puu = puu + p * (ddu[i] * bv[j]);
+            puv = puv + p * (du[i] * dv[j]);
+            pvv = pvv + p * (bu[i] * ddv[j]);
+        }
+    }
+    const Vec3d n = unit(cross(pu, pv));
+    const double e = dot(pu, pu), f = dot(pu, pv), g = dot(pv, pv);
+    const double det = e * g - f * f;
+    if (!(det > 0.0)) return 0.0;
+    // Second fundamental form with the normal pointing out: L = puu . n is negative on a
+    // sphere, so the sign is turned to make convex positive.
+    const double l = dot(puu, n), m = dot(puv, n), nn = dot(pvv, n);
+    return -(e * nn - 2.0 * f * m + g * l) / (2.0 * det);
+}
+
 double angleDeg(const Vec3d& a, const Vec3d& b) {
     if (a == Vec3d{} || b == Vec3d{}) return 0.0;
     return std::acos(std::clamp(dot(a, b), -1.0, 1.0)) * 180.0 / std::numbers::pi;
@@ -207,6 +238,62 @@ Result<FaceTessellation> tessellate(const std::vector<SurfacePatch>& faces, cons
     return FaceTessellation{.mesh = std::move(*mesh),
                             .triangleFaces = std::move(triangleFaces),
                             .vertexUvs = std::move(uvs)};
+}
+
+Result<FairnessReport> measureFairness(const std::vector<SurfacePatch>& faces,
+                                       const int samplesPerCell) {
+    if (samplesPerCell < 1 || samplesPerCell > 16) {
+        return fail(ErrorCode::InvalidArgument, "samples per cell must be 1 to 16");
+    }
+    FairnessReport out;
+    std::vector<double> variation;
+    double sumH2 = 0.0;
+    std::vector<Vec3d> points;
+    std::vector<double> curvature;
+    for (const SurfacePatch& face : faces) {
+        const std::size_t nu = static_cast<std::size_t>(samplesPerCell) * face.cellsU;
+        const std::size_t nv = static_cast<std::size_t>(samplesPerCell) * face.cellsV;
+        points.clear();
+        curvature.clear();
+        for (std::size_t j = 0; j <= nv; ++j) {
+            for (std::size_t i = 0; i <= nu; ++i) {
+                const double u = static_cast<double>(i) / static_cast<double>(nu);
+                const double v = static_cast<double>(j) / static_cast<double>(nv);
+                const auto [a, s] = pieceAt(face.uBreaks, u);
+                const auto [b, t] = pieceAt(face.vBreaks, v);
+                const BicubicPatch piece = face.piece(a, b);
+                points.push_back(evaluate(piece, s, t));
+                curvature.push_back(meanCurvature(piece, s, t));
+                sumH2 += curvature.back() * curvature.back();
+            }
+        }
+        out.samples += points.size();
+        const std::size_t row = nu + 1;
+        const auto compare = [&](const std::size_t x, const std::size_t y) {
+            const double d = length(points[x] - points[y]);
+            if (d > 0.0) variation.push_back(std::abs(curvature[x] - curvature[y]) / d);
+        };
+        for (std::size_t j = 0; j <= nv; ++j) {
+            for (std::size_t i = 0; i <= nu; ++i) {
+                if (i < nu) compare(j * row + i, j * row + i + 1);
+                if (j < nv) compare(j * row + i, (j + 1) * row + i);
+            }
+        }
+    }
+    if (out.samples > 0) {
+        out.rmsMeanCurvature = std::sqrt(sumH2 / static_cast<double>(out.samples));
+    }
+    if (!variation.empty()) {
+        double sum2 = 0.0;
+        for (const double x : variation) sum2 += x * x;
+        out.rmsCurvatureVariation = std::sqrt(sum2 / static_cast<double>(variation.size()));
+        const auto at =
+            variation.begin() + static_cast<std::ptrdiff_t>((variation.size() - 1) * 95 / 100);
+        std::ranges::nth_element(variation, at);
+        out.p95CurvatureVariation = *at;
+        out.maxCurvatureVariation = *std::ranges::max_element(variation);
+    }
+    return out;
 }
 
 } // namespace m2c
