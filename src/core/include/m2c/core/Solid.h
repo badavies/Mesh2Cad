@@ -100,4 +100,23 @@ struct SeamReport {
                                               const std::vector<std::vector<bool>>& caps = {},
                                               const std::vector<std::array<bool, 4>>& sharp = {});
 
+/// How evenly the surface bends, for waviness that zebra stripes show: the mean curvature at
+/// samples on each face, and how fast it changes between neighbouring samples of a face (its
+/// difference over their distance, in 1/mm^2). A sphere or a plane has none; a surface that
+/// follows a scan's noise has a lot.
+struct FairnessReport {
+    std::size_t samples{0};
+    double rmsCurvatureVariation{0.0}; ///< 1/mm^2
+    double p95CurvatureVariation{0.0}; ///< 1/mm^2
+    double maxCurvatureVariation{0.0}; ///< 1/mm^2
+    double rmsMeanCurvature{0.0};      ///< 1/mm
+};
+
+/// Samples each face on a grid of samplesPerCell x samplesPerCell per cage quad it covers, and
+/// compares neighbours along u and v within the face (not across faces, so a sharp edge between
+/// faces does not count). Fails with InvalidArgument for samplesPerCell outside 1 to 16.
+/// Deterministic.
+[[nodiscard]] Result<FairnessReport> measureFairness(const std::vector<SurfacePatch>& faces,
+                                                     int samplesPerCell);
+
 } // namespace m2c

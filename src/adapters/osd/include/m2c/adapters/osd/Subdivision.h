@@ -39,6 +39,11 @@ struct CageFitParams {
     std::vector<HeldPlane> held{};
     /// Cage edges (vertex pairs) along which the surface has a sharp edge, as in PatchParams.
     std::vector<std::array<std::uint32_t, 2>> creases{};
+    /// Rounds of Taubin fairing of the shape the smoothing term keeps. The starting cage's
+    /// vertices sit on the scan, noise and all, and the smoothing term would keep that noise;
+    /// fairing it out first gives a calmer surface at the same distance to the scan. Vertices on
+    /// the boundary or a crease are not moved. 0 = keep the starting cage's shape as it is.
+    unsigned fairingRounds{5};
 };
 
 struct CageFitResult {
@@ -54,7 +59,8 @@ struct CageFitResult {
 /// Moves the cage vertices so its limit surface passes close to the scan: each sample gets the
 /// closest point of the current limit surface, then the vertices solve one sparse least-squares
 /// problem (distance to the sample's tangent plane, plus a little of the distance to the sample),
-/// with a smoothing term on how far neighbouring vertices move apart. The best round is kept.
+/// with a smoothing term on how far neighbouring vertices move apart from the starting cage's
+/// faired shape (fairingRounds). The best round is kept.
 /// Held vertices (params.held) start and stay on their planes. The samples are the scan's
 /// vertices, thinned to maxSamples, and points across triangles longer than a third of the mean
 /// cage edge (a coarse scan's), within the same budget. The cage must be closed, or open with

@@ -844,3 +844,68 @@ TEST_CASE("Sharp edges of the cage that the scan does not have stay smooth", "[s
     CHECK(built->sharpEdges == 140);
     CHECK(built->fit.p95DistanceMm < 0.2);
 }
+
+TEST_CASE("Fairness measures how fast the curvature changes", "[stages][surface]") {
+    // One flat face, then the same face bent into a bump in the middle.
+    SurfacePatch flat;
+    for (std::size_t j = 0; j < 4; ++j) {
+        for (std::size_t i = 0; i < 4; ++i) {
+            flat.poles.push_back({static_cast<double>(i), static_cast<double>(j), 0.0});
+        }
+    }
+    const auto calm = measureFairness({flat}, 4);
+    REQUIRE(calm);
+    CHECK(calm->samples == 25);
+    CHECK(calm->rmsCurvatureVariation == 0.0);
+    CHECK(calm->rmsMeanCurvature == 0.0);
+    SurfacePatch bumped = flat;
+    for (const std::size_t k : {5UZ, 6UZ, 9UZ, 10UZ}) bumped.poles[k].z = 0.5;
+    const auto wavy = measureFairness({bumped}, 4);
+    REQUIRE(wavy);
+    CHECK(wavy->rmsCurvatureVariation > 0.01);
+    CHECK(wavy->maxCurvatureVariation >= wavy->p95CurvatureVariation);
+    CHECK(wavy->rmsMeanCurvature > 0.01);
+    CHECK_FALSE(measureFairness({flat}, 0));
+    CHECK_FALSE(measureFairness({flat}, 17));
+
+    // A sphere cage gives a nearly constant curvature of 1 / r.
+    const double r = 20.0;
+    const TriMesh sphere = makeSphere(r, 5);
+    QuadRemeshParams q;
+    q.targetFaces = 400;
+    const auto cage = quadRemesh(sphere, q);
+    REQUIRE(cage);
+    const auto built = buildSurface(cage->cage, &sphere, SurfaceBuildParams{});
+    REQUIRE(built);
+    CHECK_THAT(built->fairness.rmsMeanCurvature, Catch::Matchers::WithinRel(1.0 / r, 0.02));
+    CHECK(built->fairness.samples > 16 * cage->cage.faceCount()); // 4 x 4 per quad or more
+}
+
+TEST_CASE("Fairing the cage's shape calms a noisy scan's surface", "[stages][surface]") {
+    // Issue #36: a sphere scanned with up to 0.05 mm of noise. The cage starts on the scan, so
+    // keeping its shape keeps the noise; fairing that shape first gives a calmer surface that is
+    // as close to the scan and closer to the true sphere.
+    const double r = 20.0;
+    const TriMesh scan = addNoise(makeSphere(r, 5), 0.05);
+    QuadRemeshParams q;
+    q.targetFaces = 1500;
+    const auto cage = quadRemesh(scan, q);
+    REQUIRE(cage);
+    SurfaceBuildParams p;
+    p.fitting.smoothing = 0.3;
+    p.fitting.fairingRounds = 0;
+    const auto kept = buildSurface(cage->cage, &scan, p);
+    REQUIRE(kept);
+    p.fitting.fairingRounds = 5;
+    const auto faired = buildSurface(cage->cage, &scan, p);
+    REQUIRE(faired);
+    const auto truthRms = [r](const SurfaceBuildResult& built) {
+        double sum2 = 0.0;
+        const auto& points = built.solid.display().positions();
+        for (const Vec3d& x : points) sum2 += (length(x) - r) * (length(x) - r);
+        return std::sqrt(sum2 / static_cast<double>(points.size()));
+    };
+    CHECK(faired->fairness.rmsCurvatureVariation < 0.75 * kept->fairness.rmsCurvatureVariation);
+    CHECK(faired->fit.p95DistanceMm < kept->fit.p95DistanceMm + 0.002);
+    CHECK(truthRms(*faired) < truthRms(*kept));
+}
