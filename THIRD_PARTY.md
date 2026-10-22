@@ -16,6 +16,7 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 | [miniz](https://github.com/richgel999/miniz) | vcpkg baseline; fallback 3.0.2 | MIT | Project file (zip) (ADR-017) | `src/io` |
 | [Open CASCADE (OCCT)](https://github.com/Open-Cascade-SAS/OCCT) | 7.6+ from vcpkg/system; fallback V8_0_1 built from source | LGPL-2.1 with the OCCT exception (dynamically linked) | B-spline faces, sewing, solid checks, STEP AP242 export (ADR-003, ADR-026) | `src/adapters/occt` only |
 | [OpenSubdiv](https://github.com/PixarAnimationStudios/OpenSubdiv) | 3.5 from vcpkg/system; fallback v3_5_0 built from source | Apache-2.0 (modified) | Catmull-Clark limit stencils and patch extraction (ADR-015, ADR-026) | `src/adapters/osd` only |
+| [oneTBB](https://github.com/uxlfoundation/oneTBB) | 2021.5+ from vcpkg/system; fallback v2022.1.0 built as a subproject | Apache-2.0 | Deterministic parallel loops (ADR-036) | `src/core` (`Parallel.cpp`) only |
 | [Instant Meshes](https://github.com/wjakob/instant-meshes) (field and extraction sources) | commit 7b31608 | BSD-3-Clause | Quad layout (ADR-009) | `src/adapters/quad` only |
 | [pcg32](https://github.com/wjakob/pcg32) | commit 0ef13e6 | Apache-2.0 | Random numbers inside Instant Meshes | via Instant Meshes |
 | [dset](https://github.com/wjakob/dset) | commit 7967ef0 | zlib | Union-find inside Instant Meshes | via Instant Meshes |
@@ -32,7 +33,6 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 
 | Dependency | Licence | Milestone | Purpose |
 | --- | --- | --- | --- |
-| oneTBB | Apache-2.0 | When profiling needs it (not needed in M1) | Parallelism (`parallel_deterministic_reduce`) |
 | json-schema-validator | MIT | When schemas are enforced (not needed in M1) | Command parameter validation |
 | spdlog | MIT | When structured logs are needed (not needed in M1) | Logging |
 | QuadWild (bi-MDF) | GPL-3.0 | M3, to revisit (ADR-009) | Feature-aligned quad layout |

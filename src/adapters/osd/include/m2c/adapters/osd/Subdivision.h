@@ -65,8 +65,10 @@ struct CageFitResult {
 /// Held vertices (params.held) start and stay on their planes. The samples are the scan's
 /// vertices, thinned to maxSamples, and points across triangles longer than a third of the mean
 /// cage edge (a coarse scan's), within the same budget. The cage must be closed, or open with
-/// params.open. Deterministic. Stops with Cancelled within a few thousand samples of
-/// `progress` being cancelled; it reports nothing itself.
+/// params.open. Deterministic: the closest points are found in parallel chunks
+/// (parallelChunks()) and the system is built from them in order, so any number of threads gives
+/// the same cage. Stops with Cancelled when a round's search ends after `progress` was cancelled;
+/// it reports nothing itself.
 [[nodiscard]] Result<CageFitResult> fitCage(const QuadLayout& cage,
                                             const TriMesh& scan,
                                             const CageFitParams& params,

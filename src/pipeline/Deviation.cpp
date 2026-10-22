@@ -13,6 +13,7 @@
 #include "m2c/core/DeviationField.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/Parallel.h"
 #include "m2c/core/Progress.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
@@ -23,7 +24,7 @@ namespace m2c {
 
 namespace {
 
-constexpr std::size_t kCancelEvery = 4096; // vertices measured between cancel checks
+constexpr std::size_t kChunk = 4096; // vertices measured per parallel chunk and cancel check
 
 } // namespace
 
@@ -41,19 +42,20 @@ Result<DeviationField> deviationToMesh(const TriMesh& mesh,
                                        const double toleranceMm,
                                        const Progress& progress) {
     const SpatialIndex& index = reference.spatialIndex();
-    std::vector<double> distances;
-    distances.reserve(mesh.vertexCount());
-    for (const Vec3d& p : mesh.positions()) {
-        if (distances.size() % kCancelEvery == 0) {
-            if (auto go = checkCancelled(progress, "measuring distances to the mesh"); !go)
-                return std::unexpected(go.error());
+    const std::vector<Vec3d>& positions = mesh.positions();
+    std::vector<double> distances(positions.size());
+    parallelChunks(positions.size(), kChunk, [&](const std::size_t begin, const std::size_t end) {
+        if (progress.cancelled()) return;
+        for (std::size_t i = begin; i < end; ++i) {
+            const auto [face, distance, point] = index.closestPoint(positions[i]);
+            // The side of the face holding the closest point; near an edge or a vertex the
+            // offset lies in the normal cone there, so either neighbour usually agrees.
+            const bool outside = dot(positions[i] - point, faceNormal(reference, face)) >= 0.0;
+            distances[i] = outside ? distance : -distance;
         }
-        const auto [face, distance, point] = index.closestPoint(p);
-        // The side of the face holding the closest point; near an edge or a vertex the offset
-        // lies in the normal cone there, so either neighbour usually agrees.
-        const bool outside = dot(p - point, faceNormal(reference, face)) >= 0.0;
-        distances.push_back(outside ? distance : -distance);
-    }
+    });
+    if (auto go = checkCancelled(progress, "measuring distances to the mesh"); !go)
+        return std::unexpected(go.error());
     return DeviationField::create(std::move(distances), toleranceMm);
 }
 

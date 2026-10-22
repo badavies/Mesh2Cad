@@ -11,6 +11,7 @@
 #include <numbers>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -20,6 +21,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/MeshStats.h"
+#include "m2c/core/Parallel.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
@@ -955,4 +957,30 @@ TEST_CASE("A cancelled build, fit or deviation stops and gives no result", "[sta
         deviationToSolid(sphere, built->solid, 0.1, Progress({}, CancelToken::make()));
     REQUIRE(measured);
     CHECK(measured->distances() == deviationToSolid(sphere, built->solid, 0.1)->distances());
+}
+
+TEST_CASE("The fit and the deviation give the same results on any number of threads",
+          "[stages][surface][deviation]") {
+    const TriMesh scan = addNoise(makeSphere(20.0, 5), 0.05);
+    QuadRemeshParams q;
+    q.targetFaces = 400;
+    const auto remeshed = quadRemesh(scan, q);
+    REQUIRE(remeshed);
+    // More points than one chunk holds, so the work is split.
+    const TriMesh probe = makeSphere(20.5, 5);
+    REQUIRE(probe.vertexCount() > 8192);
+    const auto run = [&] {
+        auto fit = fitCage(remeshed->cage, scan, CageFitParams{});
+        REQUIRE(fit);
+        auto built = buildSurface(remeshed->cage, &scan, SurfaceBuildParams{});
+        REQUIRE(built);
+        auto toSolid = deviationToSolid(probe, built->solid, 0.1);
+        REQUIRE(toSolid);
+        auto toMesh = deviationToMesh(probe, scan, 0.1);
+        REQUIRE(toMesh);
+        return std::tuple{fit->cage.positions(), toSolid->distances(), toMesh->distances()};
+    };
+    const auto many = run();
+    const ThreadLimit one(1);
+    CHECK(run() == many); // bit for bit
 }

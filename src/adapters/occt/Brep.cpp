@@ -70,6 +70,7 @@
 #include <gp_Vec.hxx>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Parallel.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
@@ -107,7 +108,7 @@ void bezierKnots(const std::vector<double>& breaks,
 /// when the surface moves by no more than this: regular regions of a merged face then become one
 /// C2 B-spline, and only the knots next to caps stay triple.
 constexpr double kKnotRemovalToleranceMm = 1e-7;
-constexpr std::size_t kCancelEvery = 4096; // points measured between cancel checks
+constexpr std::size_t kChunk = 4096; // points measured per parallel chunk and cancel check
 
 void removeKnots(Geom_BSplineSurface& surface) {
     for (int k = surface.NbUKnots() - 1; k >= 2; --k) {
@@ -449,58 +450,66 @@ signedDistances(const Solid& solid, const std::vector<Vec3d>& points, const Prog
     }
     const double outward = volume6 >= 0.0 ? 1.0 : -1.0;
     return guarded("distance to the solid", [&]() -> Result<std::vector<double>> {
-        std::vector<opencascade::handle<ShapeAnalysis_Surface>> surfaces(faceCount);
         std::vector<std::array<double, 4>> ranges(faceCount, {0.0, 1.0, 0.0, 1.0});
         std::vector<double> turn(faceCount, 1.0); // -1 where a kernel face is reversed
-        const auto surfaceOf = [&](const std::size_t f) {
-            if (!surfaces[f].IsNull()) return;
-            if (!faces.empty()) {
-                surfaces[f] = new ShapeAnalysis_Surface(toSurface(faces[f]));
-                return;
-            }
-            const TopoDS_Face& face = TopoDS::Face(kernelFaces(static_cast<int>(f) + 1));
-            surfaces[f] = new ShapeAnalysis_Surface(BRep_Tool::Surface(face));
+        for (int k = 1; k <= kernelFaces.Extent(); ++k) {
+            const TopoDS_Face& face = TopoDS::Face(kernelFaces(k));
+            const auto f = static_cast<std::size_t>(k - 1);
             auto& [u0, u1, v0, v1] = ranges[f];
             BRepTools::UVBounds(face, u0, u1, v0, v1);
             if (face.Orientation() == TopAbs_REVERSED) turn[f] = -1.0;
-        };
-        const SpatialIndex& index = display.spatialIndex();
-        std::vector<double> out;
-        out.reserve(points.size());
-        for (const Vec3d& p : points) {
-            if (out.size() % kCancelEvery == 0) {
-                if (auto go = checkCancelled(progress, "measuring distances to the solid"); !go)
-                    return std::unexpected(go.error());
-            }
-            const ClosestPoint near = index.closestPoint(p);
-            const std::size_t f = triangleFaces[near.face];
-            // Barycentric weights of the closest point give its (u, v) from the corners'.
-            const auto v = display.face(near.face);
-            const auto [a, b, c] = corners(near.face);
-            const Vec3d e0 = b - a, e1 = c - a, e2 = near.point - a;
-            const double d00 = dot(e0, e0), d01 = dot(e0, e1), d11 = dot(e1, e1);
-            const double d20 = dot(e2, e0), d21 = dot(e2, e1);
-            const double den = d00 * d11 - d01 * d01;
-            const double wb = den > 0.0 ? (d11 * d20 - d01 * d21) / den : 0.0;
-            const double wc = den > 0.0 ? (d00 * d21 - d01 * d20) / den : 0.0;
-            const auto& ua = vertexUvs[v[0]];
-            const auto& ub = vertexUvs[v[1]];
-            const auto& uc = vertexUvs[v[2]];
-            const double u0 = ua[0] + wb * (ub[0] - ua[0]) + wc * (uc[0] - ua[0]);
-            const double v0 = ua[1] + wb * (ub[1] - ua[1]) + wc * (uc[1] - ua[1]);
-            surfaceOf(f);
-            const gp_Pnt target(p.x, p.y, p.z);
-            const gp_Pnt2d at = surfaces[f]->NextValueOfUV(gp_Pnt2d(u0, v0), target, 1e-7);
-            gp_Pnt q;
-            gp_Vec du, dv;
-            const auto& [uMin, uMax, vMin, vMax] = ranges[f];
-            surfaces[f]->Surface()->D1(
-                std::clamp(at.X(), uMin, uMax), std::clamp(at.Y(), vMin, vMax), q, du, dv);
-            const gp_Vec normal = du.Crossed(dv) * turn[f];
-            const gp_Vec offset(q, target);
-            const double side = offset.Dot(normal) * outward >= 0.0 ? 1.0 : -1.0;
-            out.push_back(side * offset.Magnitude());
         }
+        const SpatialIndex& index = display.spatialIndex();
+        std::vector<double> out(points.size());
+        // In parallel chunks, each with its own projectors: ShapeAnalysis_Surface keeps state
+        // between projections, so one may not be shared, and per chunk the results do not
+        // depend on the thread count.
+        parallelChunks(points.size(), kChunk, [&](const std::size_t begin, const std::size_t end) {
+            if (progress.cancelled()) return;
+            std::vector<opencascade::handle<ShapeAnalysis_Surface>> surfaces(faceCount);
+            const auto surfaceOf = [&](const std::size_t f) -> ShapeAnalysis_Surface& {
+                if (surfaces[f].IsNull()) {
+                    surfaces[f] = faces.empty()
+                                      ? new ShapeAnalysis_Surface(BRep_Tool::Surface(
+                                            TopoDS::Face(kernelFaces(static_cast<int>(f) + 1))))
+                                      : new ShapeAnalysis_Surface(toSurface(faces[f]));
+                }
+                return *surfaces[f];
+            };
+            for (std::size_t i = begin; i < end; ++i) {
+                const Vec3d& p = points[i];
+                const ClosestPoint near = index.closestPoint(p);
+                const std::size_t f = triangleFaces[near.face];
+                // Barycentric weights of the closest point give its (u, v) from the corners'.
+                const auto v = display.face(near.face);
+                const auto [a, b, c] = corners(near.face);
+                const Vec3d e0 = b - a, e1 = c - a, e2 = near.point - a;
+                const double d00 = dot(e0, e0), d01 = dot(e0, e1), d11 = dot(e1, e1);
+                const double d20 = dot(e2, e0), d21 = dot(e2, e1);
+                const double den = d00 * d11 - d01 * d01;
+                const double wb = den > 0.0 ? (d11 * d20 - d01 * d21) / den : 0.0;
+                const double wc = den > 0.0 ? (d00 * d21 - d01 * d20) / den : 0.0;
+                const auto& ua = vertexUvs[v[0]];
+                const auto& ub = vertexUvs[v[1]];
+                const auto& uc = vertexUvs[v[2]];
+                const double u0 = ua[0] + wb * (ub[0] - ua[0]) + wc * (uc[0] - ua[0]);
+                const double v0 = ua[1] + wb * (ub[1] - ua[1]) + wc * (uc[1] - ua[1]);
+                ShapeAnalysis_Surface& surface = surfaceOf(f);
+                const gp_Pnt target(p.x, p.y, p.z);
+                const gp_Pnt2d at = surface.NextValueOfUV(gp_Pnt2d(u0, v0), target, 1e-7);
+                gp_Pnt q;
+                gp_Vec du, dv;
+                const auto& [uMin, uMax, vMin, vMax] = ranges[f];
+                surface.Surface()->D1(
+                    std::clamp(at.X(), uMin, uMax), std::clamp(at.Y(), vMin, vMax), q, du, dv);
+                const gp_Vec normal = du.Crossed(dv) * turn[f];
+                const gp_Vec offset(q, target);
+                const double side = offset.Dot(normal) * outward >= 0.0 ? 1.0 : -1.0;
+                out[i] = side * offset.Magnitude();
+            }
+        });
+        if (auto go = checkCancelled(progress, "measuring distances to the solid"); !go)
+            return std::unexpected(go.error());
         return out;
     });
 }

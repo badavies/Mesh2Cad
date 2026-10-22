@@ -8,6 +8,7 @@ millimetres. Errors cross module boundaries as `Result<T>` (`std::expected<T, Er
 
 - `m2c/core/Vec3.h`: `Vec3d` (a point or vector in mm) with `dot`, `cross`, `length` and arithmetic operators.
 - `m2c/core/Error.h`: `ErrorCode`, `Error`, `Result<T>`, `toString(ErrorCode)` and the `fail(code, message)` shorthand.
+- `m2c/core/Parallel.h`: `parallelChunks`, a parallel loop over fixed chunks with oneTBB, the same for any thread count (ADR-036), and `ThreadLimit`, which caps the threads while it lives.
 - `m2c/core/Progress.h`: `Progress` (a callback told the stage a long operation is at, and how far through it, with a `CancelToken` a front end can cancel from another thread), `report`, which calls it when set, and `checkCancelled` and `checkpoint`, which fail with `ErrorCode::Cancelled` once the token is cancelled.
 - `m2c/core/TriMesh.h`: `TriMesh` (immutable indexed triangle mesh, built with `TriMesh::create`) and `Aabb`.
 - `m2c/core/MeshStats.h`: `MeshStats` and `computeStats` (counts, boundary and non-manifold edges, area, volume, bounds).
