@@ -65,6 +65,7 @@ endif()
 
 install(FILES LICENSE README.md THIRD_PARTY.md docs/COMMANDS.md DESTINATION ${m2c_doc_dir})
 install(DIRECTORY examples/ DESTINATION ${m2c_doc_dir}/examples)
+install(DIRECTORY docs/user/ DESTINATION ${m2c_doc_dir}/user)
 
 # ---- CPack ---------------------------------------------------------------------------------------
 set(CPACK_PACKAGE_NAME "mesh2cad")

@@ -21,7 +21,9 @@ target_link_libraries(m2c_app
         Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Network
     PRIVATE
         m2c_warnings)
-target_compile_definitions(m2c_app PRIVATE MESH2CAD_VERSION="${PROJECT_VERSION}")
+# The source tree's guide is Help > User guide's fallback in a build that isn't installed.
+target_compile_definitions(m2c_app
+    PRIVATE MESH2CAD_VERSION="${PROJECT_VERSION}" MESH2CAD_SOURCE_DIR="${PROJECT_SOURCE_DIR}")
 
 add_executable(mesh2cad-app WIN32 main.cpp)
 target_link_libraries(mesh2cad-app PRIVATE m2c_app m2c_warnings)

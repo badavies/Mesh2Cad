@@ -11,6 +11,8 @@ Status: **M0 Foundations and M1 Mesh preparation are implemented**; their milest
 
 The CAD surfacing pipeline (M2 onwards) comes next; see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 12.
 
+The [user guide](docs/user/README.md) shows how to use Mesh2Cad, with example sessions you can run on the bundled test meshes. The app opens it from **Help > User guide**.
+
 Licence: GPL-3.0-or-later (see [`LICENSE`](LICENSE)).
 
 ## Installing
@@ -18,7 +20,7 @@ Licence: GPL-3.0-or-later (see [`LICENSE`](LICENSE)).
 Installers are built by the [Packages workflow](.github/workflows/package.yml) and kept as its artifacts (and attached to each release):
 
 - **Windows 10 and 11**: run `mesh2cad-<version>-windows-x64.exe`. It installs the app, the command-line tools and the MCP server under `C:\Program Files\Mesh2Cad`, adds a Start menu entry, and can put `bin` on the `PATH`. The `.zip` holds the same files for use without installing.
-- **Ubuntu 24.04**: `sudo apt install ./mesh2cad_<version>_amd64.deb` installs the programs in `/usr/bin` and pulls in Qt, Open CASCADE, OpenSubdiv and oneTBB from Ubuntu. Examples and the command reference go to `/usr/share/mesh2cad`. `sudo apt remove mesh2cad` uninstalls it.
+- **Ubuntu 24.04**: `sudo apt install ./mesh2cad_<version>_amd64.deb` installs the programs in `/usr/bin` and pulls in Qt, Open CASCADE, OpenSubdiv and oneTBB from Ubuntu. The user guide, examples and command reference go to `/usr/share/mesh2cad`. `sudo apt remove mesh2cad` uninstalls it.
 
 To make them yourself from a Release build: `cpack` in the build folder (NSIS must be installed on Windows).
 
@@ -132,7 +134,9 @@ Each command prints one line, `{"ok":true,"result":...}` or `{"ok":false,"error"
 | `src/cli`, `src/rpc`, `src/mcp`, `src/app` | Front ends: `mesh2cad`, `mesh2cad-rpc`, `mesh2cad-mcp`, `mesh2cad-app` |
 | `tests/` | Catch2 unit, stage, command and app tests |
 | `scripts/check_layers.py` | Enforces the module dependency rules (runs as a ctest) |
+| `scripts/check_user_guide.py` | Runs every example session in the user guide (runs as a ctest) |
 | `docs/` | Architecture and roadmap, AI development rules, decision records |
+| `docs/user/` | The user guide |
 
 AI coding tools: read [`AGENTS.md`](AGENTS.md) first.
 

@@ -12,9 +12,11 @@
 #include <QPushButton>
 #include <QStringList>
 #include <QSurfaceFormat>
+#include <QTextBrowser>
 #include <QToolButton>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
+#include <QUrl>
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -1204,6 +1206,30 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
 
 // The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or
 // better. Hidden from normal runs; see tests/README.md for how to run it on a Release build.
+TEST_CASE("Help opens the user guide and follows its links", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    Engine engine;
+    MainWindow window(engine);
+    QAction* help = nullptr;
+    for (QAction* a : window.findChildren<QAction*>()) {
+        if (a->text() == "User guide") help = a;
+    }
+    REQUIRE(help != nullptr);
+    help->trigger();
+    // Not installed, so it is the source tree's guide.
+    auto* guide = window.findChild<QTextBrowser*>("userGuide");
+    REQUIRE(guide != nullptr);
+    CHECK(guide->isVisible());
+    CHECK(guide->toPlainText().startsWith("Mesh2Cad user guide"));
+    guide->setSource(guide->source().resolved(QUrl("export.md")));
+    CHECK(guide->toPlainText().startsWith("Export"));
+    help->trigger(); // the same window again
+    CHECK(window.findChildren<QTextBrowser*>("userGuide").size() == 1);
+}
+
 TEST_CASE("A 10M-triangle scan loads and orbits at 30 fps", "[.][perf][app]") {
     application();
     const TempDir dir;
