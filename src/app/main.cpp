@@ -2,7 +2,8 @@
 // mesh2cad-app: the desktop app (ARCHITECTURE.md section 9).
 //
 //   mesh2cad-app [files...]                 open meshes (.stl .obj .ply) or a project (.m2c)
-//   mesh2cad-app --screenshot out.png FILE  render FILE, save the viewport and quit (CI smoke test)
+//   mesh2cad-app --screenshot out.png FILE  render FILE, save the viewport and quit (CI smoke
+//                                           test); exits 2 when the driver has no OpenGL 3.3
 
 #include <QApplication>
 #include <QCommandLineOption>
@@ -15,6 +16,7 @@
 
 #include "Engine.h"
 #include "MainWindow.h"
+#include "Viewport.h"
 
 int main(int argc, char* argv[]) {
     // The viewport needs OpenGL 3.3 core; set it before the application creates any context.
@@ -48,6 +50,11 @@ int main(int argc, char* argv[]) {
 
     m2c::app::Engine engine;
     m2c::app::MainWindow window(engine);
+    QString noGl; // why the viewport cannot draw, if it cannot
+    QObject::connect(window.viewport(),
+                     &m2c::app::Viewport::glUnavailable,
+                     &app,
+                     [&noGl](const QString& reason) { noGl = reason; });
     if (!parser.isSet(noServer) && !parser.isSet(screenshot)) {
         emit engine.logLine(engine.startLocalServer(), false);
     }
@@ -68,8 +75,11 @@ int main(int argc, char* argv[]) {
             window.viewport()->fitAll();
             QTimer::singleShot(300, &app, [&] {
                 const QImage image = window.viewport()->grabFramebuffer();
-                if (image.isNull()) {
-                    qCritical("--screenshot: the viewport has no picture (no OpenGL 3.3 context?)");
+                if (!noGl.isEmpty()) {
+                    qCritical("--screenshot: %s", qPrintable(noGl));
+                    QApplication::exit(2);
+                } else if (image.isNull()) {
+                    qCritical("--screenshot: the viewport has no picture");
                     QApplication::exit(1);
                 } else if (!image.save(out)) {
                     qCritical("--screenshot: could not write %s", qPrintable(out));

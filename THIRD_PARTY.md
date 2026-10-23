@@ -31,6 +31,7 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 | CPack (part of CMake) | BSD-3-Clause | Installers and archives (`cmake/Mesh2CadPackaging.cmake`) |
 | [NSIS](https://nsis.sourceforge.io) | zlib (its installer stub is part of the Windows installer) | Windows installer |
 | [install-qt-action](https://github.com/jurplel/install-qt-action) and aqtinstall | MIT | A prebuilt Qt for the Windows installer build in CI |
+| [Mesa](https://www.mesa3d.org) for Windows ([mesa-dist-win](https://github.com/pal1000/mesa-dist-win) 24.3.4, pinned by hash) | MIT | Software OpenGL for the app smoke test on the GPU-less Windows CI machine; not shipped |
 
 ## Planned (not yet used; each needs its decision record before first use)
 

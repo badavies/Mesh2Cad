@@ -147,6 +147,8 @@ signals:
     void measured(m2c::app::Hit a, m2c::app::Hit b);
     void hoverChanged(const QString& text);
     void brushRadiusChanged(double mm);
+    /// The graphics driver gives no OpenGL 3.3 core context, so the viewport stays blank.
+    void glUnavailable(const QString& reason);
 
 protected:
     void initializeGL() override;

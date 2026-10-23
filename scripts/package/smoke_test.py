@@ -14,8 +14,10 @@ Checks, each printed as it passes:
   Instant Meshes and oneTBB from the install;
 - mesh2cad-rpc answers rpc.hello and a command;
 - mesh2cad-mcp answers initialize, lists the tools and calls one;
-- mesh2cad-app renders an example mesh to a PNG and quits (--screenshot), unless --no-app; on
-  Linux run it under a display (xvfb-run), on Windows it uses Qt's software OpenGL.
+- mesh2cad-app renders an example mesh to a PNG and quits (--screenshot), unless --no-app. It
+  needs a display and OpenGL 3.3: xvfb-run on Linux, and on a Windows machine without a GPU
+  Mesa's opengl32.dll next to it (the Packages workflow does that). On Linux it also checks that
+  the app says so, instead of crashing, when the driver has no OpenGL 3.3.
 - the licence, third-party notes and command reference are installed.
 
 Exits with 1 at the first failure.
@@ -120,17 +122,21 @@ def main() -> int:
 
     if not args.no_app:
         png = work / "cube.png"
-        env = dict(os.environ)
-        if os.name == "nt":
-            env["QT_OPENGL"] = "software"  # CI machines have no OpenGL 3.3 driver
-            env["QT_FORCE_STDERR_LOGGING"] = "1"  # a GUI program's warnings go to the debugger
-        run = subprocess.run([program(args.bin, "mesh2cad-app"), "--screenshot", str(png),
-                              str(examples / "cube.stl")],
-                             capture_output=True, text=True, timeout=TIMEOUT, env=env)
+        app = [program(args.bin, "mesh2cad-app"), "--screenshot", str(png),
+               str(examples / "cube.stl")]
+        env = dict(os.environ, QT_FORCE_STDERR_LOGGING="1")  # Windows sends them to the debugger
+        run = subprocess.run(app, capture_output=True, text=True, timeout=TIMEOUT, env=env)
         check(run.returncode == 0 and png.is_file() and png.stat().st_size > 1000,
               "mesh2cad-app renders a mesh",
               f"exit {run.returncode:#x}, {'a' if png.is_file() else 'no'} picture\n"
               + run.stdout[-2000:] + run.stderr[-2000:])
+        if os.name != "nt":
+            # Mesa, which xvfb-run uses, can pretend to be a driver with only OpenGL 3.0.
+            run = subprocess.run(app, capture_output=True, text=True, timeout=TIMEOUT,
+                                 env=dict(env, MESA_GL_VERSION_OVERRIDE="3.0"))
+            check(run.returncode == 2 and "OpenGL 3.3" in run.stderr,
+                  "mesh2cad-app says so when OpenGL 3.3 is missing",
+                  f"exit {run.returncode:#x}\n" + run.stderr[-2000:])
 
     print(f"Mesh2Cad {args.version} works from {args.bin}")
     return 0

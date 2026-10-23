@@ -156,6 +156,10 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
     connect(viewport_, &Viewport::measured, this, &MainWindow::onMeasured);
     connect(viewport_, &Viewport::hoverChanged, hover_, &QLabel::setText);
     connect(viewport_, &Viewport::brushRadiusChanged, brushRadius_, &QDoubleSpinBox::setValue);
+    connect(viewport_, &Viewport::glUnavailable, this, [this](const QString& reason) {
+        emit engine_.logLine(reason, true);
+        statusBar()->showMessage(reason);
+    });
 
     onDocumentChanged(engine_.snapshot());
     resize(1400, 900);
