@@ -123,11 +123,14 @@ def main() -> int:
         env = dict(os.environ)
         if os.name == "nt":
             env["QT_OPENGL"] = "software"  # CI machines have no OpenGL 3.3 driver
+            env["QT_FORCE_STDERR_LOGGING"] = "1"  # a GUI program's warnings go to the debugger
         run = subprocess.run([program(args.bin, "mesh2cad-app"), "--screenshot", str(png),
                               str(examples / "cube.stl")],
                              capture_output=True, text=True, timeout=TIMEOUT, env=env)
         check(run.returncode == 0 and png.is_file() and png.stat().st_size > 1000,
-              "mesh2cad-app renders a mesh", run.stdout[-2000:] + run.stderr[-2000:])
+              "mesh2cad-app renders a mesh",
+              f"exit {run.returncode:#x}, {'a' if png.is_file() else 'no'} picture\n"
+              + run.stdout[-2000:] + run.stderr[-2000:])
 
     print(f"Mesh2Cad {args.version} works from {args.bin}")
     return 0

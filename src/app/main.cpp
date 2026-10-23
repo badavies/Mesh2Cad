@@ -68,8 +68,15 @@ int main(int argc, char* argv[]) {
             window.viewport()->fitAll();
             QTimer::singleShot(300, &app, [&] {
                 const QImage image = window.viewport()->grabFramebuffer();
-                const bool saved = !image.isNull() && image.save(out);
-                QApplication::exit(saved ? 0 : 1);
+                if (image.isNull()) {
+                    qCritical("--screenshot: the viewport has no picture (no OpenGL 3.3 context?)");
+                    QApplication::exit(1);
+                } else if (!image.save(out)) {
+                    qCritical("--screenshot: could not write %s", qPrintable(out));
+                    QApplication::exit(1);
+                } else {
+                    QApplication::exit(0);
+                }
             });
         });
         poll->start(200);
