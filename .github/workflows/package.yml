@@ -157,8 +157,10 @@ jobs:
           $version = $installer.Name -replace '^mesh2cad-(.*)-windows-x64\.exe$', '$1'
           "MESH2CAD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
       # The runner has no GPU and Windows' own OpenGL is 1.1, so the app's viewport gets Mesa's
-      # software renderer (llvmpipe) for the test: the pinned mesa-dist-win build, next to the
-      # app, where Windows looks for opengl32.dll first. It is removed again before uninstalling.
+      # software renderer (llvmpipe) for the test, from the pinned mesa-dist-win build. Qt loads
+      # opengl32.dll only from System32, but with QT_OPENGL=software it loads opengl32sw.dll from
+      # the app's folder, so Mesa's opengl32.dll replaces the installed opengl32sw.dll (Qt's own
+      # has no OpenGL 3.3 core profile). Mesa's other DLLs are removed again before uninstalling.
       - name: Get Mesa's OpenGL for the test
         shell: pwsh
         run: |
@@ -168,9 +170,11 @@ jobs:
           if ($hash -ne "7EBC711AD1896AC88AB21E142F1017F8FF035F0F342BDB72FBB5E2EB881BA363") { throw "Mesa download hash $hash" }
           & "$env:ProgramFiles\7-Zip\7z.exe" e "$env:RUNNER_TEMP\mesa.7z" -o"$env:RUNNER_TEMP\mesa" x64\opengl32.dll x64\libgallium_wgl.dll x64\libglapi.dll
           if ($LASTEXITCODE -ne 0) { throw "7z failed" }
-          Copy-Item "$env:RUNNER_TEMP\mesa\*.dll" C:\Mesh2Cad\bin
+          Copy-Item "$env:RUNNER_TEMP\mesa\opengl32.dll" C:\Mesh2Cad\bin\opengl32sw.dll -Force
+          Copy-Item "$env:RUNNER_TEMP\mesa\libgallium_wgl.dll", "$env:RUNNER_TEMP\mesa\libglapi.dll" C:\Mesh2Cad\bin
       - name: Smoke test
         env:
+          QT_OPENGL: software
           GALLIUM_DRIVER: llvmpipe
         run: >-
           python scripts/package/smoke_test.py --bin C:\Mesh2Cad\bin --docs C:\Mesh2Cad\doc
@@ -178,7 +182,7 @@ jobs:
       - name: Uninstall
         shell: pwsh
         run: |
-          Remove-Item C:\Mesh2Cad\bin\opengl32.dll, C:\Mesh2Cad\bin\libgallium_wgl.dll, C:\Mesh2Cad\bin\libglapi.dll
+          Remove-Item C:\Mesh2Cad\bin\libgallium_wgl.dll, C:\Mesh2Cad\bin\libglapi.dll
           Start-Process -FilePath C:\Mesh2Cad\Uninstall.exe -ArgumentList '/S' -Wait
           # The uninstaller copies itself to a temporary folder and returns at once.
           for ($i = 0; $i -lt 60 -and (Test-Path C:\Mesh2Cad\bin\mesh2cad.exe); $i++) { Start-Sleep 1 }

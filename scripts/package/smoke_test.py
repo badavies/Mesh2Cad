@@ -16,7 +16,8 @@ Checks, each printed as it passes:
 - mesh2cad-mcp answers initialize, lists the tools and calls one;
 - mesh2cad-app renders an example mesh to a PNG and quits (--screenshot), unless --no-app. It
   needs a display and OpenGL 3.3: xvfb-run on Linux, and on a Windows machine without a GPU
-  Mesa's opengl32.dll next to it (the Packages workflow does that). On Linux it also checks that
+  Mesa's opengl32.dll as its opengl32sw.dll with QT_OPENGL=software (the Packages workflow does
+  that). On Linux it also checks that
   the app says so, instead of crashing, when the driver has no OpenGL 3.3.
 - the licence, third-party notes and command reference are installed.
 
