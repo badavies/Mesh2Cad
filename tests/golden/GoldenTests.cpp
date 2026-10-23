@@ -214,7 +214,7 @@ void runGolden(const fs::path& folder) {
     for (const auto& step : steps) {
         INFO(step.command << " " << step.params.dump());
         const auto result = cli.registry.execute(cli.context, step.command, step.params);
-        REQUIRE(result.has_value());
+        if (!result) FAIL(result.error().message);
         results.push_back(*result);
     }
     const double seconds =
@@ -239,12 +239,12 @@ void runGolden(const fs::path& folder) {
         INFO(step.command << " " << step.params.dump());
         const Json reply =
             Json::parse(rpc.handleLine(rpcRequest(id++, step.command, step.params).dump()));
-        REQUIRE(reply.contains("result"));
+        if (!reply.contains("result")) FAIL(reply.dump());
         const Json called = *mcp.handle(
             rpcRequest(id++,
                        "tools/call",
                        {{"name", McpServer::toolName(step.command)}, {"arguments", step.params}}));
-        REQUIRE(called["result"]["isError"] == false);
+        if (called["result"]["isError"] != false) FAIL(called.dump());
     }
 
     // Identical documents: same objects, and bit-identical meshes (same platform and build).
@@ -280,7 +280,7 @@ void runGolden(const fs::path& folder) {
             const std::string command = check.at("command").get<std::string>();
             auto queried = cli.registry.execute(
                 cli.context, command, resolvePaths(folder, check.value("params", Json::object())));
-            REQUIRE(queried.has_value());
+            if (!queried) FAIL(queried.error().message);
             result = std::move(*queried);
         }
         for (const auto& [pointer, expected] : check.at("expect").items()) {
