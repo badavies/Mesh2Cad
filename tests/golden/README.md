@@ -27,7 +27,7 @@ To keep the whole golden set somewhere else, point `M2C_GOLDEN_DIR` at a folder 
 
 ## File formats
 
-`session.jsonl` uses the format of `mesh2cad batch` and of the app's session log, so a session recorded in the app can be copied in. Relative paths, in the session and in the checks, are resolved against the scan folder. Files a session writes should be named `scan.*` (for example `scan.step`), which keeps them out of Git; the STEP file is the one to take through `docs/FUSION_CHECKLIST.md`.
+`session.jsonl` uses the format of `mesh2cad batch` and of the app's session log, so a session recorded in the app can be copied in. Relative paths, in the session and in the checks, are resolved against the scan folder. Files a session writes should be named `scan.*` (for example `scan.step`), which keeps them out of Git; the STEP file is the one to take through `docs/FUSION_CHECKLIST.md`, and a GLB written with `solid.export.mesh` the one for `docs/BLENDER_CHECKLIST.md`.
 
 ```
 {"command":"mesh.import","params":{"path":"scan.obj"}}

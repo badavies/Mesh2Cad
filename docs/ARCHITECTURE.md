@@ -349,7 +349,7 @@ Geometry code fails in plausible-looking ways, so tests check measured outcomes 
 | Golden | Full pipeline on 5–10 real scans: controller, mouse, bottle, bracket, figurine (M1 set: DJI controller, Dewalt multitool, Siemens coffee machine lid, Tyranid figurine) | Before each milestone gate, on a machine with the scans (CI has none, ADR-025) | Valid single solid; deviation, face count, run time and memory within stored limits. Same-platform reruns must be bit-identical; Windows and Linux are compared by metrics only |
 | Export | Re-import every STEP with OCCT | Within golden and stage tests | `BRepCheck_Analyzer` valid, one closed solid |
 | Fuzz | STL, OBJ and PLY parsers with malformed input | Short run on every pull request; long run nightly under the sanitizers | No crash, no sanitizer error |
-| Manual | Golden STEP files opened in Fusion 360; GLB files opened in Blender | At each milestone gate | Written checklist signed off |
+| Manual | Golden STEP files opened in Fusion 360; GLB files opened in Blender | At each milestone gate | Written checklists signed off (`docs/FUSION_CHECKLIST.md`, `docs/BLENDER_CHECKLIST.md`); CI imports test GLB files into Blender (`scripts/blender/check_exports.py`) |
 
 **Golden metrics are versioned.** Each golden scan has a metrics file in the repository. A change that worsens a metric beyond its threshold fails. Updating a stored threshold is a separate, human-reviewed commit that explains why.
 
