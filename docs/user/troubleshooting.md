@@ -17,6 +17,7 @@ When a command fails, it changes nothing: the document stays as it was and no fi
 | `every loop but the largest must be a hole in it` (from `solid.extrude`) | The section cut through a hole or across separate pieces. | Move the section plane (`offset_mm`) so the cut gives one outer loop. |
 | `... is not closed (... open and ... non-manifold edges); nothing was written` (from `solid.export.mesh`) | The triangulation didn't close, usually because the solid has gaps where faces meet. | Check the solid with `solid.info` (`free_edges` should be 0), then try a smaller `chord_mm`. |
 | `cancelled` | You pressed **Cancel**, or a script or agent cancelled the command. | Run it again when you are ready. Nothing was changed. |
+| `The viewport needs OpenGL 3.3, which this graphics driver does not provide` (in the app's log and status bar) | The graphics driver is too old, or the app runs in a virtual machine or over Remote Desktop without 3D acceleration. The viewport stays blank. | Update the graphics driver, or turn on 3D acceleration in the virtual machine. Every command still works from the **Tools** menu, the command line and agents. |
 
 ## The solid looks wrong in Fusion 360
 
