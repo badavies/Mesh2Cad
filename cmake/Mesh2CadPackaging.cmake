@@ -10,18 +10,37 @@ if(TARGET mesh2cad-app)
 endif()
 
 if(WIN32)
-    # Everything in bin, as Windows looks for DLLs next to the executable. The DLLs come from the
-    # dependency set below; Qt's are left to windeployqt, which also copies its plugins.
-    install(TARGETS ${m2c_programs} RUNTIME_DEPENDENCY_SET m2c_runtime RUNTIME DESTINATION bin)
-    set(m2c_dll_dirs "${CMAKE_BINARY_DIR}/src/cli") # where m2c_copy_runtime copied them
+    # Everything in bin, as Windows looks for DLLs next to the executable. The DLLs are found the
+    # way Windows finds them; Qt's are left to windeployqt, which also copies its plugins.
+    install(TARGETS ${m2c_programs} RUNTIME DESTINATION bin)
+    set(m2c_exes)
+    foreach(program IN LISTS m2c_programs)
+        list(APPEND m2c_exes "$<TARGET_FILE:${program}>")
+    endforeach()
+    set(m2c_dll_dirs)
     if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
         list(APPEND m2c_dll_dirs "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin")
     endif()
-    install(RUNTIME_DEPENDENCY_SET m2c_runtime
-        PRE_EXCLUDE_REGEXES "^api-ms-" "^ext-ms-" "^[Qq]t6"
-        POST_EXCLUDE_REGEXES "[/\\\\][Ss]ystem32[/\\\\]" "[/\\\\][Ww]indows[/\\\\]"
-        DIRECTORIES ${m2c_dll_dirs}
-        DESTINATION bin)
+    # Not install(RUNTIME_DEPENDENCY_SET): each program's folder has its own copy of the DLLs
+    # (m2c_copy_runtime, vcpkg), which it reports as conflicting paths. The copies are the same
+    # files, so the first is installed.
+    install(CODE "
+        file(GET_RUNTIME_DEPENDENCIES
+            EXECUTABLES ${m2c_exes}
+            DIRECTORIES ${m2c_dll_dirs}
+            PRE_EXCLUDE_REGEXES \"^api-ms-\" \"^ext-ms-\" \"^[Qq]t6\"
+            POST_EXCLUDE_REGEXES \"[/\\\\\\\\][Ss]ystem32[/\\\\\\\\]\" \"[/\\\\\\\\][Ww]indows[/\\\\\\\\]\"
+            RESOLVED_DEPENDENCIES_VAR m2c_dlls
+            UNRESOLVED_DEPENDENCIES_VAR m2c_missing
+            CONFLICTING_DEPENDENCIES_PREFIX m2c_conflict)
+        if(m2c_missing)
+            message(FATAL_ERROR \"DLLs not found: \${m2c_missing}\")
+        endif()
+        foreach(name IN LISTS m2c_conflict_FILENAMES)
+            list(GET m2c_conflict_\${name} 0 first)
+            list(APPEND m2c_dlls \"\${first}\")
+        endforeach()
+        file(INSTALL \${m2c_dlls} DESTINATION \"\${CMAKE_INSTALL_PREFIX}/bin\")")
     if(TARGET mesh2cad-app AND M2C_WINDEPLOYQT)
         install(CODE "
             execute_process(
