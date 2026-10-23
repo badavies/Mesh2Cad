@@ -9,6 +9,7 @@
 #include <QMouseEvent>
 #include <QObject>
 #include <QOpenGLContext>
+#include <QOpenGLFunctions>
 #include <QOpenGLShader>
 #include <QOpenGLWidget>
 #include <QPainter>
@@ -294,12 +295,16 @@ void Viewport::cleanupGl() {
 void Viewport::initializeGL() {
     if (!initializeOpenGLFunctions()) {
         qWarning("OpenGL 3.3 core is not available");
+        emit glUnavailable(tr("The viewport needs OpenGL 3.3, which this graphics driver does not "
+                              "provide, so it cannot draw. Commands, scripts and agents still "
+                              "work. Updating the graphics driver usually fixes it."));
         return;
     }
     program_.addShaderFromSourceCode(QOpenGLShader::Vertex, kVertexShader);
     program_.addShaderFromSourceCode(QOpenGLShader::Fragment, kFragmentShader);
     if (!program_.link()) {
         qWarning("shader link failed: %s", qPrintable(program_.log()));
+        emit glUnavailable(tr("The viewport's shaders failed to build: %1").arg(program_.log()));
         return;
     }
     glGetIntegerv(GL_MAX_TEXTURE_BUFFER_SIZE, &maxTextureBuffer_);
@@ -676,13 +681,21 @@ void Viewport::syncGpu() {
 // ---- Drawing ----------------------------------------------------------------------------------
 
 void Viewport::paintGL() {
+    if (!glReady_) {
+        // Only the context's OpenGL 1 functions can be called: the 3.3 ones did not load.
+        if (QOpenGLContext* gl = context()) {
+            gl->functions()->glClearColor(0.17f, 0.18f, 0.20f, 1.0f);
+            gl->functions()->glClear(GL_COLOR_BUFFER_BIT);
+        }
+        return;
+    }
     if (fitPending_ && snapshot_) {
         fitPending_ = false;
         if (const Aabb box = visibleBounds(); box.min.x <= box.max.x) camera_.fit(box);
     }
     glClearColor(0.17f, 0.18f, 0.20f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    if (glReady_ && snapshot_) {
+    if (snapshot_) {
         syncGpu();
         glEnable(GL_DEPTH_TEST);
         if (showBackFaces_) {

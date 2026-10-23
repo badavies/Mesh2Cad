@@ -39,3 +39,5 @@ if(MESH2CAD_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()
+
+include(Mesh2CadPackaging)

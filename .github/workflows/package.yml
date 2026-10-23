@@ -1,0 +1,189 @@
+name: Packages
+
+# Builds the installers (issue #122) and installs each one on a clean machine: the .deb on Ubuntu
+# and the NSIS installer on Windows, then smoke-tests and uninstalls it. The packages are kept as
+# workflow artifacts. Pull requests run it only when the packaging changes; it runs on every push
+# to main and on version tags.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - CMakeLists.txt
+      - cmake/Mesh2CadPackaging.cmake
+      - packaging/**
+      - scripts/package/**
+      - .github/workflows/package.yml
+  workflow_dispatch:
+  workflow_call:
+
+concurrency:
+  group: package-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VCPKG_DISABLE_METRICS: "1"
+  VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+
+jobs:
+  linux:
+    name: Linux .deb and .tar.gz
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      # The system libraries, which the .deb then depends on (found by dpkg-shlibdeps).
+      - name: Install Qt, CGAL, Eigen, Open CASCADE, OpenSubdiv and oneTBB
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build qt6-base-dev libgl1-mesa-dev libcgal-dev libeigen3-dev \
+            libocct-data-exchange-dev libtbb-dev libosd-dev dpkg-dev
+      - name: Configure
+        run: >-
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
+          -DMESH2CAD_WARNINGS_AS_ERRORS=ON -DMESH2CAD_BUILD_APP=ON -DMESH2CAD_BUILD_TESTS=OFF
+      - name: Build
+        run: cmake --build build
+      - name: Package
+        working-directory: build
+        run: cpack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-linux
+          path: |
+            build/*.deb
+            build/*.tar.gz
+            build/*.sha256
+
+  linux-install:
+    name: Install on a clean Ubuntu 24.04
+    needs: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/package
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-linux
+          path: packages
+      - name: Install the .deb (apt pulls in its dependencies)
+        run: sudo apt-get update && sudo apt-get install -y ./packages/*.deb xvfb
+      - name: Smoke test
+        run: >-
+          xvfb-run -a -s "-screen 0 1280x800x24" python3 scripts/package/smoke_test.py
+          --bin /usr/bin --docs /usr/share/mesh2cad
+          --version "$(dpkg-query -W -f='${Version}' mesh2cad)"
+      - name: Uninstall
+        run: |
+          sudo apt-get remove -y mesh2cad
+          test ! -e /usr/bin/mesh2cad && test ! -e /usr/bin/mesh2cad-app && test ! -e /usr/share/mesh2cad
+
+  windows:
+    name: Windows installer and .zip
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      # The vcpkg packages the CI build job cached for this preset; restored only, never saved
+      # from here.
+      - uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-windows-msvc-release-${{ hashFiles('vcpkg.json') }}-
+          restore-keys: |
+            vcpkg-windows-msvc-release-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-windows-msvc-release-
+      - name: Set up the MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      # A prebuilt Qt for MSVC 2022 instead of vcpkg's `app` feature, which builds Qt from source.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.3"
+          arch: win64_msvc2022_64
+          cache: true
+      - name: Get vcpkg
+        shell: bash
+        run: |
+          mkdir -p .vcpkg-cache
+          git clone https://github.com/microsoft/vcpkg.git "$RUNNER_TEMP/vcpkg"
+          "$RUNNER_TEMP/vcpkg/bootstrap-vcpkg.bat" -disableMetrics
+          echo "VCPKG_ROOT=$RUNNER_TEMP/vcpkg" >> "$GITHUB_ENV"
+      - name: Make sure NSIS is installed
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            if (-not (Test-Path "${env:ProgramFiles(x86)}\NSIS\makensis.exe")) { choco install nsis -y }
+            "${env:ProgramFiles(x86)}\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append
+          }
+      - name: Configure
+        shell: bash
+        run: >-
+          cmake --preset windows-msvc-release -DMESH2CAD_BUILD_APP=ON -DMESH2CAD_BUILD_TESTS=OFF
+          -DCMAKE_PREFIX_PATH="$(cygpath -m "$QT_ROOT_DIR")"
+      - name: Build
+        run: cmake --build --preset windows-msvc-release
+      - name: Package
+        working-directory: build/windows-msvc-release
+        run: cpack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages-windows
+          path: |
+            build/windows-msvc-release/*.exe
+            build/windows-msvc-release/*.zip
+            build/windows-msvc-release/*.sha256
+
+  windows-install:
+    name: Install on a clean Windows Server 2022
+    needs: windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/package
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages-windows
+          path: packages
+      - name: Install silently
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem packages\*.exe | Select-Object -First 1
+          Start-Process -FilePath $installer.FullName -ArgumentList '/S', '/D=C:\Mesh2Cad' -Wait
+          if (-not (Test-Path C:\Mesh2Cad\bin\mesh2cad.exe)) { throw "not installed" }
+          $version = $installer.Name -replace '^mesh2cad-(.*)-windows-x64\.exe$', '$1'
+          "MESH2CAD_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append
+      # The runner has no GPU and Windows' own OpenGL is 1.1, so the app's viewport gets Mesa's
+      # software renderer (llvmpipe) for the test, from the pinned mesa-dist-win build. Qt loads
+      # opengl32.dll only from System32, but with QT_OPENGL=software it loads opengl32sw.dll from
+      # the app's folder, so Mesa's opengl32.dll replaces the installed opengl32sw.dll (Qt's own
+      # has no OpenGL 3.3 core profile). Mesa's other DLLs are removed again before uninstalling.
+      - name: Get Mesa's OpenGL for the test
+        shell: pwsh
+        run: |
+          $url = "https://github.com/pal1000/mesa-dist-win/releases/download/24.3.4/mesa3d-24.3.4-release-msvc.7z"
+          Invoke-WebRequest $url -OutFile "$env:RUNNER_TEMP\mesa.7z"
+          $hash = (Get-FileHash "$env:RUNNER_TEMP\mesa.7z" -Algorithm SHA256).Hash
+          if ($hash -ne "7EBC711AD1896AC88AB21E142F1017F8FF035F0F342BDB72FBB5E2EB881BA363") { throw "Mesa download hash $hash" }
+          & "$env:ProgramFiles\7-Zip\7z.exe" e "$env:RUNNER_TEMP\mesa.7z" -o"$env:RUNNER_TEMP\mesa" x64\opengl32.dll x64\libgallium_wgl.dll x64\libglapi.dll
+          if ($LASTEXITCODE -ne 0) { throw "7z failed" }
+          Copy-Item "$env:RUNNER_TEMP\mesa\opengl32.dll" C:\Mesh2Cad\bin\opengl32sw.dll -Force
+          Copy-Item "$env:RUNNER_TEMP\mesa\libgallium_wgl.dll", "$env:RUNNER_TEMP\mesa\libglapi.dll" C:\Mesh2Cad\bin
+      - name: Smoke test
+        env:
+          QT_OPENGL: software
+          GALLIUM_DRIVER: llvmpipe
+        run: >-
+          python scripts/package/smoke_test.py --bin C:\Mesh2Cad\bin --docs C:\Mesh2Cad\doc
+          --version ${{ env.MESH2CAD_VERSION }}
+      - name: Uninstall
+        shell: pwsh
+        run: |
+          Remove-Item C:\Mesh2Cad\bin\libgallium_wgl.dll, C:\Mesh2Cad\bin\libglapi.dll
+          Start-Process -FilePath C:\Mesh2Cad\Uninstall.exe -ArgumentList '/S' -Wait
+          # The uninstaller copies itself to a temporary folder and returns at once.
+          for ($i = 0; $i -lt 60 -and (Test-Path C:\Mesh2Cad\bin\mesh2cad.exe); $i++) { Start-Sleep 1 }
+          if (Test-Path C:\Mesh2Cad\bin\mesh2cad.exe) { throw "not uninstalled" }
