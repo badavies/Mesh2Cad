@@ -1,15 +1,14 @@
 # Mesh2Cad
 The app turns 3D scans of any shape, from a plain cube or machined bracket to organic, mostly non-flat objects such as a console game controller, into watertight solids that Fusion 360 opens as editable bodies, plus clean meshes for Blender
 
-Status: **M0 Foundations and M1 Mesh preparation are implemented**; their milestone gates (a 10M-triangle scan orbiting at 30 fps, golden scans, CI on both platforms) have not been signed off yet. What works today:
+Status: **version 1.0.0, milestones M0 to M5 implemented** ([`CHANGELOG.md`](CHANGELOG.md)). The v1.0 gate is signed off once the golden scans pass, along with the manual Fusion 360 and Blender checks (`docs/FUSION_CHECKLIST.md`, `docs/BLENDER_CHECKLIST.md`) and the installers tested on both platforms; see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 12 for where each stands. What it does:
 
-- **Desktop app** (`mesh2cad-app`, Qt 6): OpenGL viewport with orbit, pan, zoom and standard views; object list; brush, lasso and crease selection; point-to-point measurement; a form for every command; workflow panel; history with the source of each change; undo and redo; drag and drop.
-- **Import and export**: STL (binary and ASCII), OBJ, PLY (ASCII and binary); project files (`.m2c`) that keep meshes, selections, measurements, alignment and provenance.
-- **Mesh preparation**: repair (soup repair, orientation, stitching, degenerate and non-manifold fixes, optional self-intersection removal), hole filling with fairing, shell detection, splitting and cleanup, Taubin smoothing, simplification, isotropic remeshing, shrink-wrap, face deletion and flipping.
-- **Alignment and measuring**: principal-axes alignment, 3-2-1 datum alignment from selected faces, explicit transforms, reset to the scanned pose, plane fitting, snapped distance measurement.
+- **Mesh preparation**: STL, OBJ and PLY import; repair, hole filling, shell cleanup, smoothing, simplification, remeshing and shrink-wrap; datum, principal-axes and symmetry alignment; measurement.
+- **Organic parts**: a quad layout of the scan, fitted as B-spline surfaces and sewn into one watertight solid, with fairing, sharp edges, refinement where the fit is far from the scan, and a deviation colour map and report.
+- **Prismatic and hybrid parts**: segmentation into planes, cylinders, spheres and organic regions; exact plane, cylinder, sphere, cone and box fits trimmed into a solid; fillets at a fitted radius; section sketches, extrude, revolve and booleans.
+- **Export**: STEP AP242 for Fusion 360 and other CAD programs (read back and checked), and GLB, glTF, OBJ and STL meshes of a solid for Blender and 3D printing.
+- **Desktop app** (`mesh2cad-app`, Qt 6): viewport with selection tools, a form for every command, history with the source of each change, undo and redo, projects (`.m2c`), and the user guide under **Help**.
 - **Automation**: every action is a command available from the CLI (`mesh2cad`), JSON-RPC (`mesh2cad-rpc`, or the running app's local socket) and MCP (`mesh2cad-mcp`) for AI agents, with identical results. See [`docs/COMMANDS.md`](docs/COMMANDS.md).
-
-The CAD surfacing pipeline (M2 onwards) comes next; see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) section 12.
 
 The [user guide](docs/user/README.md) shows how to use Mesh2Cad, with example sessions you can run on the bundled test meshes. The app opens it from **Help > User guide**.
 

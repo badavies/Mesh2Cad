@@ -14,7 +14,8 @@ def main() -> int:
         print(__doc__)
         return 2
     out = subprocess.run([sys.argv[1], "list"], capture_output=True, text=True, check=True).stdout
-    commands = json.loads(out)["result"]["commands"]
+    listed = json.loads(out)["result"]
+    commands = listed["commands"]
     lines = [
         "# Commands",
         "",
@@ -22,6 +23,10 @@ def main() -> int:
         "Every command works the same from the desktop app (Tools menu), `mesh2cad run`/`batch`,",
         "JSON-RPC (`mesh2cad-rpc` or the app's local socket) and MCP (`mesh2cad-mcp`, where dots",
         "become underscores: `mesh.repair` is the tool `mesh_repair`).",
+        "",
+        f"Command API version {listed['api_version']}: the major number changes when a command or",
+        "parameter is removed or changes meaning, the minor number when one is added. `commands.list`",
+        "and `rpc.hello` report it.",
         "",
         "Lengths are millimetres; objects are referred to by id (see `doc.list`).",
         "",

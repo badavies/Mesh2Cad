@@ -8,7 +8,7 @@ stdin and stdout; the desktop app serves the same protocol on its local socket.
 
 - `m2c/rpc/RpcServer.h`: `RpcServer` (`handle`, `handleLine`, `authenticated` and the JSON-RPC error codes) and `rpcError`, which maps an `Error` to a JSON-RPC error object.
   - Every registered command is a method of the same name.
-  - `rpc.hello` reports the server name, version and whether a token is needed; `rpc.auth` checks the token and may name the client `source`.
+  - `rpc.hello` reports the server name, version, command API version (`api_version`) and whether a token is needed; `rpc.auth` checks the token and may name the client `source`.
   - A `doc.changed` notification with the new revision follows each request that changed the document.
   - While a request runs, each stage its command reports (`CommandContext::progress`) is sent as an `rpc.progress` notification `{"id", "command", "stage", "fraction"?}` before the reply.
   - A request's id is its job id: `rpc.cancel` `{"id"}` asks the running request with that id to stop (`cancel`, `cancelAll`), and returns `{"cancelled"}`, whether one was running. The command stops at its next checkpoint and fails with -32800, `kCancelled`. `rpc.cancel` is safe to handle on another thread while a request runs (`isCancel`), so a transport answers it at once instead of queueing it behind the request.

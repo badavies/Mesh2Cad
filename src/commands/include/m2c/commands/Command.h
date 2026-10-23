@@ -17,6 +17,11 @@ namespace m2c {
 
 using Json = nlohmann::json;
 
+/// The command API's version, which `commands.list` and `rpc.hello` report. The major number
+/// changes when a command or parameter is removed or changes meaning (with a decision record),
+/// the minor number when one is added (ARCHITECTURE.md section 8).
+inline constexpr std::string_view kCommandApiVersion = "1.0";
+
 /// What a command may touch. Grows (job queue, progress) as later milestones need it.
 struct CommandContext {
     Document& document;

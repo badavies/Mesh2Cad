@@ -59,6 +59,7 @@ TEST_CASE("JSON-RPC requests, errors, notifications and batches", "[rpc]") {
 
     const Json hello = *server.handle(request(1, "rpc.hello"));
     CHECK(hello["result"]["server"] == "mesh2cad");
+    CHECK(hello["result"]["api_version"] == "1.0");
     CHECK(hello["result"]["auth_required"] == false);
 
     const Json list = *server.handle(request(2, "doc.list"));

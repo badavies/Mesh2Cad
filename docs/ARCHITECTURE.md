@@ -283,7 +283,7 @@ The UI is a thin shell over the document: Qt 6 Widgets for panels, a custom Open
 - **JSON channel.** JSON-RPC 2.0 over stdio (when a script or the MCP server launches a headless engine) or over a local socket or named pipe (to drive the running desktop app). Events are JSON-RPC notifications. No network listener; local connections need a per-session token.
 - **MCP server.** A separate thin process that talks to the engine over the JSON channel and exposes each command as an MCP tool with its schema and description. Mutating tools, and tools that write a file, are marked as such so MCP clients can ask the user before running them. `view.render` lets an agent see the document: it draws the visible objects to a PNG with a software rasteriser, and the MCP server returns the picture as an image.
 - **Session log and replay.** Every executed command is logged as one JSON line with its parameters. Replaying the log reproduces the result, which serves as bug reports, golden tests and simple macros.
-- **The command set is a public API.** Changes are additive. Renaming a command or breaking its schema needs a new version and a decision record.
+- **The command set is a public API.** Changes are additive. Renaming a command or breaking its schema needs a new version and a decision record. `commands.list` and `rpc.hello` report the version as `api_version` (1.0 from v1.0.0).
 
 **Working alongside an AI agent.** The main use of the JSON channel and MCP server is letting an AI agent and a person work on the same open project.
 
@@ -437,6 +437,18 @@ Gate criteria:
 - M2, deviation colour map and report: met. On the controller the 95th percentile is 0.78 mm and 70% of points are within 0.1 mm; the largest deviation, 26.2 mm, is at the two thumbstick posts, which the quad remesher drops as separate components (#25). The rest is the 2,000-quad cage smoothing over button detail. These values are stored as golden limits for M3 to tighten towards its 0.1 mm gate.
 - Housekeeping (section 11): done in this revision; the baseline for the next gate is `docs/BASELINE.md`.
 
+**Status at v1.0.0 (M5, 22 October 2026)**
+
+Built in M3 to M5 (by pull request in `CHANGELOG.md`): 63 registered commands (`docs/COMMANDS.md`), command API version 1.0. M3 added the conjugate-gradient cage fit with refinement where it stays far from the scan, open sheets and thickening, guide lines for the quad layout, checks for folded and self-crossing surfaces, sharp edges and fairing in `surface.build`, cancel for long commands, and oneTBB (ADR-036). M4 added segmentation, primitive and box fits, `primitive.align`, trimming, booleans, section sketches with extrude and revolve, fitted fillets, deviation hotspots and `view.render`. M5 added `solid.export.mesh` (GLB, glTF, OBJ and STL from Open CASCADE's triangulation, ADR-037), the Blender check in CI, installers for Windows and Ubuntu 24.04 tested on clean machines (`.github/workflows/package.yml`), the user guide (`docs/user`, every session run as a test), and the release workflow (`.github/workflows/release.yml`, which drafts a GitHub release for a `v*` tag).
+
+Gate criteria:
+
+- M5, GLB opens cleanly in Blender: CI imports four test solids as GLB and glTF into Blender 4.0 and checks their size, normals and closure; the Khronos glTF validator reports no errors or warnings on the box and controller files. `docs/BLENDER_CHECKLIST.md` on the golden scans is still to be signed off.
+- M5, installers tested on both platforms: CI installs, smoke-tests and uninstalls the `.deb` on a clean Ubuntu 24.04 and the NSIS installer on a clean Windows Server 2022. A run on a Windows 10 or 11 desktop is still to be recorded.
+- M5, docs complete: met; `docs/user` covers every stage, and the `user_guide` test runs its 12 sessions.
+- Before tagging v1.0.0: the golden scans re-run (not re-run since #114 to #119 changed `surface.build`'s defaults), the Fusion 360 zebra check for #36, and the changelog dated.
+- Housekeeping (section 11): done in this revision; the baseline is `docs/BASELINE.md`.
+
 ## 13. Risks and open decisions
 
 The biggest technical risk is the surfacing stage producing small gaps or kinks, which makes Fusion import loose surfaces instead of a solid. M2 exists to expose that risk early.
@@ -453,7 +465,7 @@ The biggest technical risk is the surfacing stage producing small gaps or kinks,
 | A dependency turns out not to be GPL v3 compatible | Cannot distribute | `THIRD_PARTY.md` review on every new dependency |
 | Scope drift, including from AI tools | Unfinished, hard-to-maintain code | Non-goals in section 1, AI rules in section 11, milestone gates |
 
-**Control channel risks.** The JSON channel and MCP server let other programs, including AI agents, change and save work. Mitigations: local connections only with a per-session token, mutating and file-writing commands marked so MCP clients confirm them, file writes only to paths the caller passes and shown in the app's log, and the session log as a full audit trail. A second risk is the command API freezing too early; treat it as unstable (version 0.x) until the end of M3.
+**Control channel risks.** The JSON channel and MCP server let other programs, including AI agents, change and save work. Mitigations: local connections only with a per-session token, mutating and file-writing commands marked so MCP clients confirm them, file writes only to paths the caller passes and shown in the app's log, and the session log as a full audit trail. A second risk is the command API freezing too early; it was treated as unstable (version 0.x) until v1.0.0, which made it version 1.0, with additive changes only within 1.x (`src/commands/README.md`).
 
 **Open decisions**
 

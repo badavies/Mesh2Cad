@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "mesh2cad",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "builtin-baseline": "44ccfd88b3eca6929d6d16398c7b19945c29a5f6",
   "dependencies": [
     "nlohmann-json",
