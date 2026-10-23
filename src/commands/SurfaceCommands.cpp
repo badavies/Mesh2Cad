@@ -114,7 +114,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "max_samples":{"type":"integer","minimum":100,"maximum":10000000,"default":60000,"description":"Mesh points used for fitting: its vertices (evenly thinned beyond this), plus points across triangles longer than a third of a cage edge, as a coarse mesh has, within the same number."},
                 "max_sample_distance_mm":{"type":"number","minimum":0,"default":0,"description":"Mesh points farther than this from the surface are left out of the fit (parts the cage does not cover); 0 = the mean cage edge length."},
                 "isolation_level":{"type":"integer","minimum":1,"maximum":4,"default":2,"description":"Refinement around irregular vertices: higher gives smaller caps and more faces' pieces."},
-                "crease_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":60,"description":"Of a closed cage: edges where its faces turn by more than this stay sharp edges of the surface (a part's sharp edges, once quad.remesh crease_angle_deg has aligned the cage to them); 0 = smooth everywhere."},
+                "crease_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":0,"description":"Of a closed cage: edges where its faces turn by more than this stay sharp edges of the surface. Use the angle quad.remesh crease_angle_deg aligned the cage with; 0 = smooth everywhere, as an organic part needs."},
                 "merge":{"type":"boolean","default":true,"description":"Merge rectangles of cage quads into one face each (fewer faces, same surface)."},
                 "check_crossing":{"type":"boolean","default":true,"description":"Check that no two faces of the result cross each other, and fail if any do. Takes seconds to a minute; turn it off for quick trials."},
                 "refine_to_mm":{"type":"number","minimum":0,"default":0,"description":"While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off."},
@@ -143,7 +143,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(name, optionalString(params, "name"));
             M2C_TRY(merge, optionalBool(params, "merge", true));
             p.merge = *merge;
-            M2C_TRY(creaseAngle, optionalNumber(params, "crease_angle_deg", 60.0, 0.0, 180.0));
+            M2C_TRY(creaseAngle, optionalNumber(params, "crease_angle_deg", 0.0, 0.0, 180.0));
             p.creaseAngleDeg = *creaseAngle;
             M2C_TRY(checkCrossing, optionalBool(params, "check_crossing", true));
             p.checkCrossing = *checkCrossing;

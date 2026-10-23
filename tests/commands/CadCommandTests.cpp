@@ -172,11 +172,12 @@ TEST_CASE("surface.build keeps a sharp-edged block's edges sharp", "[commands][s
     const ObjectId truth = s.import(dir, makeBlockWithHole(30, 30, 10, 6, 32, 10, 10), "truth");
     const auto cage = s.document.add("cage", QuadLayoutData{blockWithHoleCage(30, 30, 10, 6)});
     REQUIRE(cage);
-    const Json sharp = s.run("surface.build", {{"id", *cage}, {"mesh_id", block}});
+    const Json sharp =
+        s.run("surface.build", {{"id", *cage}, {"mesh_id", block}, {"crease_angle_deg", 60}});
     CHECK(sharp["sharp_edges"] == 140);
     CHECK(sharp["seams"]["max_normal_angle_deg"].get<double>() < 10.0);
-    const Json smooth =
-        s.run("surface.build", {{"id", *cage}, {"mesh_id", block}, {"crease_angle_deg", 0}});
+    // Sharp edges are asked for: by default the surface is smooth everywhere.
+    const Json smooth = s.run("surface.build", {{"id", *cage}, {"mesh_id", block}});
     CHECK(smooth["sharp_edges"] == 0);
     const auto worst = [&s, truth](const Json& built) {
         const Json stats =

@@ -740,6 +740,7 @@ TEST_CASE("A cage's sharp edges stay sharp when subdivided", "[stages][surface]"
     // out, so they show no fold.
     SurfaceBuildParams p;
     p.fit = false;
+    p.creaseAngleDeg = 60.0;
     const auto box = buildSurface(cube, nullptr, p);
     REQUIRE(box);
     CHECK(box->sharpEdges == 12);
@@ -811,6 +812,7 @@ TEST_CASE("A noisy block with a hole keeps its sharp edges", "[stages][surface]"
           // A coarse mesh, as a CAD export is: long triangles across the sides.
           std::pair{addNoise(makeBlockWithHole(30, 30, 10, 6, 4, 1, 1), 0.15), 0.3}}) {
         SurfaceBuildParams p;
+        p.creaseAngleDeg = 60.0;
         const auto sharp = buildSurface(cage, &scan, p);
         REQUIRE(sharp);
         CHECK(sharp->sharpEdges == 140);
@@ -843,7 +845,9 @@ TEST_CASE("Sharp edges of the cage that the scan does not have stay smooth", "[s
         QuadLayout::create(std::move(moved), aligned.faceStarts(), aligned.faceVertices());
     REQUIRE(distorted);
     REQUIRE(sharpCageEdges(*distorted, 60.0).size() > 140);
-    const auto built = buildSurface(*distorted, &scan, SurfaceBuildParams{});
+    SurfaceBuildParams p;
+    p.creaseAngleDeg = 60.0;
+    const auto built = buildSurface(*distorted, &scan, p);
     REQUIRE(built);
     CHECK(built->sharpEdges == 140);
     CHECK(built->fit.p95DistanceMm < 0.2);
