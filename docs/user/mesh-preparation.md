@@ -17,6 +17,19 @@ Surfacing needs a closed, clean mesh that sits square to the origin. Scans rarel
 
 Before the repair this box has 3 boundary edges and non-manifold edges. Afterwards it is watertight, and `shells.detect` lists the box and two small loose parts.
 
+## Spikes and tunnels
+
+Stray points in a scan leave small spikes standing out of the surface, slivers folded back on themselves, and small tunnels: a strap of surface bridging over the scan, or a tube running through it. `select.defects` finds those with at most `max_faces` faces (200 by default) and puts their faces in one selection. Delete them (**Edit > Delete selected faces**, or `faces.delete`), then fill the holes. Run it again afterwards to pick up anything the first pass left. In the app it is the step after **Repair** in the **Workflow** panel. Run `mesh.repair` first, because the search needs a manifold mesh with every face turned the same way.
+
+A spike starts at a tip or a fold. At a tip, the corners of the faces around a vertex add up to less than `tip_angle_deg` (150 by default; a smooth surface gives 360). At a fold, the normals of two neighbouring faces differ by more than `fold_angle_deg` (150). The selection also takes in the spike's steep sides. A tunnel is found from the surface's topology (a handle), not its shape. The selection is the smallest patch around it that holds the whole handle, so deleting the patch and filling the hole removes the tunnel.
+
+`max_faces` counts faces, so what it means depends on how fine the mesh is. On a scan, real features have thousands of faces. On a coarse mesh they may not: the bracket's 10 mm hole is a tunnel of 75 faces, so the default would select it. With `max_faces` 50 it is left alone and counted in `too_large`:
+
+```jsonl
+{"command": "mesh.import", "params": {"path": "bracket.stl"}}
+{"command": "select.defects", "params": {"id": 1, "max_faces": 50}}
+```
+
 ## Holes
 
 `holes.fill` closes open boundaries with patches that blend into the surrounding surface. `max_edges` and `max_perimeter_mm` leave larger openings alone, so a real opening in the part stays open. In this example the three small holes in the wall are filled, and the 48-edge opening at the top is skipped:

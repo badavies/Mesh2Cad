@@ -257,6 +257,7 @@ void MainWindow::buildDocks() {
     };
     addStep(tr("1  Import scan…"), [this] { importMeshes(); });
     addStep(tr("2  Repair"), [this] { showTool("mesh.repair"); });
+    addStep(tr("    then select spikes and tunnels"), [this] { showTool("select.defects"); });
     addStep(tr("3  Fill holes"), [this] { showTool("holes.fill"); });
     addStep(tr("4  Remove small shells"), [this] { showTool("shells.clean"); });
     addStep(tr("5  Smooth"), [this] { showTool("mesh.smooth"); });

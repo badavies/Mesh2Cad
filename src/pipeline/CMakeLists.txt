@@ -3,6 +3,7 @@ m2c_add_library(pipeline
         Align.cpp
         FilletFit.cpp
         BoxFit.cpp
+        Defects.cpp
         Deviation.cpp
         Measure.cpp
         MeshTools.cpp

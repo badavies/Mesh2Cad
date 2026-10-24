@@ -18,7 +18,7 @@ You get four programs:
 
 - **Viewport**, in the middle. Orbit with a left drag (in Navigate mode) or a right drag (in any mode). Pan with a middle drag or Shift + left drag, and zoom with the wheel. Double-click a point to orbit around it. F fits everything in view, and Ctrl+1, Ctrl+3, Ctrl+7 and Ctrl+0 give the front, right, top and isometric views.
 - **Objects**, on the left, lists meshes, selections, measurements, quad layouts, solids, primitives, sketches and deviation maps, each with its id. Click an object to make it current: tool forms then fill in its id. Right-click an object to fit the view to it, rename it or show its details.
-- **Workflow**, on the left, gives the usual mesh preparation steps in order: import, repair, fill holes, remove small shells, smooth, simplify, align and save.
+- **Workflow**, on the left, gives the usual mesh preparation steps in order: import, repair, select spikes and tunnels, fill holes, remove small shells, smooth, simplify, align and save.
 - **Tool**, on the right, shows the form for the command you have chosen. Every command is in the **Tools** menu, grouped by kind.
 - **History**, on the right, lists each change with where it came from (the app, a script or an agent). **Edit > Undo** and **Edit > Redo** step through it.
 - **Log**, at the bottom, shows each command's result. While a long command runs (quad layout, surface build, deviation), the status bar shows its stage and a **Cancel** button.

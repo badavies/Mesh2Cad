@@ -478,6 +478,22 @@ Flood-fill from a face across edges flatter than an angle (selects a smooth regi
 | `name` | string |  | Name of a new selection. |
 | `selection_id` | selection id |  | Combine into this selection instead of creating a new one. |
 
+### `select.defects`
+
+Select small scan defects to delete before filling the holes: spikes (sharp tips and slivers folded back on themselves) and tunnels (small handles through the surface), each of at most max_faces faces. Run mesh.repair first. *(changes the document)*
+
+| Parameter | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `fold_angle_deg` | number |  | A fold is an edge whose two faces' normals differ by more than this. Default `150`. |
+| `id` | mesh id | yes |  |
+| `max_faces` | integer |  | Largest defect to select, in faces; bigger ones are left alone as real features. Default `200`. |
+| `mode` | `replace` \| `add` \| `subtract` |  | How to combine with selection_id (default add). |
+| `name` | string |  | Name of a new selection. |
+| `selection_id` | selection id |  | Combine into this selection instead of creating a new one. |
+| `spikes` | boolean |  | Default `true`. |
+| `tip_angle_deg` | number |  | A spike tip is a vertex whose face corners add up to less than this (360 on a smooth surface). Default `150`. |
+| `tunnels` | boolean |  | Default `true`. |
+
 ### `select.grow`
 
 Grow a selection by rings of neighbouring faces. *(changes the document)*

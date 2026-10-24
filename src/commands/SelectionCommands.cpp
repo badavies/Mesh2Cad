@@ -17,6 +17,7 @@
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
+#include "m2c/pipeline/Defects.h"
 #include "m2c/pipeline/Select.h"
 #include "m2c/pipeline/Shells.h"
 
@@ -225,6 +226,40 @@ void addSelectionCommands(std::vector<Command>& out) {
                         return storeSelection(
                             context, *mesh, shellFaces(report, {report.faceShell[*face]}), params);
                     }));
+
+    out.push_back(makeCommand(
+        "select.defects",
+        "Select small scan defects to delete before filling the holes: spikes (sharp tips and "
+        "slivers folded back on themselves) and tunnels (small handles through the surface), each "
+        "of at most max_faces faces. Run mesh.repair first.",
+        R"({"type":"object","properties":{
+            "id":{"type":"integer","x-object":"mesh","minimum":0},
+            "max_faces":{"type":"integer","minimum":1,"maximum":100000,"default":200,"description":"Largest defect to select, in faces; bigger ones are left alone as real features."},
+            "spikes":{"type":"boolean","default":true},
+            "tunnels":{"type":"boolean","default":true},
+            "tip_angle_deg":{"type":"number","exclusiveMinimum":0,"maximum":360,"default":150,"description":"A spike tip is a vertex whose face corners add up to less than this (360 on a smooth surface)."},
+            "fold_angle_deg":{"type":"number","minimum":0,"maximum":180,"default":150,"description":"A fold is an edge whose two faces' normals differ by more than this."},)" M2C_SELECTION_TARGET
+        R"(},"required":["id"],"additionalProperties":false})",
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(mesh, requireMesh(context, params));
+            M2C_TRY(maxFaces, optionalInteger(params, "max_faces", 200, 1, 100000));
+            M2C_TRY(spikes, optionalBool(params, "spikes", true));
+            M2C_TRY(tunnels, optionalBool(params, "tunnels", true));
+            M2C_TRY(tip, optionalNumber(params, "tip_angle_deg", 150.0, 0.0, 360.0));
+            M2C_TRY(fold, optionalNumber(params, "fold_angle_deg", 150.0, 0.0, 180.0));
+            const ScanDefectParams p{.maxFaces = static_cast<std::size_t>(*maxFaces),
+                                     .spikes = *spikes,
+                                     .tunnels = *tunnels,
+                                     .tipAngleDeg = *tip,
+                                     .foldAngleDeg = *fold};
+            M2C_TRY(found, findScanDefects(*mesh->mesh, p, context.progress));
+            M2C_TRY(result, storeSelection(context, *mesh, std::move(found->faces), params));
+            (*result)["spikes"] = found->spikes;
+            (*result)["tunnels"] = found->tunnels;
+            (*result)["too_large"] = found->tooLarge;
+            return *result;
+        }));
 
     out.push_back(selectionEdit(
         "select.grow",

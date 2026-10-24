@@ -753,6 +753,28 @@ TEST_CASE("A brush stroke is one command and one undo step", "[commands][select]
               .code == ErrorCode::InvalidArgument);
 }
 
+TEST_CASE("select.defects selects a spike that delete and fill then remove", "[commands][select]") {
+    Session s;
+    const TempDir dir;
+    TriMesh ball = makeSphere(10.0, 4);
+    std::vector<Vec3d> p = ball.positions();
+    p[0] = p[0] * 1.4; // an icosahedron corner, five faces round it, pulled 4 mm out
+    const ObjectId id = s.import(dir, makeMesh(std::move(p), ball.indices()), "spiky");
+
+    const Json found = s.run("select.defects", {{"id", id}, {"name", "Defects"}});
+    CHECK(found["spikes"] == 1);
+    CHECK(found["tunnels"] == 0);
+    CHECK(found["too_large"] == 0);
+    CHECK(found["face_count"] == 5);
+    s.run("faces.delete", {{"selection_id", found["selection_id"]}});
+    CHECK(s.run("holes.fill", {{"id", id}})["report"]["filled"] == 1);
+    const Json again = s.run("select.defects", {{"id", id}});
+    CHECK(again["face_count"] == 0);
+    CHECK(s.run("select.defects", {{"id", id}, {"spikes", false}})["face_count"] == 0);
+    CHECK(s.tryRun("select.defects", {{"id", id}, {"max_faces", 0}}).error().code ==
+          ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("Measurements snap to meshes and are saved objects", "[commands][measure]") {
     Session s;
     const TempDir dir;

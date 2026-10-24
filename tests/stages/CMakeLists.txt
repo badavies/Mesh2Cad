@@ -2,6 +2,7 @@ add_executable(m2c_stage_tests
     AlignStageTests.cpp
     BooleanStageTests.cpp
     BoxFitStageTests.cpp
+    DefectStageTests.cpp
     DeviationStageTests.cpp
     ExportStageTests.cpp
     FilletFitStageTests.cpp

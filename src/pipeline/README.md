@@ -12,6 +12,7 @@ OpenSubdiv adapter and solids from the Open CASCADE adapter.
 - `m2c/pipeline/MeshTools.h`: `deleteFaces`, `keepFaces`, `flipFaces`, plus `simplifyMesh`, `remeshMesh` and re-exports of the adapter's `repair`, `fillHoles` and `shrinkWrap` with their parameter types.
 - `m2c/pipeline/Smooth.h`: `smoothTaubin` with `SmoothParams` (whole mesh or a selection; shares the face buffer).
 - `m2c/pipeline/Select.h`: `brushSelect`, `creaseFloodSelect`, `lassoSelect` with `LassoParams`, `growSelection` and `allFaces`.
+- `m2c/pipeline/Defects.h`: `findScanDefects` with `ScanDefectParams` returning `ScanDefectReport` (scan spikes and small tunnels as a selection), and `surfaceGenus` (handles in a set of faces).
 - `m2c/pipeline/Shells.h`: `detectShells` returning `ShellReport` and `ShellInfo`, plus `shellFaces` and `smallShellFaces`.
 - `m2c/pipeline/Align.h`: `fitPlane` returning `PlaneFit`, `principalAxesAlignment` with `AlignOrigin`, `symmetryAlignment` returning `SymmetryAlignment`, and `datumAlignment` with `DatumAlignParams` and `DatumAlignResult`.
 - `m2c/pipeline/Measure.h`: `snapToMesh` and `pickMesh`.
