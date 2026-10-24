@@ -87,7 +87,7 @@ Scans come in at whatever angle the scanner left them. Line the part up before s
 
 Most tools work on a selection of faces. In the app, use Brush (2), Lasso (3) or Crease (4), and **Edit > Grow selection** or **Edit > Invert selection**. As commands, use `select.brush`, `select.lasso`, `select.crease`, `select.grow`, `select.shrink`, `select.invert`, `select.all` and `select.shell`. `mesh.pick` finds the face under a ray, which gives you a starting face for `select.crease`.
 
-`measure.distance` measures between two points and saves the result as a measurement object. A point given with a mesh id snaps to that mesh. `plane.fit` fits a plane to a selection, and reports its normal and how flat the selection is.
+`measure.distance` measures between two points and saves the result as a measurement object. A point given with a mesh id snaps to that mesh. `plane.fit` fits a plane to a selection, adds it as a plane primitive, and reports its normal and how flat the selection is.
 
 ```jsonl
 {"command": "mesh.import", "params": {"path": "bracket.stl"}}

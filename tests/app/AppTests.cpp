@@ -6,7 +6,10 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QElapsedTimer>
+#include <QHeaderView>
 #include <QLineEdit>
+#include <QMenu>
+#include <QMenuBar>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -561,9 +564,23 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
     const Json regions = run("mesh.segment", {{"id", mesh}})["regions"];
     REQUIRE(regions.size() == 3);
 
-    // Every row shows its object's id; the name column stays the bare name.
+    // Every row shows its object's id, first, so it can be read without hovering; the name
+    // column stays the bare name.
     auto* tree = window.findChild<QTreeWidget*>();
     REQUIRE(tree != nullptr);
+    CHECK(tree->header()->visualIndex(2) == 0);
+    CHECK(tree->header()->visualIndex(0) == 1);
+    // The Tools menu's groups start with a capital, like every other menu item.
+    int groups = 0;
+    for (const QAction* menu : window.menuBar()->actions()) {
+        if (menu->text() != "&Tools") continue;
+        for (const QAction* group : menu->menu()->actions()) {
+            CAPTURE(group->text().toStdString());
+            CHECK(group->text().front().isUpper());
+            ++groups;
+        }
+    }
+    CHECK(groups > 10);
     std::set<ObjectId> listed;
     for (QTreeWidgetItemIterator it(tree); *it != nullptr; ++it) {
         const auto id = (*it)->data(0, Qt::UserRole + 1).value<ObjectId>();
@@ -1179,8 +1196,53 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     ids->setText("12, top");
     CHECK_FALSE(form.params().has_value());
     form.setCommand(registry.find("surface.build"));
-    CHECK(form.findChild<QLineEdit*>("flat")->placeholderText() ==
-          R"(JSON, e.g. [{"plane_id":1,"selection_id":1}])");
+    auto* flat = form.findChild<QLineEdit*>("flat");
+    REQUIRE(flat != nullptr);
+    CHECK(flat->placeholderText().endsWith(R"(JSON, e.g. [{"plane_id":1,"selection_id":1}])"));
+
+    // surface.build's flat areas are built from rows picked in the Objects list: Add makes an
+    // item of a selection and a plane, in either order, and either alone brings the other when
+    // the plane was fitted to the selection.
+    snapshot->objects.push_back({.id = 10,
+                                 .name = "Top",
+                                 .data = SelectionData{.meshId = 7, .faces = nullptr},
+                                 .provenance = {}});
+    snapshot->objects.push_back(
+        {.id = 11,
+         .name = "Plane fit",
+         .data = PrimitiveData{},
+         .provenance = {.command = "plane.fit", .params = "", .inputs = {10, 7}}});
+    snapshot->objects.push_back({.id = 12,
+                                 .name = "Side",
+                                 .data = SelectionData{.meshId = 7, .faces = nullptr},
+                                 .provenance = {}});
+    snapshot->objects.push_back(
+        {.id = 13, .name = "Plane", .data = PrimitiveData{}, .provenance = {}});
+    form.setObjects(snapshot);
+    form.setCommand(registry.find("surface.build"));
+    flat = form.findChild<QLineEdit*>("flat");
+    auto* add = form.findChild<QToolButton*>("add");
+    REQUIRE(add != nullptr);
+    form.setSelectedObjects({13, 12});
+    add->click();
+    CHECK(Json::parse(flat->text().toStdString()) ==
+          Json::parse(R"([{"selection_id":12,"plane_id":13}])"));
+    form.setSelectedObjects({10});
+    add->click();
+    add->click(); // the same area again is not listed twice
+    CHECK(Json::parse(flat->text().toStdString()) ==
+          Json::parse(R"([{"selection_id":12,"plane_id":13},{"selection_id":10,"plane_id":11}])"));
+    form.setSelectedObjects({11}); // a plane alone brings the selection it was fitted to
+    CHECK(form.addPicked("flat"));
+    CHECK(Json::parse(flat->text().toStdString()).size() == 2);
+    // Nothing that fits changes nothing.
+    form.setSelectedObjects({7});
+    CHECK_FALSE(form.addPicked("flat"));
+    form.setSelectedObjects({12}); // no plane was fitted to this one
+    CHECK_FALSE(form.addPicked("flat"));
+    CHECK(Json::parse(flat->text().toStdString()).size() == 2);
+    form.findChild<QToolButton*>("clear")->click();
+    CHECK(flat->text().isEmpty());
 
     // An optional object field starts at None and is left out.
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});

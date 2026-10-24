@@ -11,11 +11,13 @@
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Measurement.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/Transform.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/document/Document.h"
 #include "m2c/pipeline/Align.h"
 #include "m2c/pipeline/Measure.h"
+#include "m2c/pipeline/PrimitiveFit.h"
 
 #include "detail/Params.h"
 #include "detail/Register.h"
@@ -94,19 +96,41 @@ Result<PickedPoint> pointParam(const CommandContext& context,
 } // namespace
 
 void addAlignMeasureCommands(std::vector<Command>& out) {
-    out.push_back(
-        makeCommand("plane.fit",
-                    "Fit a least-squares plane to the faces of a selection.",
-                    R"({
+    out.push_back(makeCommand(
+        "plane.fit",
+        "Fit a least-squares plane to the faces of a selection (area-weighted, as align.datum "
+        "fits its datums) and add it as a plane primitive, ready for surface.build's flat areas, "
+        "primitive.trim or solid.export. Unlike primitive.fit it has no residual limit, so the "
+        "result reports how flat the selection is: the plane's RMS, largest and P95 distance.",
+        R"({
             "type":"object","properties":{"selection_id":{"type":"integer","x-object":"selection","minimum":0}},
             "required":["selection_id"],"additionalProperties":false})",
-                    false,
-                    [](const CommandContext& context, const Json& params) -> Result<Json> {
-                        M2C_TRY(sel, requireSelection(context, params, "selection_id"));
-                        M2C_TRY(mesh, requireMesh(context, Json{{"id", sel->meshId}}));
-                        M2C_TRY(plane, fitPlane(*mesh->mesh, *sel->faces));
-                        return planeJson(*plane);
-                    }));
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(sel, requireSelection(context, params, "selection_id"));
+            M2C_TRY(mesh, requireMesh(context, Json{{"id", sel->meshId}}));
+            M2C_TRY(plane, fitPlane(*mesh->mesh, *sel->faces));
+            // The normal is the area-weighted fit's; with it held, the plane goes through the
+            // vertices' centroid, the least-squares offset for the residuals reported.
+            const std::vector<Vec3d> points = regionPoints(*mesh->mesh, sel->faces->indices());
+            M2C_TRY(held,
+                    fitWithDirection(Primitive{.kind = PrimitiveKind::Plane,
+                                               .point = plane->point,
+                                               .direction = plane->normal},
+                                     points));
+            const FittedPrimitive fitted = fittedPrimitive(*held, points);
+            M2C_TRY(id,
+                    context.document.add(fittedName(PrimitiveKind::Plane),
+                                         primitiveData(fitted),
+                                         context.provenance({sel->id, mesh->id})));
+            return Json{{"id", *id},
+                        {"point", toJson(fitted.surface.point)},
+                        {"normal", toJson(fitted.surface.direction)},
+                        {"rms_mm", fitted.rmsMm},
+                        {"max_mm", fitted.maxMm},
+                        {"p95_mm", fitted.p95Mm},
+                        {"extent", toJson(fitted.extent)}};
+        }));
 
     out.push_back(makeCommand(
         "align.principal",

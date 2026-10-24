@@ -839,9 +839,9 @@ def session(name, facts, fmt):
         return [imp, info(),
                 ("mesh.pick", {"origin": [45, 30, 50], "direction": [0, 0, -1]}),
                 ("select.crease", {"id": 1, "face": p["base_top"]["seed_face"], "name": "base top"}),
-                ("plane.fit", {"selection_id": 2}),
+                ("plane.fit", {"selection_id": 2}),  # adds the plane as object 3
                 ("select.crease", {"id": 1, "face": p["base_hole_wall"]["seed_face"], "name": "hole"}),
-                ("select.grow", {"selection_id": 3}),
+                ("select.grow", {"selection_id": 4}),
                 ("measure.distance", {"a": {"point": [30, 20, 0], "id": 1},
                                       "b": {"point": [30, 20, 6], "id": 1}, "name": "thickness"}),
                 ("mesh.remesh", {"id": 1, "target_edge_mm": 2.0, "sharp_angle_deg": 60}),
@@ -862,11 +862,11 @@ def session(name, facts, fmt):
                 ("select.crease", {"id": 1, "face": p["base_bottom"]["seed_face"], "max_angle_deg": 15, "name": "primary"}),
                 ("select.crease", {"id": 1, "face": p["front_y0"]["seed_face"], "max_angle_deg": 15, "name": "secondary"}),
                 ("select.crease", {"id": 1, "face": p["upright_back_x0"]["seed_face"], "max_angle_deg": 15, "name": "tertiary"}),
-                ("plane.fit", {"selection_id": 2}),
+                ("plane.fit", {"selection_id": 2}),  # adds the plane as object 5
                 ("align.datum", {"id": 1, "primary": 2, "secondary": 3, "tertiary": 4}), info(),
                 # After align.datum the scan sits in the bracket's own frame, so design points apply.
                 ("select.brush", {"id": 1, "center": [40, 30, 6], "radius_mm": 8, "name": "brush"}),
-                ("mesh.smooth", {"id": 1, "selection_id": 5, "iterations": 10}),
+                ("mesh.smooth", {"id": 1, "selection_id": 6, "iterations": 10}),
                 ("mesh.smooth", {"id": 1, "iterations": 5, "preserve_sharp_edges": True}),
                 ("mesh.simplify", {"id": 1, "target_faces": 5000}), info()]
     if name == "sphere_noisy":

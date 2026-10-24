@@ -19,6 +19,7 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Base64.h"
+#include "m2c/core/Primitive.h"
 #include "m2c/core/SelectionColors.h"
 #include "m2c/io/MeshIO.h"
 
@@ -682,6 +683,13 @@ TEST_CASE("Selections, face deletion and datum alignment through commands", "[co
     const Json frontSel = s.run("select.crease", {{"id", id}, {"face", front["face"]}});
     const Json plane = s.run("plane.fit", {{"selection_id", bottom["selection_id"]}});
     CHECK_THAT(std::abs(plane["normal"][2].get<double>()), WithinAbs(1.0, 1e-9));
+    // The plane is added as a primitive, ready for surface.build's flat areas.
+    const auto planeObject = s.document.find(plane["id"].get<ObjectId>());
+    REQUIRE(planeObject.has_value());
+    REQUIRE(planeObject->primitive() != nullptr);
+    CHECK(planeObject->primitive()->fit.surface.kind == PrimitiveKind::Plane);
+    CHECK(planeObject->provenance.inputs.front() == bottom["selection_id"].get<ObjectId>());
+    CHECK_THAT(plane["p95_mm"].get<double>(), WithinAbs(0.0, 1e-9));
 
     const Json aligned = s.run(
         "align.datum",

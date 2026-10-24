@@ -45,6 +45,11 @@ TEST_CASE("Every command is well formed", "[commands]") {
         CHECK_FALSE(c->summary.empty());
         CHECK(c->paramsSchema.is_object());
         CHECK(c->paramsSchema.value("type", "") == "object");
+        // Summaries and parameter descriptions are what people read in the app's tool forms
+        // and agents read in the schema: no references to decision records or the spec.
+        const std::string text = c->summary + c->paramsSchema.dump();
+        CHECK(text.find("ADR") == std::string::npos);
+        CHECK(text.find("ARCHITECTURE") == std::string::npos);
         // A command that writes a file is told where by "path", required except by view.render,
         // which returns the picture instead when it has no path (ADR-031).
         if (c->writesFiles) {

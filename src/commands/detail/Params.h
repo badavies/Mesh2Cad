@@ -66,6 +66,11 @@ struct SelectionRef {
 /// A primitive object's data, with its display mesh.
 [[nodiscard]] PrimitiveData primitiveData(const FittedPrimitive& fit);
 
+/// A fit to a region's points as primitive.fit records it: the fit, its residuals and the
+/// points' bounding box. The points must not be empty.
+[[nodiscard]] FittedPrimitive fittedPrimitive(const PrimitiveFit& fit,
+                                              const std::vector<Vec3d>& points);
+
 /// A primitive fitted to faces of a mesh as primitive.fit records it: the fit, its residuals and
 /// the region's bounding box.
 [[nodiscard]] Result<FittedPrimitive> fitRegionPrimitive(const TriMesh& mesh,

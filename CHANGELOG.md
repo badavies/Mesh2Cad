@@ -24,6 +24,10 @@ to it are additive within 1.x.
   Every example session in it runs as a test (#123).
 - Version 1.0.0, this changelog and a release workflow that attaches the installers to a GitHub
   release for each `v*` tag (#124).
+- `plane.fit` adds the plane it fits as a plane primitive, so it shows in the Objects list and
+  can be used in `surface.build`'s `flat` areas. In the app, `flat` is built by picking a
+  selection and its plane in the Objects list and pressing **Add**. The Objects list shows each
+  object's id before its name, and every group in the Tools menu starts with a capital.
 
 ### Prismatic and hybrid parts (M4)
 

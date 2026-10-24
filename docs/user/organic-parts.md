@@ -22,7 +22,7 @@ Start from a prepared mesh: watertight and aligned ([Mesh preparation](mesh-prep
 | `refine_to_mm` | Stop only when 95% of the scan is within this distance. If the fit isn't that close, the fitted cage is subdivided (four times the quads) and fitted again, up to `max_refinements` times. |
 | `smoothing`, `fairing` | How hard the surface resists the scan's noise. Higher values give calmer zebra stripes, but sit a little farther from the scan. |
 | `crease_angle_deg` | Cage edges that turn more than this stay sharp in the solid. Off (0) by default, so the surface is smooth everywhere. Set it to the angle `quad.remesh` used. |
-| `flat` | Areas held exactly flat: each is a selection and a plane fitted to it with `primitive.fit`. |
+| `flat` | Areas held exactly flat: each is a selection and a plane fitted to it with `plane.fit` or `primitive.fit`. In the app, select the selection and its plane in the Objects list (Ctrl+click) and press **Add** beside `flat`; a selection on its own brings the plane fitted to it. |
 | `merge` | Merge rectangles of cage quads into larger faces. This gives far fewer faces, and the surface is the same. |
 | `check_crossing` | Check that the surface doesn't cross itself. This can take up to a minute, so turn it off for quick trials. |
 
@@ -49,6 +49,6 @@ This makes a solid of about 180 faces from the controller scan in a few seconds,
 
 - **Too far from the scan:** raise `target_faces`, or set `refine_to_mm` (for example 0.1).
 - **Wavy zebra stripes:** raise `fairing` or `smoothing` a little, and compare `fairness` and the deviation from one build to the next.
-- **Flat areas come out slightly curved:** select them, fit a plane with `primitive.fit`, and pass the pair in `flat`.
+- **Flat areas come out slightly curved:** select them, fit a plane with `plane.fit`, and pass the pair in `flat` (in the app, pick the selection and press **Add**).
 - **Sharp edges come out rounded:** set `crease_angle_deg` (for example 60) in `quad.remesh`, so the cage follows those edges, and the same in `surface.build`, so they stay sharp.
 - **Holes should be true cylinders:** fit cylinders to the hole walls and cut them from the solid with `solid.boolean` (see [Prismatic and hybrid parts](prismatic-parts.md)).

@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "m2c/commands/Command.h"
@@ -13,6 +14,7 @@
 
 class QFormLayout;
 class QLabel;
+class QLineEdit;
 class QPushButton;
 
 namespace m2c::app {
@@ -40,6 +42,13 @@ public:
     /// of their kinds one each, id first and then by name (so solid.boolean's id, then tool_id).
     /// A field none of the selected objects fits is left as it is.
     void setSelectedObjects(const std::vector<ObjectId>& ids);
+    /// Adds an item to a list-of-objects field (surface.build's flat) from the objects selected
+    /// in the Objects list, as its Add button does: each property takes the first selected
+    /// object of its kinds; one none fits takes the newest object of its kinds made from a
+    /// selected one or that a selected one was made from (the plane fitted to a selection, or
+    /// the selection a plane was fitted to). False, changing nothing, when a property stays
+    /// empty or the form has no such field.
+    bool addPicked(const std::string& key);
     /// Adds a point to a list-of-points field (fillet.fit's edge_points), as a click in the
     /// viewport does. False when the form has no such field.
     bool appendPoint(const std::string& key, const Vec3d& point);
@@ -66,9 +75,12 @@ private:
         QWidget* editor{nullptr};
         bool required{false};
         std::vector<std::string> kinds; ///< object, ids: the kinds offered; empty for any
+        /// json, a list whose items are all objects: each item property and its kinds.
+        std::vector<std::pair<std::string, std::vector<std::string>>> items;
     };
 
     void fillObjects(const Field& field, ObjectId chosen) const;
+    void addItemsRow(const std::string& key, Field& field, QLineEdit* edit, const QString& tip);
 
     const Command* command_{nullptr};
     QLabel* title_{nullptr};
@@ -78,6 +90,7 @@ private:
     QPushButton* run_{nullptr};
     std::map<std::string, Field> editors_;
     std::shared_ptr<const DocSnapshot> snapshot_;
+    std::vector<ObjectId> picked_; ///< Selected in the Objects list, in the order picked.
 };
 
 } // namespace m2c::app
