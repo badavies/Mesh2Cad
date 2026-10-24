@@ -83,6 +83,8 @@ to it are additive within 1.x.
   each change.
 - Mesh tools: repair, hole filling, smoothing, simplification, remeshing, shrink-wrap and shells;
   datum, principal-axes and symmetry-plane alignment; point-to-point measurement.
+- `select.defects` selects the spikes, folded slivers and small tunnels a scanner leaves, up to
+  a face count, to delete before filling the holes; the Workflow panel has it after Repair.
 - CI on Windows (MSVC) and Linux (GCC, a sanitizer build and the app under Xvfb).
 
 [1.0.0]: https://github.com/badavies/Mesh2Cad/releases/tag/v1.0.0

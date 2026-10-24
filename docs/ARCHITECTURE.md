@@ -205,12 +205,13 @@ The tools fall into five groups: mesh tidy-up, selection and shell detection (M1
 
 | Tool | What it does | Implementation | Key parameters |
 | --- | --- | --- | --- |
-| Clean-up | Removes duplicate and degenerate faces, non-manifold edges, self-intersections and spikes | CGAL Polygon Mesh Processing | `remove_self_intersections` (built as `mesh.repair`; spike removal is not implemented) |
+| Clean-up | Removes duplicate and degenerate faces, non-manifold edges, self-intersections and spikes | CGAL Polygon Mesh Processing | `remove_self_intersections` (built as `mesh.repair`; spikes are selected by `select.defects` instead, below) |
 | Hole filling | Fills open boundaries with a patch that blends into the surrounding curvature; holes above a size limit are left so real openings survive. Rims CGAL cannot triangulate (every diagonal already an edge, as in folded pockets) get a refined and faired centroid fan | CGAL hole filling with fairing | `max_perimeter_mm`, `max_edges`, `fair` |
 | Smoothing | Taubin smoothing (no shrinkage), optionally keeping sharp edges, on the whole mesh or a selection | Own Taubin filter (CGAL shape smoothing not used yet) | `iterations`, `strength`, `preserve_sharp_edges`, `sharp_angle_deg` |
 | Simplification | Reduces large meshes to a target triangle count, or to a maximum error, whichever comes first, keeping open boundaries | CGAL Garland-Heckbert edge collapse with bounded-distance placement | `target_faces` or `target_ratio`, `max_error_mm` |
 | Remesh | Rebuilds an even triangle mesh at a set edge length | CGAL isotropic remeshing | `target_edge_mm` |
 | Shrink-wrap | Rebuilds a guaranteed watertight, manifold, self-intersection-free mesh around a badly damaged scan or polygon soup, as a fallback when surface repair fails | CGAL 3D Alpha Wrapping | `alpha_mm`, `offset_mm` (fine detail smaller than these is lost) |
+| Spike and tunnel selection | Selects small scan defects to delete before hole filling: spikes (tips and folds, grown over their steep sides) and tunnels (handles, each in the smallest patch around it that holds it, found from the patch's Euler characteristic and boundary loops) | Own, on the cached adjacency (ADR-038) | `max_faces`, `tip_angle_deg`, `fold_angle_deg` |
 | Shell detection | Finds unconnected meshes (stray fragments, loose parts), marks the largest as the main part, and lists the rest with size and area | Own face components on the cached adjacency | `min_faces` or `min_area_mm2` (for `shells.clean`) |
 
 **Selection.** Brush, lasso, flood fill by crease angle, grow, shrink and invert are commands that produce a `MeshSelection` document object. Tools such as smoothing, deletion and primitive fitting take its `selection_id`, so the UI and an AI agent select regions the same way, and no command ever carries large index lists in JSON.
@@ -439,7 +440,7 @@ Gate criteria:
 
 **Status at v1.0.0 (M5, 22 October 2026)**
 
-Built in M3 to M5 (by pull request in `CHANGELOG.md`): 63 registered commands (`docs/COMMANDS.md`), command API version 1.0. M3 added the conjugate-gradient cage fit with refinement where it stays far from the scan, open sheets and thickening, guide lines for the quad layout, checks for folded and self-crossing surfaces, sharp edges and fairing in `surface.build`, cancel for long commands, and oneTBB (ADR-036). M4 added segmentation, primitive and box fits, `primitive.align`, trimming, booleans, section sketches with extrude and revolve, fitted fillets, deviation hotspots and `view.render`. M5 added `solid.export.mesh` (GLB, glTF, OBJ and STL from Open CASCADE's triangulation, ADR-037), the Blender check in CI, installers for Windows and Ubuntu 24.04 tested on clean machines (`.github/workflows/package.yml`), the user guide (`docs/user`, every session run as a test), and the release workflow (`.github/workflows/release.yml`, which drafts a GitHub release for a `v*` tag).
+Built in M3 to M5 (by pull request in `CHANGELOG.md`): 64 registered commands (`docs/COMMANDS.md`), command API version 1.0. M3 added the conjugate-gradient cage fit with refinement where it stays far from the scan, open sheets and thickening, guide lines for the quad layout, checks for folded and self-crossing surfaces, sharp edges and fairing in `surface.build`, cancel for long commands, and oneTBB (ADR-036). M4 added segmentation, primitive and box fits, `primitive.align`, trimming, booleans, section sketches with extrude and revolve, fitted fillets, deviation hotspots and `view.render`. M5 added `solid.export.mesh` (GLB, glTF, OBJ and STL from Open CASCADE's triangulation, ADR-037), the Blender check in CI, installers for Windows and Ubuntu 24.04 tested on clean machines (`.github/workflows/package.yml`), the user guide (`docs/user`, every session run as a test), and the release workflow (`.github/workflows/release.yml`, which drafts a GitHub release for a `v*` tag). Since then, `select.defects` selects scan spikes and small tunnels to delete before filling holes (ADR-038).
 
 Gate criteria:
 
@@ -517,6 +518,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-035 | Deviation hotspots: out-of-tolerance faces clustered by sign | Accepted | `deviation.compute` reports connected out-of-tolerance patches, largest first, and can make them selections; see `docs/adr/0035-deviation-hotspots.md` |
 | ADR-036 | oneTBB for deterministic parallel loops | Accepted | Fixed chunks and ordered reductions give the same results on any number of threads; see `docs/adr/0036-onetbb-parallel-chunks.md` |
 | ADR-037 | Our own glTF writer; Open CASCADE only triangulates | Accepted | OCCT's writer needs RapidJSON and the XCAF toolkits, which our builds leave out; see `docs/adr/0037-own-gltf-writer.md` |
+| ADR-038 | Scan spikes and tunnels found by our own search, as a selection | Accepted | Tips and folds grown over their steep sides; tunnels as handles, from patches' Euler characteristic; see `docs/adr/0038-scan-spikes-and-tunnels.md` |
 
 ## 15. Review log
 
