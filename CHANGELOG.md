@@ -52,7 +52,8 @@ to it are additive within 1.x.
 - Cage fitting solved with conjugate gradients, and refined where it stays far from the scan
   (#44, #45).
 - `surface.build` fails on folded, inside-out and self-crossing surfaces, keeps a part's sharp
-  edges sharp, and fairs the shape it keeps and reports its fairness (#38, #114 to #116).
+  edges sharp when `crease_angle_deg` asks for them (off by default, so organic parts stay
+  smooth), and fairs the shape it keeps and reports its fairness (#38, #114 to #116).
 - Open sheets for one-sided scans, thickened into a solid wall, and cage edges laid along guide
   lines (#51 to #53).
 - Long commands can be cancelled over JSON-RPC, MCP and from the app, and deviation and the

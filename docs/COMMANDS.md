@@ -674,7 +674,7 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `check_crossing` | boolean |  | Check that no two faces of the result cross each other, and fail if any do. Takes seconds to a minute; turn it off for quick trials. Default `true`. |
-| `crease_angle_deg` | number |  | Of a closed cage: edges where its faces turn by more than this stay sharp edges of the surface (a part's sharp edges, once quad.remesh crease_angle_deg has aligned the cage to them); 0 = smooth everywhere. Default `60`. |
+| `crease_angle_deg` | number |  | Of a closed cage: edges where its faces turn by more than this stay sharp edges of the surface. Use the angle quad.remesh crease_angle_deg aligned the cage with; 0 = smooth everywhere, as an organic part needs. Default `0`. |
 | `fairing` | integer |  | Rounds of fairing of the shape the smoothing keeps: the cage starts on the scan, noise and all, and fairing that shape first gives a calmer surface (zebra stripes) at the same distance to the mesh; 0 = keep the cage's own shape. Default `5`. |
 | `fit` | boolean |  | Fit the cage to the mesh first. Default `true`. |
 | `flat` | array |  | Areas held flat while fitting, each {selection_id, plane_id}: faces of the mesh and a plane primitive fitted to them (primitive.fit). Cage vertices whose closest mesh face is selected stay on the plane. Needs fit. Default `[]`. |

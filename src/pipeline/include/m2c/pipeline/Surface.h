@@ -60,7 +60,7 @@ struct SurfaceBuildParams {
     /// normals under the two faces differ by more than half the angle too, so a distorted cage
     /// gets no crease on a smooth stretch. The fit, the faces and the merge keep them sharp, and
     /// the angle checks leave them out. 0 = none: the surface is smooth everywhere.
-    double creaseAngleDeg{60.0};
+    double creaseAngleDeg{0.0};
     /// Check that the finished solid's surface does not cross itself, on the kernel's
     /// triangulation (occt::weldedTriangulation(), cgal::selfIntersects()), and fail if it does.
     /// A surface can cross itself with no fold the angle check sees, as a fit can that overshoots
