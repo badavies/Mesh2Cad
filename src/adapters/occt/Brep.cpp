@@ -455,6 +455,16 @@ signedDistances(const Solid& solid, const std::vector<Vec3d>& points, const Prog
             BRepTools::UVBounds(face, u0, u1, v0, v1);
             if (face.Orientation() == TopAbs_REVERSED) turn[f] = -1.0;
         }
+        // Each face's surface once; the chunks share them and keep their own projectors.
+        std::vector<opencascade::handle<Geom_Surface>> geometry(faceCount);
+        for (std::size_t f = 0; f < faceCount; ++f) {
+            if (faces.empty()) {
+                geometry[f] =
+                    BRep_Tool::Surface(TopoDS::Face(kernelFaces(static_cast<int>(f) + 1)));
+            } else {
+                geometry[f] = toSurface(faces[f]);
+            }
+        }
         const SpatialIndex& index = display.spatialIndex();
         std::vector<double> out(points.size());
         // In parallel chunks, each with its own projectors: ShapeAnalysis_Surface keeps state
@@ -464,12 +474,7 @@ signedDistances(const Solid& solid, const std::vector<Vec3d>& points, const Prog
             if (progress.cancelled()) return;
             std::vector<opencascade::handle<ShapeAnalysis_Surface>> surfaces(faceCount);
             const auto surfaceOf = [&](const std::size_t f) -> ShapeAnalysis_Surface& {
-                if (surfaces[f].IsNull()) {
-                    surfaces[f] = faces.empty()
-                                      ? new ShapeAnalysis_Surface(BRep_Tool::Surface(
-                                            TopoDS::Face(kernelFaces(static_cast<int>(f) + 1))))
-                                      : new ShapeAnalysis_Surface(toSurface(faces[f]));
-                }
+                if (surfaces[f].IsNull()) surfaces[f] = new ShapeAnalysis_Surface(geometry[f]);
                 return *surfaces[f];
             };
             for (std::size_t i = begin; i < end; ++i) {

@@ -113,8 +113,11 @@ smoothTaubin(const TriMesh& mesh, const SmoothParams& params, const MeshSelectio
                     if (const bool hasB = w[0] == b || w[1] == b || w[2] == b; !(hasA && hasB))
                         continue;
                     ++across;
-                    if (params.preserveSharpEdges && dot(nf, faceNormal(mesh, g)) < cosSharp) {
-                        sharp = true;
+                    if (params.preserveSharpEdges) {
+                        // A zero-area face has no normal to turn by, so it makes no sharp edge.
+                        const Vec3d ng = faceNormal(mesh, g);
+                        if (dot(nf, nf) > 0.0 && dot(ng, ng) > 0.0 && dot(nf, ng) < cosSharp)
+                            sharp = true;
                     }
                 }
                 if (across == 0 || sharp) {

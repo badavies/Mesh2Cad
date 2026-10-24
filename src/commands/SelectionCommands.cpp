@@ -73,10 +73,11 @@ Result<Json> storeSelection(CommandContext& context,
 }
 
 /// Runs a tool that transforms an existing selection in place.
-Command selectionEdit(std::string name,
-                      std::string summary,
-                      const char* schema,
-                      MeshSelection (*edit)(const TriMesh&, const MeshSelection&, const Json&)) {
+Command
+selectionEdit(std::string name,
+              std::string summary,
+              const char* schema,
+              Result<MeshSelection> (*edit)(const TriMesh&, const MeshSelection&, const Json&)) {
     return makeCommand(
         std::move(name),
         std::move(summary),
@@ -85,11 +86,11 @@ Command selectionEdit(std::string name,
         [edit](CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(sel, requireSelection(context, params, "selection_id"));
             M2C_TRY(mesh, requireMesh(context, Json{{"id", sel->meshId}}));
-            MeshSelection result = edit(*mesh->mesh, *sel->faces, params);
-            const std::size_t count = result.count();
+            M2C_TRY(result, edit(*mesh->mesh, *sel->faces, params));
+            const std::size_t count = result->count();
             M2C_TRY(done,
                     context.document.replaceSelection(
-                        sel->id, std::make_shared<const MeshSelection>(std::move(result))));
+                        sel->id, std::make_shared<const MeshSelection>(std::move(*result))));
             return Json{{"selection_id", sel->id}, {"mesh_id", mesh->id}, {"face_count", count}};
         });
 }
@@ -126,6 +127,8 @@ void addSelectionCommands(std::vector<Command>& out) {
                 return fail(ErrorCode::InvalidArgument, "parameter 'radius_mm' is required");
             }
             M2C_TRY(radius, optionalNumber(params, "radius_mm", 1.0, 0.0, 1e12));
+            if (!(*radius > 0.0))
+                return fail(ErrorCode::InvalidArgument, "parameter 'radius_mm' must be above 0");
             M2C_TRY(connected, optionalBool(params, "connected", true));
             std::vector<Vec3d> centers;
             if (params.contains("centers")) {
@@ -247,6 +250,10 @@ void addSelectionCommands(std::vector<Command>& out) {
             M2C_TRY(spikes, optionalBool(params, "spikes", true));
             M2C_TRY(tunnels, optionalBool(params, "tunnels", true));
             M2C_TRY(tip, optionalNumber(params, "tip_angle_deg", 150.0, 0.0, 360.0));
+            if (!(*tip > 0.0)) {
+                return fail(ErrorCode::InvalidArgument,
+                            "parameter 'tip_angle_deg' must be above 0");
+            }
             M2C_TRY(fold, optionalNumber(params, "fold_angle_deg", 150.0, 0.0, 180.0));
             const ScanDefectParams p{.maxFaces = static_cast<std::size_t>(*maxFaces),
                                      .spikes = *spikes,
@@ -261,34 +268,36 @@ void addSelectionCommands(std::vector<Command>& out) {
             return *result;
         }));
 
-    out.push_back(selectionEdit(
-        "select.grow",
-        "Grow a selection by rings of neighbouring faces.",
-        R"({"type":"object","properties":{
+    out.push_back(selectionEdit("select.grow",
+                                "Grow a selection by rings of neighbouring faces.",
+                                R"({"type":"object","properties":{
             "selection_id":{"type":"integer","x-object":"selection","minimum":0},
             "rings":{"type":"integer","minimum":1,"maximum":1000,"default":1}},
             "required":["selection_id"],"additionalProperties":false})",
-        [](const TriMesh& mesh, const MeshSelection& s, const Json& params) {
-            return growSelection(mesh, s, std::clamp(params.value("rings", 1), 1, 1000));
-        }));
+                                [](const TriMesh& mesh, const MeshSelection& s, const Json& params)
+                                    -> Result<MeshSelection> {
+                                    M2C_TRY(rings, optionalInteger(params, "rings", 1, 1, 1000));
+                                    return growSelection(mesh, s, static_cast<int>(*rings));
+                                }));
 
-    out.push_back(selectionEdit(
-        "select.shrink",
-        "Shrink a selection by rings of faces along its border.",
-        R"({"type":"object","properties":{
+    out.push_back(selectionEdit("select.shrink",
+                                "Shrink a selection by rings of faces along its border.",
+                                R"({"type":"object","properties":{
             "selection_id":{"type":"integer","x-object":"selection","minimum":0},
             "rings":{"type":"integer","minimum":1,"maximum":1000,"default":1}},
             "required":["selection_id"],"additionalProperties":false})",
-        [](const TriMesh& mesh, const MeshSelection& s, const Json& params) {
-            return growSelection(mesh, s, -std::clamp(params.value("rings", 1), 1, 1000));
-        }));
+                                [](const TriMesh& mesh, const MeshSelection& s, const Json& params)
+                                    -> Result<MeshSelection> {
+                                    M2C_TRY(rings, optionalInteger(params, "rings", 1, 1, 1000));
+                                    return growSelection(mesh, s, -static_cast<int>(*rings));
+                                }));
 
     out.push_back(selectionEdit(
         "select.invert",
         "Invert a selection.",
         R"({"type":"object","properties":{"selection_id":{"type":"integer","x-object":"selection","minimum":0}},
             "required":["selection_id"],"additionalProperties":false})",
-        [](const TriMesh&, const MeshSelection& s, const Json&) {
+        [](const TriMesh&, const MeshSelection& s, const Json&) -> Result<MeshSelection> {
             MeshSelection inverted = s;
             inverted.invert();
             return inverted;

@@ -127,8 +127,18 @@ Result<Faces> wallFaces(const QuadLayout& wall,
         }
         auto patches = extractPatches(*part, partParams);
         if (!patches) return std::unexpected(patches.error());
-        auto seams = measureSeams(patches->faces, kSeamSamples, kSeamToleranceMm, patches->caps);
-        if (!seams) return std::unexpected(seams.error());
+        if (k < 2) { // the rim's own seams include its sharp edges
+            auto seams =
+                measureSeams(patches->faces, kSeamSamples, kSeamToleranceMm, patches->caps);
+            if (!seams) return std::unexpected(seams.error());
+            worst.maxGapMm = std::max(worst.maxGapMm, seams->maxGapMm);
+            worst.maxNormalAngleDeg = std::max(worst.maxNormalAngleDeg, seams->maxNormalAngleDeg);
+            worst.maxCapNormalAngleDeg =
+                std::max(worst.maxCapNormalAngleDeg, seams->maxCapNormalAngleDeg);
+            worst.maxRegularNormalAngleDeg =
+                std::max(worst.maxRegularNormalAngleDeg, seams->maxRegularNormalAngleDeg);
+            worst.unmatchedSamples += seams->unmatchedSamples;
+        }
         for (SurfacePatch& face : patches->faces) {
             face.cageFace += static_cast<std::uint32_t>(bounds[k]);
             all.faces.push_back(std::move(face));
@@ -137,14 +147,6 @@ Result<Faces> wallFaces(const QuadLayout& wall,
         all.regularPieces += patches->regularPieces;
         all.capPieces += patches->capPieces;
         all.maxCapErrorMm = std::max(all.maxCapErrorMm, patches->maxCapErrorMm);
-        if (k == 2) break; // the rim's own seams include its sharp edges
-        worst.maxGapMm = std::max(worst.maxGapMm, seams->maxGapMm);
-        worst.maxNormalAngleDeg = std::max(worst.maxNormalAngleDeg, seams->maxNormalAngleDeg);
-        worst.maxCapNormalAngleDeg =
-            std::max(worst.maxCapNormalAngleDeg, seams->maxCapNormalAngleDeg);
-        worst.maxRegularNormalAngleDeg =
-            std::max(worst.maxRegularNormalAngleDeg, seams->maxRegularNormalAngleDeg);
-        worst.unmatchedSamples += seams->unmatchedSamples;
     }
     // Fences: the rim loops (edges of rim faces that no other rim face has) and the sharp edges
     // across the rim.
@@ -401,6 +403,8 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
             p95BeforeRefinement.push_back(fit.p95DistanceMm);
             start = std::move(*finer);
             tries = 0;
+            // The finer cage starts afresh, without the smoothing that unfolded the coarser one.
+            fitting.smoothing = params.fitting.smoothing;
             continue;
         }
         QuadLayout used = fit.cage;

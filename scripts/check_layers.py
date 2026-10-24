@@ -2,7 +2,8 @@
 """Fail if a source file includes a module it must not depend on (ARCHITECTURE.md sections 4 and 9).
 
 Modules are the top-level folders of src/. Public headers are included as "m2c/<module>/File.h".
-Kernel libraries (CGAL, Open CASCADE, OpenSubdiv) may only be included below src/adapters/.
+Kernel libraries (CGAL, Open CASCADE, OpenSubdiv) may only be included below src/adapters/, and one
+adapter (src/adapters/<name>) may not include another.
 Run from anywhere:  python3 scripts/check_layers.py
 
 With --baseline it instead prints, as Markdown, the module dependencies actually used, the lines of
@@ -34,6 +35,8 @@ ALLOWED: dict[str, set[str]] = {
 KERNEL_INCLUDE = re.compile(
     r'^\s*#\s*include\s*[<"](CGAL/|opensubdiv/|opencascade/|[A-Za-z0-9_]+\.hxx)', re.M)
 PROJECT_INCLUDE = re.compile(r'^\s*#\s*include\s*"m2c/([a-z_]+)/', re.M)
+# Each adapter wraps one library and must not include another adapter (ARCHITECTURE.md section 4).
+ADAPTER_INCLUDE = re.compile(r'^\s*#\s*include\s*"m2c/adapters/([a-z_]+)/', re.M)
 SOURCE_SUFFIXES = {".h", ".hpp", ".cpp", ".cc", ".cxx", ".ipp"}
 
 
@@ -97,6 +100,11 @@ def main() -> int:
             for dep in PROJECT_INCLUDE.findall(text):
                 if dep not in allowed:
                     errors.append(f"{rel}: module '{module}' must not include module '{dep}'")
+            if module == "adapters":
+                adapter = path.relative_to(module_dir).parts[0]
+                for other in ADAPTER_INCLUDE.findall(text):
+                    if other != adapter:
+                        errors.append(f"{rel}: adapter '{adapter}' must not include adapter '{other}'")
 
     for error in errors:
         print(error, file=sys.stderr)

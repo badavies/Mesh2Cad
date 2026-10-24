@@ -290,6 +290,9 @@ void addMeshToolCommands(std::vector<Command>& out) {
             M2C_TRY(origin, requireVec3(params, "origin"));
             M2C_TRY(direction, requireVec3(params, "direction"));
             M2C_TRY(only, optionalId(params, "id"));
+            if (*only) {
+                M2C_TRY(mesh, requireMesh(context, params));
+            }
             Json best;
             double bestDistance = std::numeric_limits<double>::infinity();
             for (const DocumentObject& o : context.document.objects()) {

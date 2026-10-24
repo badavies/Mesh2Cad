@@ -75,7 +75,7 @@ std::vector<DeviationHotspot> deviationHotspots(const TriMesh& mesh, const Devia
         worst[f] = w;
         if (std::abs(d[w]) > tolerance) sign[f] = d[w] > 0.0 ? 1 : -1;
     }
-    const FaceAdjacency adjacency = buildFaceAdjacency(mesh);
+    const FaceAdjacency& adjacency = mesh.faceAdjacency();
     std::vector seen(faceCount, false);
     std::vector<DeviationHotspot> out;
     std::vector<std::uint32_t> stack;

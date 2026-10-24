@@ -166,11 +166,14 @@ int main(int argc, char** argv) {
         std::cerr << "mesh2cad-mcp: using a headless document\n";
     }
 
+    // Messages go to standard output through a stream of their own: a headless quad.remesh
+    // points std::cout at nothing while Instant Meshes runs, and messages must still get out.
+    std::ostream out(std::cout.rdbuf());
+    std::cin.tie(nullptr); // reading would flush std::cout, which the remesh may be swapping
     std::mutex outMutex;
-    const auto send = [&outMutex](const Json& message) {
+    const auto send = [&out, &outMutex](const Json& message) {
         const std::scoped_lock lock(outMutex);
-        std::cout << message.dump(-1, ' ', false, Json::error_handler_t::replace) << '\n'
-                  << std::flush;
+        out << message.dump(-1, ' ', false, Json::error_handler_t::replace) << '\n' << std::flush;
     };
     // Progress notifications go out from another thread while a tool runs.
     m2c::McpServer server(

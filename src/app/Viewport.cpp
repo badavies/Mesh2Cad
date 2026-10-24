@@ -352,6 +352,8 @@ void Viewport::setMode(const Mode mode) {
     lasso_.clear();
     stroke_.clear();
     drag_ = Drag::None;
+    hover_.reset(); // read again at the next move, if the new mode reads it
+    emit hoverChanged({});
     setCursor(mode == Mode::Navigate ? Qt::ArrowCursor : Qt::CrossCursor);
     update();
 }
@@ -471,7 +473,7 @@ void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
     for (const DocumentObject& o : snapshot_->objects) {
         const SelectionData* s = o.selection();
         if (s == nullptr || s->meshId != mesh.id || !o.visible) continue;
-        key.push_back({.faces = s->faces.get(), .id = o.id, .current = o.id == currentSelection_});
+        key.push_back({.faces = s->faces, .id = o.id, .current = o.id == currentSelection_});
     }
     if (key == gpu.selectionKey && (gpu.hasSelection || key.empty())) return;
     gpu.selectionKey = key;
@@ -511,9 +513,16 @@ void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
 void Viewport::syncColors(GpuMesh& gpu, const DocumentObject& mesh) {
     const DocumentObject* deviation = shownDeviation(*snapshot_, mesh.id);
     const DeviationField* field = deviation ? &deviation->deviation()->field : nullptr;
-    const std::pair key{field, colorBlind_};
-    if (key == gpu.colorKey) return;
-    gpu.colorKey = key;
+    // The distances identify a field: each document snapshot copies the field, but they share
+    // its distances, so an edit elsewhere does not upload the colours again.
+    const auto distances = [](const DeviationField* f) {
+        return f != nullptr ? f->distances().data() : nullptr;
+    };
+    if (distances(field) == distances(gpu.colorField ? &*gpu.colorField : nullptr) &&
+        colorBlind_ == gpu.colorBlind)
+        return;
+    gpu.colorField = field != nullptr ? std::optional(*field) : std::nullopt;
+    gpu.colorBlind = colorBlind_;
     gpu.hasColors = false;
     gpu.markers.clear();
     if (field != nullptr) {
@@ -1151,13 +1160,13 @@ void Viewport::mouseMoveEvent(QMouseEvent* event) {
         if (QLineF(lasso_.back(), pos).length() > 3.0) lasso_ << pos;
         break;
     case Drag::None:
-        if (mode_ != Mode::Navigate && mode_ != Mode::Lasso) {
-            hover_ = pick(pos);
-            if (hover_) {
-                emit hoverChanged(hoverText(*hover_));
-            } else {
-                emit hoverChanged({});
-            }
+        // Nothing follows the cursor in these modes, so there is nothing to draw again.
+        if (mode_ == Mode::Navigate || mode_ == Mode::Lasso) return;
+        hover_ = pick(pos);
+        if (hover_) {
+            emit hoverChanged(hoverText(*hover_));
+        } else {
+            emit hoverChanged({});
         }
         break;
     }

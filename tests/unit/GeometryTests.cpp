@@ -8,6 +8,7 @@
 #include "m2c/core/MeshStats.h"
 #include "m2c/core/MeshTopology.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/QuadLayout.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/core/Transform.h"
 
@@ -200,4 +201,16 @@ TEST_CASE("A primitive is drawn clipped to its region's box", "[core][primitive]
         .surface = {.kind = PrimitiveKind::Sphere, .point = {100, 0, 0}, .radiusMm = 1.0},
         .extent = {.min = {0, 0, 0}, .max = {1, 1, 1}}};
     CHECK_FALSE(primitiveDisplay(away).has_value());
+}
+
+TEST_CASE("Cage edges include an open sheet's boundary, each edge once", "[core][cage]") {
+    // Two quads side by side: 0-1-2-3 and 1-4-5-2, so 7 edges, 6 of them on the boundary and
+    // some of those running from a higher to a lower vertex.
+    const auto sheet =
+        QuadLayout::create({{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {2, 0, 0}, {2, 1, 0}},
+                           {0, 4, 8},
+                           {0, 1, 2, 3, 1, 4, 5, 2});
+    REQUIRE(sheet);
+    const std::vector<std::uint32_t> edges = cageEdges(*sheet);
+    CHECK(edges == std::vector<std::uint32_t>{0, 1, 0, 3, 1, 2, 1, 4, 2, 3, 2, 5, 4, 5});
 }

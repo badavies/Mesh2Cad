@@ -60,11 +60,15 @@ int main(int argc, char** argv) {
     }
     // The engine runs requests in order on a worker thread while this one reads, so an
     // rpc.cancel can reach the request it names while that runs. Both threads write lines.
+    // Lines go to standard output through a stream of their own: quad.remesh points std::cout
+    // at nothing while Instant Meshes runs, and replies and events must still get out.
+    std::ostream out(std::cout.rdbuf());
+    std::cin.tie(nullptr); // reading would flush std::cout, which the remesh may be swapping
     std::mutex outMutex;
-    const auto send = [&outMutex](const std::string& line) {
+    const auto send = [&out, &outMutex](const std::string& line) {
         if (line.empty()) return;
         const std::scoped_lock lock(outMutex);
-        std::cout << line << '\n' << std::flush;
+        out << line << '\n' << std::flush;
     };
     m2c::RpcServer server(
         registry, context, std::nullopt, [&send](const m2c::Json& event) { send(event.dump()); });

@@ -337,7 +337,10 @@ Result<DatumAlignResult> datumAlignment(const TriMesh& mesh, const DatumAlignPar
 
     // Origin: on the primary plane, on the secondary plane (if any), and on the tertiary plane or
     // at the centroid's X.
-    const Moments all = surfaceMoments(mesh, [](std::size_t) { return true; });
+    // The centroid places the origin along an axis no datum plane fixes.
+    const Moments all = result.secondary && params.tertiary
+                            ? Moments{}
+                            : surfaceMoments(mesh, [](std::size_t) { return true; });
     Eigen::Matrix3d a;
     Eigen::Vector3d b;
     a.row(0) = toEigen(primary->normal).transpose();

@@ -103,6 +103,7 @@ void alignToBoundaries(MultiResolutionHierarchy& hierarchy) {
 Result<void> constrainToGuides(MultiResolutionHierarchy& hierarchy,
                                const std::vector<std::vector<Vec3d>>& guides,
                                const double maxOffset) {
+    if (guides.empty()) return {}; // an open mesh without guides: nothing to copy or index
     const MatrixXf& V = hierarchy.V();
     const MatrixXu& F = hierarchy.F();
     std::vector<Vec3d> positions(static_cast<std::size_t>(V.cols()));

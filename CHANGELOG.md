@@ -28,6 +28,12 @@ to it are additive within 1.x.
   can be used in `surface.build`'s `flat` areas. In the app, `flat` is built by picking a
   selection and its plane in the Objects list and pressing **Add**. The Objects list shows each
   object's id before its name, and every group in the Tools menu starts with a capital.
+- Fixes from a code audit: `mesh2cad-rpc` and a headless `mesh2cad-mcp` no longer drop replies
+  and progress while `quad.remesh` runs; an agent's long command shows the app's Cancel button
+  and stops when the agent disconnects; open cages draw all their boundary edges; commands
+  refuse parameters their schemas rule out (a missing `visible` or `distance_mm`, `rings` out of
+  range, unknown ids in `mesh.pick` and `view.render`); and refined cages fit with the original
+  smoothing.
 
 ### Prismatic and hybrid parts (M4)
 

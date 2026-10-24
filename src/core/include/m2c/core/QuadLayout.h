@@ -105,8 +105,8 @@ struct CageStats {
 /// outward.
 [[nodiscard]] double signedVolume(const QuadLayout& cage);
 
-/// Each edge of the faces once, as pairs of vertex indices (a closed cage has each edge in two
-/// faces, once in each direction; the lower-to-higher one is kept).
+/// Each edge of the faces once, as pairs of vertex indices, the lower first, sorted (a closed
+/// cage has each edge in two faces; an open sheet's boundary edges are in one).
 [[nodiscard]] std::vector<std::uint32_t> cageEdges(const QuadLayout& cage);
 
 /// Edges of a closed cage where its faces turn by more than angleDeg (the angle between the two

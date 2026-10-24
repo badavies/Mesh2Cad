@@ -310,6 +310,9 @@ double turnAngle(const Primitive& s, const std::span<const Vec3d> points) {
     if (s.kind == PrimitiveKind::Sphere) {
         Vec3d mean;
         for (const Vec3d& p : points) mean = mean + normalAt(s, p);
+        // Normals that cancel out cover the whole sphere.
+        if (!(length(mean) > 1e-9 * static_cast<double>(points.size())))
+            return 2.0 * std::numbers::pi;
         mean = unit(mean);
         double widest = 0.0;
         for (const Vec3d& p : points) {

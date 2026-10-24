@@ -80,6 +80,7 @@ void fitCapInterior(BicubicPatch& patch, F f) {
     Eigen::Matrix<double, 3 * positions + 4 * kCapFit, 12> design;
     Eigen::Matrix<double, 3 * positions + 4 * kCapFit, 1> target;
     design.setZero();
+    target.setZero(); // an edge row skipped below stays zero on both sides
     int r = 0;
     for (int k = 0; k < positions; ++k) {
         const int column = k % kCapFit, line = k / kCapFit;

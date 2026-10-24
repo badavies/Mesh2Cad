@@ -809,6 +809,36 @@ TEST_CASE("Measurements snap to meshes and are saved objects", "[commands][measu
     CHECK(s.run("doc.list")["objects"].empty());
 }
 
+TEST_CASE("Commands refuse what their schemas rule out", "[commands]") {
+    Session s;
+    const TempDir dir;
+    const ObjectId box = s.import(dir, makeBox(30, 20, 10, 4), "box");
+    const auto code = [&](const std::string& command, const Json& params) {
+        const auto r = s.tryRun(command, params);
+        return r ? ErrorCode::Internal : r.error().code; // Internal: it ran
+    };
+    CHECK(code("object.show", {{"id", box}}) == ErrorCode::InvalidArgument); // visible required
+    CHECK(code("mesh.pick", {{"origin", {0, 0, -100}}, {"direction", {0, 0, 1}}, {"id", 999}}) ==
+          ErrorCode::NotFound);
+    CHECK(code("view.render", {{"path", (dir.path() / "v.png").string()}, {"highlight_id", 999}}) ==
+          ErrorCode::NotFound);
+    CHECK(code("select.brush", {{"id", box}, {"center", {0, 0, 0}}, {"radius_mm", 0}}) ==
+          ErrorCode::InvalidArgument);
+    CHECK(code("select.defects", {{"id", box}, {"tip_angle_deg", 0}}) ==
+          ErrorCode::InvalidArgument);
+    const Json all = s.run("select.all", {{"id", box}});
+    for (const Json& rings : {Json(0), Json(1001), Json(2.5), Json("2")}) {
+        CHECK(code("select.grow", {{"selection_id", all["selection_id"]}, {"rings", rings}}) ==
+              ErrorCode::InvalidArgument);
+        CHECK(code("select.shrink", {{"selection_id", all["selection_id"]}, {"rings", rings}}) ==
+              ErrorCode::InvalidArgument);
+    }
+    // Rotation entries so large the orthonormality check overflows to NaN.
+    CHECK(code("align.transform",
+               {{"id", box}, {"rotation", {1e200, -1e200, 0, 1e200, 1e200, 0, 0, 0, 1}}}) ==
+          ErrorCode::InvalidArgument);
+}
+
 TEST_CASE("object.show and object.delete take several objects as one step", "[commands]") {
     Session s;
     const TempDir dir;
