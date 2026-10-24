@@ -362,8 +362,8 @@ Result<StepContents> writeStep(const std::span<const StepPart> parts,
 Result<void>
 writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name) {
     const StepPart part{.name = name, .shape = &solid};
-    auto written = writeStep(std::span(&part, 1), path);
-    if (!written) return std::unexpected(written.error());
+    if (auto written = writeStep(std::span(&part, 1), path); !written)
+        return std::unexpected(written.error());
     return {};
 }
 

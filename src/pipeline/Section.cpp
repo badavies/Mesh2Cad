@@ -98,8 +98,7 @@ std::optional<SketchCurve> arcThrough(const std::span<const Vec2d> q,
     Vec2d mid = q[i + 1];
     double bow = 0.0;
     for (std::size_t k = i + 1; k < j; ++k) {
-        const double dist = distanceToSegment(a, b, q[k]);
-        if (dist > bow) {
+        if (const double dist = distanceToSegment(a, b, q[k]); dist > bow) {
             bow = dist;
             mid = q[k];
         }
@@ -190,8 +189,7 @@ thin(const std::span<const Vec2d> q, std::size_t first, std::size_t last, const 
         std::size_t far = a;
         double farthest = tol;
         for (std::size_t k = a + 1; k < b; ++k) {
-            const double dist = distanceToSegment(q[a], q[b], q[k]);
-            if (dist > farthest) {
+            if (const double dist = distanceToSegment(q[a], q[b], q[k]); dist > farthest) {
                 farthest = dist;
                 far = k;
             }
@@ -388,8 +386,7 @@ Result<LoopFit> fitLoop(std::span<const Vec2d> points, const SectionParams& para
     double sharpest = 2.0;
     for (std::size_t k = 0; k < n; ++k) {
         const Vec2d in = p[k] - p[(k + n - 1) % n], out = p[(k + 1) % n] - p[k];
-        const double c = dot(in, out) / (length(in) * length(out));
-        if (c < sharpest) {
+        if (const double c = dot(in, out) / (length(in) * length(out)); c < sharpest) {
             sharpest = c;
             start = k;
         }

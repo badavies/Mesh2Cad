@@ -218,8 +218,9 @@ void Raster::axisTriad() {
             // Two pixels wide.
             for (unsigned k = 0; k < 4; ++k) {
                 const int x = static_cast<int>(std::floor(ox + dx * t)) + static_cast<int>(k & 1U);
-                const int y = static_cast<int>(std::floor(oy + dy * t)) + static_cast<int>(k >> 1U);
-                if (x >= 0 && y >= 0 && x < image_.width && y < image_.height)
+                if (const int y =
+                        static_cast<int>(std::floor(oy + dy * t)) + static_cast<int>(k >> 1U);
+                    x >= 0 && y >= 0 && x < image_.width && y < image_.height)
                     put(x, y, axis.color);
             }
         }
@@ -267,8 +268,8 @@ void Raster::label(
                          static_cast<unsigned>(4 - col / scale) &
                      1U) == 0)
                     continue;
-                const int px = left + col, py = y + row;
-                if (px >= 0 && py >= 0 && px < image_.width && py < image_.height)
+                if (const int px = left + col, py = y + row;
+                    px >= 0 && py >= 0 && px < image_.width && py < image_.height)
                     put(px, py, color);
             }
         }

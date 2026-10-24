@@ -231,8 +231,8 @@ confirmedOnScan(const QuadLayout& cage,
 
 Result<QuadLayout> thickenCage(const QuadLayout& sheet, const double thicknessMm) {
     if (!(thicknessMm > 0.0)) return fail(ErrorCode::InvalidArgument, "thickness must be positive");
-    const CageStats stats = cageStats(sheet);
-    if (!stats.orientedManifold() || stats.boundaryEdges == 0) {
+    if (const CageStats stats = cageStats(sheet);
+        !stats.orientedManifold() || stats.boundaryEdges == 0) {
         return fail(ErrorCode::InvalidArgument,
                     "only an open, consistently oriented cage can be thickened");
     }

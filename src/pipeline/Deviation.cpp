@@ -90,8 +90,8 @@ std::vector<DeviationHotspot> deviationHotspots(const TriMesh& mesh, const Devia
             stack.pop_back();
             h.faces.push_back(f);
             for (std::uint32_t k = adjacency.offsets[f]; k < adjacency.offsets[f + 1]; ++k) {
-                const std::uint32_t g = adjacency.neighbours[k];
-                if (!seen[g] && sign[g] == h.sign) {
+                if (const std::uint32_t g = adjacency.neighbours[k];
+                    !seen[g] && sign[g] == h.sign) {
                     seen[g] = true;
                     stack.push_back(g);
                 }

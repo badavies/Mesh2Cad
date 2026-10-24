@@ -134,9 +134,10 @@ Result<Primitive> estimateCone(const FaceSamples& s) {
         planes += s.areas[i] * n * n.transpose();
         rhs += s.areas[i] * n * dot(s.normals[i], s.centroids[i]);
     }
-    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> planeSolver(planes);
     // Normals nearly in a plane through the origin: a cylinder or plane, with no apex.
-    if (!(planeSolver.eigenvalues()(0) > 1e-6 * planeSolver.eigenvalues()(2))) return none();
+    if (const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> planeSolver(planes);
+        !(planeSolver.eigenvalues()(0) > 1e-6 * planeSolver.eigenvalues()(2)))
+        return none();
     const Eigen::Vector3d x = planes.ldlt().solve(rhs);
     const Eigen::SelfAdjointEigenSolver<Eigen::Matrix3d> spreadSolver(spread);
     const Eigen::Vector3d e = spreadSolver.eigenvectors().col(0);

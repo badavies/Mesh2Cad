@@ -177,8 +177,9 @@ Json McpServer::callTool(const Json& params) {
     Json token;
     if (params.contains("_meta") && params["_meta"].is_object() &&
         params["_meta"].contains("progressToken")) {
-        const Json& t = params["_meta"]["progressToken"];
-        if (t.is_string() || t.is_number_integer()) token = t;
+        if (const Json& t = params["_meta"]["progressToken"];
+            t.is_string() || t.is_number_integer())
+            token = t;
     }
 
     auto reply = callReporting(command, arguments, token);

@@ -77,16 +77,17 @@ std::array<Vec3d, 3> startAxes(const TriMesh& mesh, const std::span<const std::u
     for (const std::uint32_t f : faces) {
         const auto [i, j, k] = mesh.face(f);
         const Vec3d& a = mesh.positions()[i];
-        const Vec3d n = cross(mesh.positions()[j] - a, mesh.positions()[k] - a);
-        if (length(n) > 0.0) facets.push_back({.normal = unit(n), .area = length(n) / 2.0});
+        if (const Vec3d n = cross(mesh.positions()[j] - a, mesh.positions()[k] - a);
+            length(n) > 0.0)
+            facets.push_back({.normal = unit(n), .area = length(n) / 2.0});
     }
     Vec3d first = mostFaced(facets);
     if (length(first) == 0.0) first = {.x = 0, .y = 0, .z = 1};
     const double across = std::sin(kFacingDeg * std::numbers::pi / 180.0);
     std::vector<Facet> side;
     for (const Facet& f : facets) {
-        const Vec3d flat = f.normal - first * dot(f.normal, first);
-        if (std::abs(dot(f.normal, first)) < across && length(flat) > 0.0) {
+        if (const Vec3d flat = f.normal - first * dot(f.normal, first);
+            std::abs(dot(f.normal, first)) < across && length(flat) > 0.0) {
             side.push_back({.normal = unit(flat), .area = f.area});
         }
     }
@@ -153,8 +154,7 @@ OrientedBox step(const OrientedBox& box, const std::span<const Vec3d> points) {
         std::size_t k = 0;
         double worst = -std::numeric_limits<double>::infinity();
         for (std::size_t a = 0; a < 3; ++a) {
-            const double g = std::abs(qa[a]) - size(b, a) / 2.0;
-            if (g > worst) {
+            if (const double g = std::abs(qa[a]) - size(b, a) / 2.0; g > worst) {
                 worst = g;
                 k = a;
             }
@@ -188,8 +188,8 @@ OrientedBox worldOrdered(const OrientedBox& box) {
         std::size_t pick = 0;
         double best = -1.0;
         for (std::size_t k = 0; k < 3; ++k) {
-            const std::array c{box.axes[k].x, box.axes[k].y, box.axes[k].z};
-            if (!used[k] && std::abs(c[world]) > best) {
+            if (const std::array c{box.axes[k].x, box.axes[k].y, box.axes[k].z};
+                !used[k] && std::abs(c[world]) > best) {
                 best = std::abs(c[world]);
                 pick = k;
             }
@@ -226,8 +226,7 @@ fitBox(const TriMesh& mesh, std::span<const std::uint32_t> faces, const BoxFitPa
             length(next.center - current.center) + length(next.sizeMm - current.sizeMm) +
             length(next.axes[0] - current.axes[0]) + length(next.axes[1] - current.axes[1]);
         current = next;
-        const double rms = rmsDistance(current, points);
-        if (rms < bestRms) {
+        if (const double rms = rmsDistance(current, points); rms < bestRms) {
             bestRms = rms;
             best = current;
         }

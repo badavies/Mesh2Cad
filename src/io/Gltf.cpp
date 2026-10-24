@@ -73,8 +73,7 @@ Result<Corners> splitAtCreases(const TriMesh& mesh, const double creaseAngleDeg)
     {
         std::vector next(start.begin(), start.end() - 1);
         for (std::size_t f = 0; f < faces; ++f) {
-            const auto [a, b, c] = mesh.face(f);
-            for (const std::uint32_t v : {a, b, c})
+            for (const auto [a, b, c] = mesh.face(f); const std::uint32_t v : {a, b, c})
                 around[next[v]++] = static_cast<std::uint32_t>(f);
         }
     }
@@ -86,13 +85,12 @@ Result<Corners> splitAtCreases(const TriMesh& mesh, const double creaseAngleDeg)
     std::vector<std::vector<std::pair<std::array<float, 3>, std::uint32_t>>> written(
         mesh.vertexCount());
     for (std::size_t f = 0; f < faces; ++f) {
-        const auto [a, b, c] = mesh.face(f);
-        for (const std::uint32_t v : {a, b, c}) {
+        for (const auto [a, b, c] = mesh.face(f); const std::uint32_t v : {a, b, c}) {
             Vec3d sum{};
             for (std::uint32_t k = start[v]; k < start[v + 1]; ++k) {
-                const std::uint32_t g = around[k];
                 // A degenerate face has no direction of its own and takes all its neighbours'.
-                if (unit[f] == Vec3d{} || dot(unit[g], unit[f]) >= cosCrease)
+                if (const std::uint32_t g = around[k];
+                    unit[f] == Vec3d{} || dot(unit[g], unit[f]) >= cosCrease)
                     sum = sum + weighted[g];
             }
             const double len = length(sum);

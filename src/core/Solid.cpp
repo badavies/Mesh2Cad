@@ -270,8 +270,8 @@ Result<FairnessReport> measureFairness(const std::vector<SurfacePatch>& faces,
         out.samples += points.size();
         const std::size_t row = nu + 1;
         const auto compare = [&](const std::size_t x, const std::size_t y) {
-            const double d = length(points[x] - points[y]);
-            if (d > 0.0) variation.push_back(std::abs(curvature[x] - curvature[y]) / d);
+            if (const double d = length(points[x] - points[y]); d > 0.0)
+                variation.push_back(std::abs(curvature[x] - curvature[y]) / d);
         };
         for (std::size_t j = 0; j <= nv; ++j) {
             for (std::size_t i = 0; i <= nu; ++i) {

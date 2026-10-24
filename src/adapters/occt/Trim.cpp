@@ -308,8 +308,8 @@ Result<TrimResult> trimPrimitives(const std::vector<FittedPrimitive>& primitives
         BRepBuilderAPI_Sewing sewing(params.sewToleranceMm);
         for (TopExp_Explorer it(split.Shape(), TopAbs_FACE); it.More(); it.Next()) {
             ++splitFaces;
-            const TopoDS_Face& face = TopoDS::Face(it.Current());
-            if (coverage(face, index, params.maxDistanceMm) >= params.minCoverage) {
+            if (const TopoDS_Face& face = TopoDS::Face(it.Current());
+                coverage(face, index, params.maxDistanceMm) >= params.minCoverage) {
                 sewing.Add(face);
                 ++keptFaces;
             }

@@ -93,8 +93,8 @@ void addSegmentCommands(std::vector<Command>& out) {
                 }
                 p.planes = p.cylinders = p.spheres = false;
                 for (const Json& k : kinds) {
-                    const std::string kind = k.is_string() ? k.get<std::string>() : "";
-                    if (kind == "plane") {
+                    if (const std::string kind = k.is_string() ? k.get<std::string>() : "";
+                        kind == "plane") {
                         p.planes = true;
                     } else if (kind == "cylinder") {
                         p.cylinders = true;

@@ -67,15 +67,15 @@ filletEdges(const Solid& solid, const std::vector<Vec3d>& edgePoints, const doub
             double best = std::numeric_limits<double>::infinity();
             for (int i = 1; i <= edgeFaces.Extent(); ++i) {
                 if (BRep_Tool::Degenerated(TopoDS::Edge(edgeFaces.FindKey(i)))) continue;
-                BRepExtrema_DistShapeShape const distance(vertex, edgeFaces.FindKey(i));
-                if (distance.IsDone() && distance.Value() < best) {
+                if (BRepExtrema_DistShapeShape const distance(vertex, edgeFaces.FindKey(i));
+                    distance.IsDone() && distance.Value() < best) {
                     best = distance.Value();
                     nearest = i;
                 }
             }
             if (nearest == 0) return fail(ErrorCode::InvalidArgument, "the solid has no edges");
-            const NCollection_List<TopoDS_Shape>& faces = edgeFaces(nearest);
-            if (faces.Extent() != 2 || !analytic(faces.First()) || !analytic(faces.Last())) {
+            if (const NCollection_List<TopoDS_Shape>& faces = edgeFaces(nearest);
+                faces.Extent() != 2 || !analytic(faces.First()) || !analytic(faces.Last())) {
                 return fail(ErrorCode::InvalidArgument,
                             "the edge nearest a point is not between two planes, cylinders, "
                             "cones or spheres");

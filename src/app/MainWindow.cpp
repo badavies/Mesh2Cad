@@ -123,12 +123,12 @@ public:
 /// The user guide's first page: installed beside the program (doc/user on Windows,
 /// share/mesh2cad/user on Linux), else in the source tree of a build that isn't installed.
 QString userGuideIndex() {
-    const QDir bin(QCoreApplication::applicationDirPath());
-    for (const QString& dir : {bin.filePath(QStringLiteral("../doc/user")),
+    for (const QDir bin(QCoreApplication::applicationDirPath());
+         const QString& dir : {bin.filePath(QStringLiteral("../doc/user")),
                                bin.filePath(QStringLiteral("../share/mesh2cad/user")),
                                QStringLiteral(MESH2CAD_SOURCE_DIR "/docs/user")}) {
-        const QFileInfo index(QDir(dir).filePath(QStringLiteral("README.md")));
-        if (index.isFile()) return index.canonicalFilePath();
+        if (const QFileInfo index(QDir(dir).filePath(QStringLiteral("README.md"))); index.isFile())
+            return index.canonicalFilePath();
     }
     return {};
 }
@@ -635,8 +635,8 @@ void MainWindow::refreshTree() {
         selectedIds_.assign(1, selected_);
     if (selected_ == 0) selectedIds_.clear();
     for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
-        const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
-        if (id == selected_) tree_->setCurrentItem(*it);
+        if (const auto id = (*it)->data(0, kIdRole).value<ObjectId>(); id == selected_)
+            tree_->setCurrentItem(*it);
     }
     for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
         if (std::ranges::find(selectedIds_, (*it)->data(0, kIdRole).value<ObjectId>()) !=
@@ -655,8 +655,8 @@ void MainWindow::onTreeSelection() {
     std::erase_if(selectedIds_,
                   [&](const ObjectId id) { return std::ranges::find(now, id) == now.end(); });
     for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
-        const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
-        if ((*it)->isSelected() && std::ranges::find(selectedIds_, id) == selectedIds_.end())
+        if (const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
+            (*it)->isSelected() && std::ranges::find(selectedIds_, id) == selectedIds_.end())
             selectedIds_.push_back(id);
     }
     selected_ = selectedIds_.empty() ? 0 : selectedIds_.front();
@@ -754,8 +754,7 @@ Json MainWindow::formDefaults(const Command& command) const {
         const Json kinds = x.is_array() ? x : Json::array({x});
         ObjectId id = 0;
         for (std::size_t i = 0; i < kinds.size() && id == 0; ++i) {
-            const std::string kind = kinds[i].get<std::string>();
-            if (kind == "any") {
+            if (const std::string kind = kinds[i].get<std::string>(); kind == "any") {
                 id = selected_;
             } else if (kind == "selection") {
                 id = currentSelection();

@@ -247,8 +247,9 @@ std::vector<std::array<std::uint32_t, 2>> sharpCageEdges(const QuadLayout& cage,
     std::vector<std::array<std::uint32_t, 2>> sharp;
     for (const auto& [edge, n] : normals) {
         if (n.size() != 2) continue;
-        const double size = length(n[0]) * length(n[1]);
-        if (size > 0.0 && dot(n[0], n[1]) < limit * size) sharp.push_back(edge);
+        if (const double size = length(n[0]) * length(n[1]);
+            size > 0.0 && dot(n[0], n[1]) < limit * size)
+            sharp.push_back(edge);
     }
     return sharp;
 }

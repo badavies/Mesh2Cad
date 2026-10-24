@@ -40,8 +40,9 @@ struct FreeNeighbours {
     const std::vector<char>* free;
     void operator()(const Face f, std::vector<Face>& out) const {
         for (const auto h : CGAL::halfedges_around_face(mesh->halfedge(f), *mesh)) {
-            const Face g = mesh->face(mesh->opposite(h));
-            if (g != SurfaceMesh::null_face() && (*free)[g.idx()]) out.push_back(g);
+            if (const Face g = mesh->face(mesh->opposite(h));
+                g != SurfaceMesh::null_face() && (*free)[g.idx()])
+                out.push_back(g);
         }
     }
 };

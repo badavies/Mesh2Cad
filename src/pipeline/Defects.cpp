@@ -65,8 +65,8 @@ Neighbourhoods buildNeighbourhoods(const TriMesh& mesh) {
             const std::uint32_t a = c[i];
             const std::uint32_t b = c[(i + 1) % 3];
             for (std::uint32_t k = offsets[f]; k < offsets[f + 1]; ++k) {
-                const auto g = mesh.face(neighbours[k]);
-                if (std::ranges::contains(g, a) && std::ranges::contains(g, b)) {
+                if (const auto g = mesh.face(neighbours[k]);
+                    std::ranges::contains(g, a) && std::ranges::contains(g, b)) {
                     n.across[3 * f + i] = neighbours[k];
                     break;
                 }
@@ -169,8 +169,9 @@ std::size_t genusOf(const TriMesh& mesh,
             if (parts.unite(k, kg)) --partCount;
             const auto cg = mesh.face(g);
             for (const std::uint32_t corner : {i, j}) {
-                const auto other = static_cast<std::uint32_t>(cornerOf(cg, c[corner]));
-                if (fans.unite(3 * k + corner, 3 * kg + other)) --fanCount;
+                if (const auto other = static_cast<std::uint32_t>(cornerOf(cg, c[corner]));
+                    fans.unite(3 * k + corner, 3 * kg + other))
+                    --fanCount;
             }
         }
     }
@@ -308,8 +309,7 @@ struct Grower {
                 const std::uint32_t v = c[i];
                 const std::uint32_t had = vertexStamp[v] == stamp ? vertexCount[v] : 0;
                 const bool next = joins[i];
-                const bool previous = joins[(i + 2) % 3];
-                if (!next && !previous) {
+                if (const bool previous = joins[(i + 2) % 3]; !next && !previous) {
                     ++fanChange;
                 } else if (next && previous && (n.closed[v] == 0 || had + 1 != n.valence(v))) {
                     --fanChange;
@@ -324,12 +324,13 @@ struct Grower {
             euler += change;
             if (change < 0 && euler <= -1) {
                 // One connected patch: genus = (2 - euler - loops) / 2, confirmed exactly.
-                const std::uint32_t b = loops();
-                if ((b == kNone || 2 - euler - b >= 2) && genus() > 0) return patch.size();
+                if (const std::uint32_t b = loops();
+                    (b == kNone || 2 - euler - b >= 2) && genus() > 0)
+                    return patch.size();
             }
             for (std::size_t i = 0; i < 3; ++i) {
-                const std::uint32_t g = n.across[std::size_t{3} * f + i];
-                if (g != kNone && queued[g] != stamp && !blocked.test(g)) {
+                if (const std::uint32_t g = n.across[std::size_t{3} * f + i];
+                    g != kNone && queued[g] != stamp && !blocked.test(g)) {
                     queued[g] = stamp;
                     ring[g] = ring[f] + 1;
                     parent[g] = f;
@@ -411,9 +412,9 @@ void findSpikes(const TriMesh& mesh,
         for (std::size_t i = 0; i < 3; ++i) {
             const std::uint32_t g = n.across[std::size_t{3} * f + i];
             if (g == kNone || g < f) continue;
-            const Vec3d ng = faceNormal(mesh, g);
             // Degenerate faces have a zero normal and never fold.
-            if (length(nf) > 0.0 && length(ng) > 0.0 && dot(nf, ng) < foldCos) {
+            if (const Vec3d ng = faceNormal(mesh, g);
+                length(nf) > 0.0 && length(ng) > 0.0 && dot(nf, ng) < foldCos) {
                 marked.set(f);
                 marked.set(g);
             }
@@ -434,8 +435,8 @@ void findSpikes(const TriMesh& mesh,
         seen.set(start);
         for (std::size_t k = 0; k < cluster.size(); ++k) {
             for (std::size_t i = 0; i < 3; ++i) {
-                const std::uint32_t g = n.across[std::size_t{3} * cluster[k] + i];
-                if (g != kNone && marked.test(g) && !seen.test(g)) {
+                if (const std::uint32_t g = n.across[std::size_t{3} * cluster[k] + i];
+                    g != kNone && marked.test(g) && !seen.test(g)) {
                     seen.set(g);
                     cluster.push_back(g);
                 }
@@ -494,8 +495,8 @@ void findSpikes(const TriMesh& mesh,
         cluster.assign(1, start);
         for (std::size_t k = 0; k < cluster.size(); ++k) {
             for (std::size_t i = 0; i < 3; ++i) {
-                const std::uint32_t g = n.across[std::size_t{3} * cluster[k] + i];
-                if (g != kNone && spikes.test(g) && !counted.test(g)) {
+                if (const std::uint32_t g = n.across[std::size_t{3} * cluster[k] + i];
+                    g != kNone && spikes.test(g) && !counted.test(g)) {
                     counted.set(g);
                     cluster.push_back(g);
                 }

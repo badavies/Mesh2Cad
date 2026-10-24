@@ -242,8 +242,8 @@ SketchScene buildSketchScene(const Sketch& sketch) {
             append(sketchLines(Sketch{.plane = sketch.plane, .loops = {SketchLoop{{curve}}}}),
                    sketchCurveColor(curve.kind));
             // A gap after this curve ends one chain and starts the next: a dot on each side.
-            const SketchCurve& next = loop.curves[(i + 1) % loop.curves.size()];
-            if (length(next.start() - curve.end()) > kGapMm) {
+            if (const SketchCurve& next = loop.curves[(i + 1) % loop.curves.size()];
+                length(next.start() - curve.end()) > kGapMm) {
                 scene.openEnds.push_back(sketch.plane.toWorld(curve.end()));
                 scene.openEnds.push_back(sketch.plane.toWorld(next.start()));
             }
@@ -330,8 +330,9 @@ double Viewport::aspect() const {
 void Viewport::setSnapshot(std::shared_ptr<const DocSnapshot> snapshot) {
     const bool hadMeshes = snapshot_ && std::ranges::any_of(snapshot_->objects, isDrawn);
     snapshot_ = std::move(snapshot);
-    const bool hasMeshes = std::ranges::any_of(snapshot_->objects, isDrawn);
-    if (!hadMeshes && hasMeshes) fitPending_ = true;
+    if (const bool hasMeshes = std::ranges::any_of(snapshot_->objects, isDrawn);
+        !hadMeshes && hasMeshes)
+        fitPending_ = true;
     if (hover_ && snapshot_->find(hover_->meshId) == nullptr) hover_.reset();
     update();
 }
@@ -518,8 +519,8 @@ void Viewport::syncColors(GpuMesh& gpu, const DocumentObject& mesh) {
     if (field != nullptr) {
         const std::vector<double>& d = field->distances();
         const auto largest = std::ranges::max_element(d);
-        const auto smallest = std::ranges::min_element(d);
-        for (const auto& [it, isLargest] : {std::pair{largest, true}, std::pair{smallest, false}}) {
+        for (const auto smallest = std::ranges::min_element(d);
+             const auto& [it, isLargest] : {std::pair{largest, true}, std::pair{smallest, false}}) {
             const auto vertex = static_cast<std::uint32_t>(it - d.begin());
             gpu.markers.push_back(DeviationMarker{.meshId = mesh.id,
                                                   .vertex = vertex,
