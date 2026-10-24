@@ -339,7 +339,8 @@ void MainWindow::buildToolbar() {
         {.text = tr("Brush"),
          .mode = Mode::Brush,
          .key = "2",
-         .tip = tr("Paint faces. Ctrl removes. [ and ] change the size. Right drag orbits")},
+         .tip = tr("Paint faces. Ctrl removes. [ and ] change the size. Right drag, or a drag "
+                   "off the mesh, orbits")},
         {.text = tr("Lasso"),
          .mode = Mode::Lasso,
          .key = "3",
@@ -347,11 +348,13 @@ void MainWindow::buildToolbar() {
         {.text = tr("Crease"),
          .mode = Mode::Crease,
          .key = "4",
-         .tip = tr("Click a face to select the region up to sharp edges. Ctrl removes")},
+         .tip = tr("Click a face to select the region up to sharp edges. Ctrl removes. Right "
+                   "drag, or a drag off the mesh, orbits")},
         {.text = tr("Measure"),
          .mode = Mode::Measure,
          .key = "5",
-         .tip = tr("Click two points to measure their distance")},
+         .tip = tr("Click two points to measure their distance. Right drag, or a drag off the "
+                   "mesh, orbits")},
     }};
     for (const auto& [text, mode, key, tip] : modes) {
         QAction* a = bar->addAction(text);

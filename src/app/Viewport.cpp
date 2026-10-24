@@ -1118,8 +1118,13 @@ void Viewport::mousePressEvent(QMouseEvent* event) {
         drag_ = Drag::Lasso;
         lasso_ = QPolygonF{event->position()};
         break;
+    // Off the mesh, as with the brush, a left drag orbits.
     case Mode::Crease:
-        if (const auto hit = pick(event->position())) emit faceClicked(*hit, ctrl, shift);
+        if (const auto hit = pick(event->position())) {
+            emit faceClicked(*hit, ctrl, shift);
+        } else {
+            drag_ = Drag::Orbit;
+        }
         break;
     case Mode::Measure:
         if (const auto hit = pick(event->position())) {
@@ -1129,6 +1134,8 @@ void Viewport::mousePressEvent(QMouseEvent* event) {
                 emit measured(*measureStart_, *hit);
                 measureStart_.reset();
             }
+        } else {
+            drag_ = Drag::Orbit;
         }
         break;
     }
