@@ -89,7 +89,7 @@ booleanSolids(const Solid& a, const Solid& b, const BooleanOp op, const double f
     if (!(fuzzyMm >= 0.0)) {
         return fail(ErrorCode::InvalidArgument, "the fuzzy tolerance must not be negative");
     }
-    return guarded("the boolean", [&]() -> Result<Solid> {
+    return guarded("the boolean", [&] -> Result<Solid> {
         const std::unique_ptr<BRepAlgoAPI_BooleanOperation> boolean = algorithm(op);
         NCollection_List<TopoDS_Shape> arguments, tools;
         arguments.Append(a.shape().shape);
@@ -141,17 +141,17 @@ Result<Solid> primitiveSolid(const FittedPrimitive& fit, const double lengthMm) 
         return fail(ErrorCode::InvalidArgument,
                     "the radius must be positive and the length not negative");
     }
-    return guarded("making the primitive a solid", [&]() -> Result<Solid> {
+    return guarded("making the primitive a solid", [&] -> Result<Solid> {
         const gp_Pnt point(s.point.x, s.point.y, s.point.z);
         if (s.kind == PrimitiveKind::Sphere) {
             return kernelSolid(BRepPrimAPI_MakeSphere(point, s.radiusMm).Shape(), "the sphere is");
         }
         const Vec3d axis = s.direction * (1.0 / length(s.direction));
         double lo = std::numeric_limits<double>::infinity(), hi = -lo;
-        for (int k = 0; k < 8; ++k) {
-            const Vec3d corner{(k & 1) ? fit.extent.max.x : fit.extent.min.x,
-                               (k & 2) ? fit.extent.max.y : fit.extent.min.y,
-                               (k & 4) ? fit.extent.max.z : fit.extent.min.z};
+        for (unsigned k = 0; k < 8; ++k) {
+            const Vec3d corner{.x = (k & 1U) != 0 ? fit.extent.max.x : fit.extent.min.x,
+                               .y = (k & 2U) != 0 ? fit.extent.max.y : fit.extent.min.y,
+                               .z = (k & 4U) != 0 ? fit.extent.max.z : fit.extent.min.z};
             const double t = dot(corner - s.point, axis);
             lo = std::min(lo, t);
             hi = std::max(hi, t);
@@ -183,7 +183,7 @@ Result<Solid> boxSolid(const OrientedBox& box) {
     if (!(s.x > 0.0) || !(s.y > 0.0) || !(s.z > 0.0)) {
         return fail(ErrorCode::InvalidArgument, "a box's sizes must be positive");
     }
-    return guarded("making the box", [&]() -> Result<Solid> {
+    return guarded("making the box", [&] -> Result<Solid> {
         const Vec3d corner = box.center - a * (s.x / 2.0) - b * (s.y / 2.0) - c * (s.z / 2.0);
         const gp_Ax2 frame(
             gp_Pnt(corner.x, corner.y, corner.z), gp_Dir(c.x, c.y, c.z), gp_Dir(a.x, a.y, a.z));

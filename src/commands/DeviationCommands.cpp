@@ -17,6 +17,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/MeshSelection.h"
 #include "m2c/core/Progress.h"
+#include "m2c/core/TriMesh.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Report.h"
 #include "m2c/pipeline/Deviation.h"
@@ -52,7 +53,7 @@ Json toJson(const DeviationHotspot& h) {
 
 /// The largest `max` hotspots of a deviation of `mesh`.
 std::vector<DeviationHotspot>
-largestHotspots(const TriMesh& mesh, const DeviationField& field, std::size_t max) {
+largestHotspots(const TriMesh& mesh, const DeviationField& field, const std::size_t max) {
     if (max == 0) return {};
     std::vector<DeviationHotspot> all = deviationHotspots(mesh, field);
     if (all.size() > max) all.resize(max);

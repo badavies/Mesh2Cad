@@ -36,7 +36,7 @@ public:
 
     /// Logs an object's info query (mesh.info, solid.info, deviation.info), as its context
     /// menu's Info does. Objects without one are ignored.
-    void showInfo(ObjectId id);
+    void showInfo(ObjectId id) const;
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -66,8 +66,8 @@ private:
     void onBrushStroke(ObjectId mesh, const std::vector<Vec3d>& centers, bool subtract, bool add);
     void onLasso(const QPolygonF& ndc, bool subtract, bool add);
     void onFaceClicked(Hit hit, bool subtract, bool add);
-    void onObjectClicked(Hit hit);
-    void onMeasured(Hit a, Hit b);
+    void onObjectClicked(const Hit& hit);
+    void onMeasured(Hit a, Hit b) const;
     /// Where a selection tool's result goes: into the current selection of that mesh (replace,
     /// add with Shift, subtract with Ctrl) or a new selection.
     [[nodiscard]] Json selectionTarget(ObjectId mesh, bool subtract, bool add) const;

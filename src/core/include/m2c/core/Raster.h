@@ -46,7 +46,7 @@ public:
            const Aabb& box,
            const Vec3d& from,
            const Vec3d& up,
-           Rgb background,
+           const Rgb& background,
            Framing framing = Framing::Box);
 
     /// Triangles with front faces in `front`, or `vertexColors` (one per position) blended across
@@ -55,8 +55,8 @@ public:
     /// `biasMm` moves them towards the camera to draw over a surface they lie on.
     void triangles(std::span<const Vec3d> positions,
                    std::span<const std::uint32_t> indices,
-                   Rgb front,
-                   Rgb back,
+                   const Rgb& front,
+                   const Rgb& back,
                    std::span<const Rgb> vertexColors = {},
                    std::span<const std::uint8_t> marks = {},
                    double biasMm = 0.0,
@@ -65,7 +65,7 @@ public:
     /// One-pixel lines between pairs of points; `onTop` draws them over everything.
     void lines(std::span<const Vec3d> points,
                std::span<const std::uint32_t> segments,
-               Rgb color,
+               const Rgb& color,
                bool onTop);
 
     /// The world axes as seen from the view, X red, Y green and Z blue as in the app, in the
@@ -74,7 +74,7 @@ public:
 
     /// Upper-case text in a 5 x 7 pixel font, `scale` pixels per font pixel, from its top-left
     /// corner. Only the letters A to Z and spaces are drawn; anything else leaves a gap.
-    void label(int x, int y, std::string_view text, Rgb color, int scale = 1);
+    void label(int x, int y, std::string_view text, const Rgb& color, int scale = 1);
 
     [[nodiscard]] const Image& image() const noexcept { return image_; }
 
@@ -83,7 +83,7 @@ private:
         double x, y, depth;
     };
     [[nodiscard]] Screen project(const Vec3d& p) const;
-    void put(int x, int y, Rgb c);
+    void put(int x, int y, const Rgb& c);
 
     Image image_;
     std::vector<double> depth_;

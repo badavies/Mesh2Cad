@@ -82,8 +82,9 @@ void fitCapInterior(BicubicPatch& patch, F f) {
     design.setZero();
     int r = 0;
     for (int k = 0; k < positions; ++k) {
-        const double s = (k % kCapFit + 0.5) / kCapFit;
-        const double t = (k / kCapFit + 0.5) / kCapFit;
+        const int column = k % kCapFit, line = k / kCapFit;
+        const double s = (column + 0.5) / kCapFit;
+        const double t = (line + 0.5) / kCapFit;
         const Vec3d want = rest(s, t);
         const auto bu = bernstein(s);
         const auto bv = bernstein(t);

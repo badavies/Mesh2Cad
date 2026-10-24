@@ -103,7 +103,7 @@ std::vector<SurfaceMesh::Face_index> fanFill(SurfaceMesh& mesh,
 } // namespace
 
 Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& params) {
-    return guarded("hole filling", [&]() -> Result<HoleFillResult> {
+    return guarded("hole filling", [&] -> Result<HoleFillResult> {
         SurfaceMesh mesh = toSurfaceMesh(input);
         using Halfedge = SurfaceMesh::Halfedge_index;
         using Face = SurfaceMesh::Face_index;

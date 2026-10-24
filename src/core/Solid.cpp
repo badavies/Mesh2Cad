@@ -44,7 +44,7 @@ Vec3d unitNormal(const SurfacePatch& face, const double u, const double v) {
 double meanCurvature(const BicubicPatch& piece, const double s, const double t) {
     const auto second = [](const double x) {
         const double y = 1.0 - x;
-        return std::array<double, 4>{6.0 * y, 6.0 * x - 12.0 * y, 6.0 * y - 12.0 * x, 6.0 * x};
+        return std::array{6.0 * y, 6.0 * x - 12.0 * y, 6.0 * y - 12.0 * x, 6.0 * x};
     };
     const auto bu = bernstein(s), bv = bernstein(t);
     const auto du = bernsteinDerivative(s), dv = bernsteinDerivative(t);
@@ -183,7 +183,7 @@ Result<SeamReport> measureSeams(const std::vector<SurfacePatch>& faces,
     };
     // A point on a sharp edge is sharp for every face that reaches it: at a crease vertex with
     // more than four faces, a face may touch it only between two smooth edges of its own.
-    std::vector<bool> nearSharp(samples.size(), false);
+    std::vector nearSharp(samples.size(), false);
     for (std::size_t i = 0; i < samples.size(); ++i) {
         if (!samples[i].sharp) continue;
         forNear(samples[i].p, [&](const std::size_t j) {

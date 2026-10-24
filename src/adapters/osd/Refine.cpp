@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <exception>
-#include <expected>
 #include <memory>
 #include <string>
 #include <utility>
@@ -59,7 +58,7 @@ refinerOf(const QuadLayout& cage, const std::vector<std::array<std::uint32_t, 2>
     for (const auto& [a, b] : creases) {
         creasePairs.insert(creasePairs.end(), {static_cast<int>(a), static_cast<int>(b)});
     }
-    const std::vector<float> creaseWeights(creases.size(), Sdc::Crease::SHARPNESS_INFINITE);
+    const std::vector creaseWeights(creases.size(), Sdc::Crease::SHARPNESS_INFINITE);
     desc.numCreases = static_cast<int>(creases.size());
     desc.creaseVertexIndexPairs = creasePairs.data();
     desc.creaseWeights = creaseWeights.data();
@@ -99,7 +98,7 @@ Result<QuadLayout> subdivideCage(const QuadLayout& cage,
         std::vector<Point> points(cage.vertexCount() +
                                   static_cast<std::size_t>(fine.GetNumVertices()));
         for (std::size_t v = 0; v < cage.vertexCount(); ++v) points[v].p = cage.positions()[v];
-        Point* source = points.data();
+        const Point* source = points.data();
         Point* destination = points.data() + cage.vertexCount();
         Far::PrimvarRefinerReal<double>(*refiner).Interpolate(1, source, destination);
 

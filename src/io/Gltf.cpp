@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <expected>
 #include <ios>
 #include <limits>
 #include <numbers>
@@ -70,7 +71,7 @@ Result<Corners> splitAtCreases(const TriMesh& mesh, const double creaseAngleDeg)
     for (std::size_t v = 0; v < mesh.vertexCount(); ++v) start[v + 1] += start[v];
     std::vector<std::uint32_t> around(mesh.indices().size());
     {
-        std::vector<std::uint32_t> next(start.begin(), start.end() - 1);
+        std::vector next(start.begin(), start.end() - 1);
         for (std::size_t f = 0; f < faces; ++f) {
             const auto [a, b, c] = mesh.face(f);
             for (const std::uint32_t v : {a, b, c})
@@ -149,7 +150,7 @@ void writeWord(std::ostream& out, const std::uint32_t word) {
 } // namespace
 
 Result<void> writeGltf(const TriMesh& mesh, std::ostream& out, const GltfOptions& options) {
-    if (!(options.creaseAngleDeg >= 0.0 && options.creaseAngleDeg <= 180.0)) {
+    if (!(options.creaseAngleDeg >= 0.0) || !(options.creaseAngleDeg <= 180.0)) {
         return fail(ErrorCode::InvalidArgument, "the crease angle must be 0 to 180 degrees");
     }
     auto corners = splitAtCreases(mesh, options.creaseAngleDeg);

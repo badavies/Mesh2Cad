@@ -99,7 +99,7 @@ struct Header {
 
 Result<Header> readHeader(std::istream& in) {
     std::string line;
-    const auto getLine = [&]() -> bool {
+    const auto getLine = [&] -> bool {
         if (!std::getline(in, line)) return false;
         if (!line.empty() && line.back() == '\r') line.pop_back();
         return true;

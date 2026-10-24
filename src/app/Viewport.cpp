@@ -30,6 +30,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <ranges>
 #include <thread>
@@ -38,9 +39,12 @@
 
 #include <QMatrix4x4>
 
+#include "m2c/core/DeviationColors.h"
 #include "m2c/core/DeviationField.h"
 #include "m2c/core/DisplayProxy.h"
 #include "m2c/core/MeshSelection.h"
+#include "m2c/core/QuadLayout.h"
+#include "m2c/core/Raster.h"
 #include "m2c/core/SelectionColors.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/SpatialIndex.h"
@@ -170,7 +174,7 @@ Aabb drawnBounds(const DocumentObject& o) {
 }
 
 /// The deviation that colours a mesh: its newest visible one.
-const DocumentObject* shownDeviation(const DocSnapshot& snapshot, ObjectId meshId) {
+const DocumentObject* shownDeviation(const DocSnapshot& snapshot, const ObjectId meshId) {
     const DocumentObject* deviation = nullptr;
     for (const DocumentObject& o : snapshot.objects) {
         if (o.deviation() != nullptr && o.deviation()->meshId == meshId && o.visible) {
@@ -182,13 +186,15 @@ const DocumentObject* shownDeviation(const DocSnapshot& snapshot, ObjectId meshI
 
 /// The deviation at a point on a face: its vertices' distances weighted by the point's
 /// barycentric coordinates (the nearest vertex's on a degenerate face).
-double
-deviationAt(const TriMesh& mesh, const DeviationField& field, std::uint32_t face, const Vec3d& p) {
+double deviationAt(const TriMesh& mesh,
+                   const DeviationField& field,
+                   const std::uint32_t face,
+                   const Vec3d& p) {
     const std::vector<Vec3d>& positions = mesh.positions();
     const std::vector<std::uint32_t>& indices = mesh.indices();
-    const std::array<std::uint32_t, 3> v{indices[3 * std::size_t{face}],
-                                         indices[3 * std::size_t{face} + 1],
-                                         indices[3 * std::size_t{face} + 2]};
+    const std::array v{indices[3 * std::size_t{face}],
+                       indices[3 * std::size_t{face} + 1],
+                       indices[3 * std::size_t{face} + 2]};
     const std::vector<double>& d = field.distances();
     const Vec3d e0 = positions[v[1]] - positions[v[0]];
     const Vec3d e1 = positions[v[2]] - positions[v[0]];
@@ -209,7 +215,7 @@ deviationAt(const TriMesh& mesh, const DeviationField& field, std::uint32_t face
 
 } // namespace
 
-QVector3D sketchCurveColor(CurveKind kind) noexcept {
+QVector3D sketchCurveColor(const CurveKind kind) noexcept {
     switch (kind) {
     case CurveKind::Line:
         return {0.75f, 0.95f, 0.30f};
@@ -255,11 +261,11 @@ SketchScene buildSketchScene(const Sketch& sketch) {
     scene.arrowTail = sketch.plane.origin;
     scene.arrowTip = sketch.plane.origin + n * size;
     const Vec3d back = scene.arrowTip - n * (0.25 * size);
-    SketchLines arrow{.points = {scene.arrowTail,
-                                 scene.arrowTip,
-                                 back + u * (0.12 * size),
-                                 back - u * (0.12 * size)},
-                      .segments = {0, 1, 1, 2, 1, 3}};
+    SketchLines const arrow{.points = {scene.arrowTail,
+                                       scene.arrowTip,
+                                       back + u * (0.12 * size),
+                                       back - u * (0.12 * size)},
+                            .segments = {0, 1, 1, 2, 1, 3}};
     append(arrow, QVector3D(0.95f, 0.95f, 0.95f));
     return scene;
 }
@@ -415,9 +421,8 @@ Mat4d Viewport::viewProjection() const {
 // ---- GPU buffers ------------------------------------------------------------------------------
 
 void Viewport::release(GpuMesh& gpu) {
-    const std::array<GLuint, 2> vaos{gpu.vao, gpu.pvao};
-    const std::array<GLuint, 6> buffers{
-        gpu.vbo, gpu.ebo, gpu.pvbo, gpu.pebo, gpu.selBuffer, gpu.colorBuffer};
+    const std::array vaos{gpu.vao, gpu.pvao};
+    const std::array buffers{gpu.vbo, gpu.ebo, gpu.pvbo, gpu.pebo, gpu.selBuffer, gpu.colorBuffer};
     glDeleteVertexArrays(2, vaos.data());
     glDeleteBuffers(6, buffers.data());
     glDeleteTextures(1, &gpu.selTexture);
@@ -465,7 +470,7 @@ void Viewport::syncSelection(GpuMesh& gpu, const DocumentObject& mesh) {
     for (const DocumentObject& o : snapshot_->objects) {
         const SelectionData* s = o.selection();
         if (s == nullptr || s->meshId != mesh.id || !o.visible) continue;
-        key.push_back({s->faces.get(), o.id, o.id == currentSelection_});
+        key.push_back({.faces = s->faces.get(), .id = o.id, .current = o.id == currentSelection_});
     }
     if (key == gpu.selectionKey && (gpu.hasSelection || key.empty())) return;
     gpu.selectionKey = key;
@@ -683,7 +688,7 @@ void Viewport::syncGpu() {
 void Viewport::paintGL() {
     if (!glReady_) {
         // Only the context's OpenGL 1 functions can be called: the 3.3 ones did not load.
-        if (QOpenGLContext* gl = context()) {
+        if (QOpenGLContext const* gl = context()) {
             gl->functions()->glClearColor(0.17f, 0.18f, 0.20f, 1.0f);
             gl->functions()->glClear(GL_COLOR_BUFFER_BIT);
         }
@@ -708,7 +713,7 @@ void Viewport::paintGL() {
         program_.setUniformValue("selection", 0);
         const Mat4d projection = camera_.projection(aspect());
         const Mat4d view = camera_.viewRelative();
-        const QVector3D highlight(1.00f, 0.82f, 0.25f);
+        constexpr QVector3D highlight(1.00f, 0.82f, 0.25f);
         // Sketches go last, over everything: a section usually lies inside its mesh.
         std::vector<const DocumentObject*> order;
         for (const DocumentObject& o : snapshot_->objects) {
@@ -798,7 +803,7 @@ double Viewport::snapMm(const Vec3d& at) const {
 
 double Viewport::pixelsPerMm(const Vec3d& at) const {
     const double depth = std::max(dot(at - camera_.eye(), camera_.forward()), 1e-9);
-    const double focal = height() / (2.0 * std::tan(camera_.fovYDeg * 3.14159265358979 / 360.0));
+    const double focal = height() / (2.0 * std::tan(camera_.fovYDeg * std::numbers::pi / 360.0));
     return focal / depth;
 }
 

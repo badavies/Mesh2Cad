@@ -101,7 +101,7 @@ detect(const Items& items, Seeds& seeds, FreeNeighbours& neighbours, Region& reg
     growing.detect(std::back_inserter(found));
     for (const auto& [primitive, faces] : found) {
         GrownRegion& r = out.emplace_back(GrownRegion{.primitive = toPrimitive(primitive)});
-        for (const Face f : faces) r.faces.push_back(static_cast<std::uint32_t>(f.idx()));
+        for (const Face f : faces) r.faces.push_back(f.idx());
     }
     return out;
 }
@@ -111,12 +111,13 @@ detect(const Items& items, Seeds& seeds, FreeNeighbours& neighbours, Region& reg
 Result<std::vector<GrownRegion>>
 growRegions(const TriMesh& input, const std::vector<char>& free, const GrowParams& params) {
     if (free.size() != input.faceCount() || !(params.maxDistanceMm > 0.0) ||
-        !(params.maxAngleDeg > 0.0 && params.maxAngleDeg <= 90.0) || !(params.maxRadiusMm >= 0.0)) {
+        !(params.maxAngleDeg > 0.0) || !(params.maxAngleDeg <= 90.0) ||
+        !(params.maxRadiusMm >= 0.0)) {
         return fail(ErrorCode::InvalidArgument,
                     "one free flag per face; distance positive; angle above 0 and at most 90 "
                     "degrees; radius at least 0");
     }
-    return guarded("region growing", [&]() -> Result<std::vector<GrownRegion>> {
+    return guarded("region growing", [&] -> Result<std::vector<GrownRegion>> {
         SurfaceMesh mesh = toSurfaceMesh(input);
         if (mesh.number_of_faces() != input.faceCount()) {
             return fail(ErrorCode::InvalidArgument,
@@ -126,7 +127,7 @@ growRegions(const TriMesh& input, const std::vector<char>& free, const GrowParam
         for (const Face f : mesh.faces()) {
             if (free[f.idx()]) items.push_back(f);
         }
-        FreeNeighbours neighbours{&mesh, &free};
+        FreeNeighbours neighbours{.mesh = &mesh, .free = &free};
         if (params.kind == PrimitiveKind::Plane) {
             using Region = SD::Polygon_mesh::Least_squares_plane_fit_region<Kernel, SurfaceMesh>;
             using Sorting = SD::Polygon_mesh::
@@ -189,8 +190,9 @@ growRegions(const TriMesh& input, const std::vector<char>& free, const GrowParam
     });
 }
 
-Result<Primitive>
-estimatePrimitive(const TriMesh& mesh, std::span<const std::uint32_t> faces, PrimitiveKind kind) {
+Result<Primitive> estimatePrimitive(const TriMesh& mesh,
+                                    const std::span<const std::uint32_t> faces,
+                                    const PrimitiveKind kind) {
     if (kind != PrimitiveKind::Cylinder && kind != PrimitiveKind::Sphere) {
         return fail(ErrorCode::InvalidArgument, "CGAL estimates cylinders and spheres only");
     }
@@ -199,7 +201,7 @@ estimatePrimitive(const TriMesh& mesh, std::span<const std::uint32_t> faces, Pri
         return fail(ErrorCode::InvalidArgument,
                     std::string("a ") + name + " needs at least six faces");
     }
-    return guarded("primitive estimate", [&]() -> Result<Primitive> {
+    return guarded("primitive estimate", [&] -> Result<Primitive> {
         std::vector<Point> centroids;
         std::vector<Vector> normals;
         const auto& p = mesh.positions();

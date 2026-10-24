@@ -134,7 +134,7 @@ Document::addMesh(std::string name, std::shared_ptr<const TriMesh> mesh, Provena
 
 Result<ObjectId> Document::add(std::string name, ObjectData data, Provenance provenance) {
     if (auto ok = checkData(data); !ok) return std::unexpected(ok.error());
-    return inStep(*this, "add", [&]() -> Result<ObjectId> {
+    return inStep(*this, "add", [&] -> Result<ObjectId> {
         const ObjectId id = nextId_++;
         objects_.emplace(id,
                          DocumentObject{.id = id,
@@ -156,7 +156,7 @@ Result<void> Document::replaceMesh(const ObjectId id,
     if (it == objects_.end() || it->second.mesh() == nullptr) {
         return fail(ErrorCode::NotFound, "no mesh object with id " + std::to_string(id));
     }
-    return inStep(*this, "replace", [&]() -> Result<void> {
+    return inStep(*this, "replace", [&] -> Result<void> {
         auto& [current, currentAlignment] = std::get<MeshData>(it->second.data);
         const bool sameFaces = current->sharedIndices() == mesh->sharedIndices();
         current = std::move(mesh);
@@ -177,7 +177,7 @@ Result<void> Document::replaceSelection(const ObjectId id,
     const SelectionData updated{.meshId = it->second.selection()->meshId,
                                 .faces = std::move(faces)};
     if (auto ok = checkData(updated); !ok) return ok;
-    return inStep(*this, "select", [&]() -> Result<void> {
+    return inStep(*this, "select", [&] -> Result<void> {
         it->second.data = updated;
         changed();
         return {};
@@ -189,7 +189,7 @@ Result<void> Document::replaceMeasurement(const ObjectId id, const Measurement& 
     if (it == objects_.end() || it->second.measurement() == nullptr) {
         return fail(ErrorCode::NotFound, "no measurement object with id " + std::to_string(id));
     }
-    return inStep(*this, "measure", [&]() -> Result<void> {
+    return inStep(*this, "measure", [&] -> Result<void> {
         it->second.data = MeasurementData{measurement};
         changed();
         return {};
@@ -202,7 +202,7 @@ Result<void> Document::replacePrimitive(const ObjectId id, PrimitiveData primiti
         return fail(ErrorCode::NotFound, "no primitive object with id " + std::to_string(id));
     }
     if (auto ok = checkData(primitive); !ok) return ok;
-    return inStep(*this, "primitive", [&]() -> Result<void> {
+    return inStep(*this, "primitive", [&] -> Result<void> {
         it->second.data = std::move(primitive);
         changed();
         return {};
@@ -227,7 +227,7 @@ Result<void> Document::remove(const ObjectId id) {
     if (!objects_.contains(id)) {
         return fail(ErrorCode::NotFound, "no object with id " + std::to_string(id));
     }
-    return inStep(*this, "remove", [&]() -> Result<void> {
+    return inStep(*this, "remove", [&] -> Result<void> {
         objects_.erase(id);
         removeDependents(id, Dependents::All);
         changed();
@@ -240,7 +240,7 @@ Result<void> Document::rename(const ObjectId id, std::string name) {
     if (it == objects_.end()) {
         return fail(ErrorCode::NotFound, "no object with id " + std::to_string(id));
     }
-    return inStep(*this, "rename", [&]() -> Result<void> {
+    return inStep(*this, "rename", [&] -> Result<void> {
         it->second.name = std::move(name);
         changed();
         return {};
@@ -253,7 +253,7 @@ Result<void> Document::setVisible(const ObjectId id, const bool visible) {
         return fail(ErrorCode::NotFound, "no object with id " + std::to_string(id));
     }
     if (it->second.visible == visible) return {};
-    return inStep(*this, "visibility", [&]() -> Result<void> {
+    return inStep(*this, "visibility", [&] -> Result<void> {
         it->second.visible = visible;
         changed();
         return {};

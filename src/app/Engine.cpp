@@ -16,6 +16,7 @@
 #include <QTimer>
 #include <Qt>
 #include <QtGlobal>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <expected>
@@ -97,10 +98,11 @@ Engine::Engine(QObject* parent) : QObject(parent) {
     // Session log: every change from every source, one JSON object per line, replayable.
     const QString dir =
         QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation) + "/sessions";
-    QDir().mkpath(dir);
     log_ = std::make_unique<QFile>(
         dir + "/" + QDateTime::currentDateTime().toString("yyyyMMdd-HHmmss") + ".jsonl");
-    if (!log_->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text)) log_.reset();
+    if (!QDir().mkpath(dir) ||
+        !log_->open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        log_.reset();
 
     snapshot_ = std::make_shared<DocSnapshot>();
     worker_ = std::thread([this] { workerLoop(); });
@@ -116,7 +118,8 @@ Engine::~Engine() {
     worker_.join();
     // Sockets are children of the server and emit `disconnected` while it is destroyed, after
     // this object's members are gone; detach them first.
-    for (const auto& c : std::views::values(connections_)) c->socket->disconnect(this);
+    for (const auto& c : std::views::values(connections_))
+        static_cast<void>(c->socket->disconnect(this));
     connections_.clear();
     server_.close();
     if (!sessionFile_.empty()) {
@@ -218,7 +221,7 @@ void Engine::run(const QString& command, const Json& params, Done done) {
             uiCancel_ = token;
         }
         uiContext_->progress = Progress(
-            [this](std::string_view stage, double fraction) {
+            [this](const std::string_view stage, const double fraction) {
                 showProgress(uiContext_->currentCommand, stage, fraction);
             },
             token);

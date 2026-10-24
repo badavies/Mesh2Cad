@@ -221,8 +221,12 @@ FittedPrimitive fittedPrimitive(const PrimitiveFit& fit, const std::vector<Vec3d
     Aabb& box = fitted.extent;
     box = {.min = points.front(), .max = points.front()};
     for (const Vec3d& q : points) {
-        box.min = {std::min(box.min.x, q.x), std::min(box.min.y, q.y), std::min(box.min.z, q.z)};
-        box.max = {std::max(box.max.x, q.x), std::max(box.max.y, q.y), std::max(box.max.z, q.z)};
+        box.min = {.x = std::min(box.min.x, q.x),
+                   .y = std::min(box.min.y, q.y),
+                   .z = std::min(box.min.z, q.z)};
+        box.max = {.x = std::max(box.max.x, q.x),
+                   .y = std::max(box.max.y, q.y),
+                   .z = std::max(box.max.z, q.z)};
     }
     return fitted;
 }

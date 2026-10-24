@@ -23,6 +23,7 @@
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Gltf.h"
 #include "m2c/io/MeshIO.h"
@@ -315,7 +316,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
             M2C_TRY(a, requireObject(context, params, "id", "solid"));
             M2C_TRY(b, requireObject(context, params, "tool_id", "solid"));
             M2C_TRY(operation, requireString(params, "operation"));
-            BooleanOp op = BooleanOp::Fuse;
+            auto op = BooleanOp::Fuse;
             if (*operation == "cut") {
                 op = BooleanOp::Cut;
             } else if (*operation == "common") {
@@ -560,7 +561,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 if (!params[key].is_array()) {
                     return fail(ErrorCode::InvalidArgument, std::string(key) + " must list ids");
                 }
-                return std::vector<Json>(params[key].begin(), params[key].end());
+                return std::vector(params[key].begin(), params[key].end());
             };
             M2C_TRY(sketchIds, ids("sketch_ids"));
             M2C_TRY(planeIds, ids("plane_ids"));
@@ -773,7 +774,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 return fail(ErrorCode::InvalidArgument,
                             "give axis, or axis_point with axis_direction");
             }
-            Vec2d point, direction{1, 0};
+            Vec2d point, direction{.x = 1, .y = 0};
             if (given) {
                 const auto two = [&](const char* key) -> Result<Vec2d> {
                     const Json& j = params.at(key);
@@ -781,14 +782,14 @@ void addSurfaceCommands(std::vector<Command>& out) {
                         return fail(ErrorCode::InvalidArgument,
                                     std::string(key) + " must be two numbers");
                     }
-                    return Vec2d{j[0].get<double>(), j[1].get<double>()};
+                    return Vec2d{.x = j[0].get<double>(), .y = j[1].get<double>()};
                 };
                 M2C_TRY(p, two("axis_point"));
                 M2C_TRY(d, two("axis_direction"));
                 point = *p;
                 direction = *d;
             } else if (**axis == "v") {
-                direction = {0, 1};
+                direction = {.x = 0, .y = 1};
             } else if (**axis != "u") {
                 return fail(ErrorCode::InvalidArgument, "axis must be u or v");
             }

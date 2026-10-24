@@ -20,14 +20,20 @@
 #include <QWidget>
 #include <Qt>
 #include <algorithm>
+#include <memory>
 #include <ranges>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <QLatin1String>
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Vec3.h"
+#include "m2c/document/Document.h"
+
+#include "Engine.h"
 
 namespace m2c::app {
 
@@ -280,7 +286,7 @@ void ParamForm::setObjects(std::shared_ptr<const DocSnapshot> snapshot) {
 void ParamForm::setSelectedObjects(const std::vector<ObjectId>& ids) {
     picked_ = ids;
     if (!snapshot_) return;
-    const auto fits = [this](const Field& field, ObjectId id) {
+    const auto fits = [this](const Field& field, const ObjectId id) {
         const DocumentObject* o = snapshot_->find(id);
         return o != nullptr && (field.kinds.empty() ||
                                 std::ranges::find(field.kinds, o->kind()) != field.kinds.end());
@@ -366,7 +372,7 @@ bool ParamForm::addPicked(const std::string& key) {
     const auto it = editors_.find(key);
     if (it == editors_.end() || it->second.items.empty() || !snapshot_) return false;
     const Field& field = it->second;
-    const auto fits = [this](const std::vector<std::string>& kinds, ObjectId id) {
+    const auto fits = [this](const std::vector<std::string>& kinds, const ObjectId id) {
         const DocumentObject* o = snapshot_->find(id);
         return o != nullptr &&
                (kinds.empty() || std::ranges::find(kinds, o->kind()) != kinds.end());
@@ -488,7 +494,7 @@ Result<Json> ParamForm::params() const {
         } else if (field.type == "ids") {
             Json list = Json::array();
             for (const QString& part :
-                 text.split(QRegularExpression("[\\[\\],\\s]+"), Qt::SkipEmptyParts)) {
+                 text.split(QRegularExpression(R"([\[\],\s]+)"), Qt::SkipEmptyParts)) {
                 const long long v = part.toLongLong(&ok);
                 if (!ok || v < 0) return bad(tr("expected object ids separated by commas"));
                 list.push_back(v);
@@ -518,7 +524,7 @@ void ParamForm::setBusy(const bool busy) const {
 }
 
 QString ParamForm::fileFilter(const Json& property) {
-    const QString all = tr("All files (*)");
+    QString all = tr("All files (*)");
     if (!property.contains("x-file-types") || !property["x-file-types"].is_array()) return all;
     QStringList names;
     QStringList patterns;

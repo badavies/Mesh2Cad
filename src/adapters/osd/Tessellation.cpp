@@ -62,9 +62,8 @@ SurfacePoint locate(const Tessellation& tess, const Vec3d& q) {
     const auto row = static_cast<std::uint32_t>(tess.n + 1);
     const std::uint32_t perPatch = row * row;
     const auto st = [&](const std::uint32_t v) {
-        const std::uint32_t k = v % perPatch;
-        return std::pair{static_cast<double>(k % row) / tess.n,
-                         static_cast<double>(k / row) / tess.n};
+        const std::uint32_t k = v % perPatch, column = k % row, line = k / row;
+        return std::pair{static_cast<double>(column) / tess.n, static_cast<double>(line) / tess.n};
     };
     const auto [sa, ta] = st(ia);
     const auto [sb, tb] = st(ib);

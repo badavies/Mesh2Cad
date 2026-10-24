@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
         const QString out = parser.value(screenshot);
         auto* poll = new QTimer(&app);
         int waited = 0;
-        QObject::connect(poll, &QTimer::timeout, &app, [&, poll]() mutable {
+        QObject::connect(poll, &QTimer::timeout, &app, [&, poll] mutable {
             waited += 200;
             if (engine.busy() && waited < 60000) return;
             poll->stop();

@@ -20,8 +20,6 @@
 #include <TopExp_Explorer.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
-#include <TopoDS_Edge.hxx>
-#include <TopoDS_Face.hxx>
 #include <TopoDS_Shape.hxx>
 #include <gp_Pnt.hxx>
 
@@ -54,7 +52,7 @@ Result<Solid>
 filletEdges(const Solid& solid, const std::vector<Vec3d>& edgePoints, const double radiusMm) {
     if (edgePoints.empty()) return fail(ErrorCode::InvalidArgument, "no edges to round");
     if (!(radiusMm > 0.0)) return fail(ErrorCode::InvalidArgument, "the radius must be positive");
-    return guarded("the fillet", [&]() -> Result<Solid> {
+    return guarded("the fillet", [&] -> Result<Solid> {
         const TopoDS_Shape& shape = solid.shape().shape;
         NCollection_IndexedDataMap<TopoDS_Shape,
                                    NCollection_List<TopoDS_Shape>,
@@ -69,7 +67,7 @@ filletEdges(const Solid& solid, const std::vector<Vec3d>& edgePoints, const doub
             double best = std::numeric_limits<double>::infinity();
             for (int i = 1; i <= edgeFaces.Extent(); ++i) {
                 if (BRep_Tool::Degenerated(TopoDS::Edge(edgeFaces.FindKey(i)))) continue;
-                BRepExtrema_DistShapeShape distance(vertex, edgeFaces.FindKey(i));
+                BRepExtrema_DistShapeShape const distance(vertex, edgeFaces.FindKey(i));
                 if (distance.IsDone() && distance.Value() < best) {
                     best = distance.Value();
                     nearest = i;

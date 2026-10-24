@@ -18,10 +18,11 @@
 #include "m2c/adapters/cgal/MeshTools.h"
 #include "m2c/adapters/occt/Brep.h"
 #include "m2c/core/Error.h"
-#include "m2c/core/MeshSelection.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/SurfacePatch.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 #include "m2c/pipeline/PatchMerge.h"
@@ -163,7 +164,7 @@ Result<Faces> wallFaces(const QuadLayout& wall,
 
 // The scan's normal under a cage face: the area-weighted normal of the scan triangles near its
 // centre and near the points halfway to its corners.
-Vec3d scanNormalUnder(const QuadLayout& cage, std::size_t f, const TriMesh& scan) {
+Vec3d scanNormalUnder(const QuadLayout& cage, const std::size_t f, const TriMesh& scan) {
     const auto& p = cage.positions();
     const auto face = cage.face(f);
     Vec3d centre{}, area{};
@@ -179,7 +180,7 @@ Vec3d scanNormalUnder(const QuadLayout& cage, std::size_t f, const TriMesh& scan
     Vec3d normal{};
     auto add = [&](const Vec3d& at) {
         for (const std::uint32_t t : index.facesWithin(index.closestPoint(at).point, radius)) {
-            const Vec3d& a = q[tri[3 * t]];
+            const Vec3d& a = q[tri[std::size_t{3} * t]];
             normal = normal + cross(q[tri[3 * t + 1]] - a, q[tri[3 * t + 2]] - a);
         }
     };
@@ -221,7 +222,7 @@ confirmedOnScan(const QuadLayout& cage,
         const Vec3d& n0 = normalOf(faces[0]);
         const Vec3d& n1 = normalOf(faces[1]);
         const double size = length(n0) * length(n1);
-        return !(size > 0.0 && dot(n0, n1) < limit * size);
+        return !(size > 0.0) || !(dot(n0, n1) < limit * size);
     });
     return edges;
 }
@@ -240,7 +241,7 @@ Result<QuadLayout> thickenCage(const QuadLayout& sheet, const double thicknessMm
     std::vector<Vec3d> normals(n);
     std::unordered_set<std::uint64_t> directed;
     const auto key = [](const std::uint32_t a, const std::uint32_t b) {
-        return (std::uint64_t{a} << 32) | b;
+        return (std::uint64_t{a} << 32U) | b;
     };
     for (std::size_t f = 0; f < sheet.faceCount(); ++f) {
         const auto face = sheet.face(f);
@@ -413,7 +414,7 @@ Result<SurfaceBuildResult> buildSurface(const QuadLayout& cage,
         auto faces =
             sheet ? wallFaces(used,
                               fit.cage.faceCount(),
-                              PatchParams{fitting.isolationLevel, true},
+                              PatchParams{.isolationLevel = fitting.isolationLevel, .open = true},
                               params.merge)
                   : mergedFaces(used, std::move(*patches), *seams, params.merge, fitting.creases);
         if (!faces) return std::unexpected(faces.error());

@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "m2c/adapters/occt/Brep.h"
-#include "m2c/adapters/occt/Fillet.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Progress.h"
 #include "m2c/core/Solid.h"

@@ -9,6 +9,7 @@
 #include <numbers>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include "m2c/core/Vec3.h"
 
@@ -23,18 +24,19 @@ double distanceToSegment(const Vec2d& a, const Vec2d& b, const Vec2d& p) noexcep
     return length(p - (a + ab * t));
 }
 
-Vec2d onCircle(const SketchCurve& arc, double angle) noexcept {
-    return arc.centre + Vec2d{std::cos(angle), std::sin(angle)} * arc.radiusMm;
+Vec2d onCircle(const SketchCurve& arc, const double angle) noexcept {
+    return arc.centre + Vec2d{.x = std::cos(angle), .y = std::sin(angle)} * arc.radiusMm;
 }
 
 } // namespace
 
 SketchPlane planeThrough(const Vec3d& point, const Vec3d& normal) noexcept {
     const Vec3d n = normal * (1.0 / length(normal));
-    const Vec3d axis = std::abs(n.x) < 0.9 ? Vec3d{1, 0, 0} : Vec3d{0, 1, 0};
+    const Vec3d axis =
+        std::abs(n.x) < 0.9 ? Vec3d{.x = 1, .y = 0, .z = 0} : Vec3d{.x = 0, .y = 1, .z = 0};
     const Vec3d along = axis - n * dot(axis, n);
     const Vec3d u = along * (1.0 / length(along));
-    return {point, u, cross(n, u)};
+    return {.origin = point, .u = u, .v = cross(n, u)};
 }
 
 const char* curveKindName(const CurveKind kind) noexcept {

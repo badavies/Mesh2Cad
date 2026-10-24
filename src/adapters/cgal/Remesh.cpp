@@ -18,7 +18,7 @@ Result<TriMesh> remesh(const TriMesh& input, const RemeshParams& params) {
     if (!(params.targetEdgeMm > 0.0)) {
         return fail(ErrorCode::InvalidArgument, "target edge length must be positive");
     }
-    return guarded("remeshing", [&]() -> Result<TriMesh> {
+    return guarded("remeshing", [&] -> Result<TriMesh> {
         SurfaceMesh mesh = toSurfaceMesh(input);
         using Edge = SurfaceMesh::Edge_index;
         auto sharp = mesh.add_property_map<Edge, bool>("e:m2c_sharp", false).first;

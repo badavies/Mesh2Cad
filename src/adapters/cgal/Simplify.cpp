@@ -51,7 +51,7 @@ Result<TriMesh> simplify(const TriMesh& input, const SimplifyParams& params) {
                     "give a target face count of at least 1 or a maximum error");
     }
     if (params.targetFaces >= input.faceCount()) return input;
-    return guarded("simplification", [&]() -> Result<TriMesh> {
+    return guarded("simplification", [&] -> Result<TriMesh> {
         SurfaceMesh mesh = toSurfaceMesh(input);
         using Edge = SurfaceMesh::Edge_index;
 

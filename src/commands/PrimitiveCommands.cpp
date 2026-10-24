@@ -4,17 +4,18 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdint>
+#include <cstddef>
 #include <numbers>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
-#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
 #include "m2c/pipeline/PrimitiveFit.h"
 
@@ -73,8 +74,9 @@ Result<Reference> reference(const CommandContext& context,
         if (a != "x" && a != "y" && a != "z") {
             return fail(ErrorCode::InvalidArgument, "axis must be x, y or z");
         }
-        return Reference{
-            .direction = {a == "x" ? 1.0 : 0.0, a == "y" ? 1.0 : 0.0, a == "z" ? 1.0 : 0.0}};
+        return Reference{.direction = {.x = a == "x" ? 1.0 : 0.0,
+                                       .y = a == "y" ? 1.0 : 0.0,
+                                       .z = a == "z" ? 1.0 : 0.0}};
     }
     M2C_TRY(plane, optionalString(params, "plane"));
     if (*plane) {
@@ -82,9 +84,10 @@ Result<Reference> reference(const CommandContext& context,
         if (a != "xy" && a != "yz" && a != "zx") {
             return fail(ErrorCode::InvalidArgument, "plane must be xy, yz or zx");
         }
-        return Reference{
-            .direction = {a == "yz" ? 1.0 : 0.0, a == "zx" ? 1.0 : 0.0, a == "xy" ? 1.0 : 0.0},
-            .normal = true};
+        return Reference{.direction = {.x = a == "yz" ? 1.0 : 0.0,
+                                       .y = a == "zx" ? 1.0 : 0.0,
+                                       .z = a == "xy" ? 1.0 : 0.0},
+                         .normal = true};
     }
     std::vector<DocumentObject> listed;
     if (params.contains("reference_ids")) {

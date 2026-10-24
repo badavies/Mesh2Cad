@@ -70,7 +70,7 @@ Limit::create(const QuadLayout& cage,
         if (v >= cage.vertexCount()) return fail(ErrorCode::InvalidArgument, "no such corner");
     }
     const std::vector<int> cornerIndices(corners.begin(), corners.end());
-    const std::vector<float> cornerWeights(corners.size(), Sdc::Crease::SHARPNESS_INFINITE);
+    const std::vector cornerWeights(corners.size(), Sdc::Crease::SHARPNESS_INFINITE);
     desc.numCorners = static_cast<int>(corners.size());
     desc.cornerVertexIndices = cornerIndices.data();
     desc.cornerWeights = cornerWeights.data();
@@ -81,7 +81,7 @@ Limit::create(const QuadLayout& cage,
         }
         creasePairs.insert(creasePairs.end(), {static_cast<int>(a), static_cast<int>(b)});
     }
-    const std::vector<float> creaseWeights(creases.size(), Sdc::Crease::SHARPNESS_INFINITE);
+    const std::vector creaseWeights(creases.size(), Sdc::Crease::SHARPNESS_INFINITE);
     desc.numCreases = static_cast<int>(creases.size());
     desc.creaseVertexIndexPairs = creasePairs.data();
     desc.creaseWeights = creaseWeights.data();
@@ -212,9 +212,7 @@ void Limit::weights(const std::size_t patch,
             out.push_back({.vertex = static_cast<std::uint32_t>(idx[k]), .weight = wi * sw[k]});
         }
     }
-    std::sort(out.begin(), out.end(), [](const VertexWeight& a, const VertexWeight& b) {
-        return a.vertex < b.vertex;
-    });
+    std::ranges::sort(out, {}, &VertexWeight::vertex);
     std::size_t n = 0;
     for (std::size_t i = 0; i < out.size(); ++i) {
         if (n > 0 && out[n - 1].vertex == out[i].vertex) {

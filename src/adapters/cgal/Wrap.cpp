@@ -17,7 +17,7 @@ Result<TriMesh> shrinkWrap(const TriMesh& input, const WrapParams& params) {
     if (!(params.alphaMm > 0.0) || !(params.offsetMm > 0.0)) {
         return fail(ErrorCode::InvalidArgument, "alpha and offset must be positive");
     }
-    return guarded("shrink-wrap", [&]() -> Result<TriMesh> {
+    return guarded("shrink-wrap", [&] -> Result<TriMesh> {
         std::vector<Point> points;
         points.reserve(input.vertexCount());
         for (const auto& [x, y, z] : input.positions()) points.emplace_back(x, y, z);
