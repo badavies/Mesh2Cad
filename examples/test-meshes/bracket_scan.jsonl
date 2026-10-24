@@ -7,7 +7,7 @@
 {"command": "align.datum", "params": {"id": 1, "primary": 2, "secondary": 3, "tertiary": 4}}
 {"command": "mesh.info", "params": {"id": 1}}
 {"command": "select.brush", "params": {"id": 1, "center": [40, 30, 6], "radius_mm": 8, "name": "brush"}}
-{"command": "mesh.smooth", "params": {"id": 1, "selection_id": 5, "iterations": 10}}
+{"command": "mesh.smooth", "params": {"id": 1, "selection_id": 6, "iterations": 10}}
 {"command": "mesh.smooth", "params": {"id": 1, "iterations": 5, "preserve_sharp_edges": true}}
 {"command": "mesh.simplify", "params": {"id": 1, "target_faces": 5000}}
 {"command": "mesh.info", "params": {"id": 1}}

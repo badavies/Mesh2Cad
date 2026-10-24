@@ -35,6 +35,12 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
   Shift for several) fill the open form: id lists get the selected ids of their kinds in the
   order they were picked, single object fields one each (`ParamForm::setSelectedObjects`).
   Showing, hiding or deleting one of several selected rows acts on all of them, as one step.
+  A list whose items are all objects (`surface.build`'s `flat`) gets an Add button that makes an
+  item from the selected rows, each property taking a selected object of its kinds; one left
+  over takes the newest object of its kinds made from a selected one or that one was made from,
+  so a selection alone brings the plane fitted to it and the other way round
+  (`ParamForm::addPicked`).
+- The Objects list shows each object's id first, then its name (edited in place) and a summary.
 - In Navigate mode a click (no drag) on a mesh, solid or primitive selects it in the Objects
   list; with `fillet.fit` open a click on a solid adds the point to `edge_points` instead (the
   command takes a point near each edge). The selection tools still pick meshes only.

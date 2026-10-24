@@ -215,13 +215,9 @@ PrimitiveData primitiveData(const FittedPrimitive& fit) {
             .display = display ? std::make_shared<const TriMesh>(std::move(*display)) : nullptr};
 }
 
-Result<FittedPrimitive> fitRegionPrimitive(const TriMesh& mesh,
-                                           const std::vector<std::uint32_t>& faces,
-                                           const RegionFitParams& params) {
-    M2C_TRY(fit, fitRegion(mesh, faces, params));
+FittedPrimitive fittedPrimitive(const PrimitiveFit& fit, const std::vector<Vec3d>& points) {
     FittedPrimitive fitted{
-        .surface = fit->primitive, .rmsMm = fit->rmsMm, .maxMm = fit->maxMm, .p95Mm = fit->p95Mm};
-    const std::vector<Vec3d> points = regionPoints(mesh, faces);
+        .surface = fit.primitive, .rmsMm = fit.rmsMm, .maxMm = fit.maxMm, .p95Mm = fit.p95Mm};
     Aabb& box = fitted.extent;
     box = {.min = points.front(), .max = points.front()};
     for (const Vec3d& q : points) {
@@ -229,6 +225,13 @@ Result<FittedPrimitive> fitRegionPrimitive(const TriMesh& mesh,
         box.max = {std::max(box.max.x, q.x), std::max(box.max.y, q.y), std::max(box.max.z, q.z)};
     }
     return fitted;
+}
+
+Result<FittedPrimitive> fitRegionPrimitive(const TriMesh& mesh,
+                                           const std::vector<std::uint32_t>& faces,
+                                           const RegionFitParams& params) {
+    M2C_TRY(fit, fitRegion(mesh, faces, params));
+    return fittedPrimitive(*fit, regionPoints(mesh, faces));
 }
 
 std::string fittedName(const PrimitiveKind kind) {

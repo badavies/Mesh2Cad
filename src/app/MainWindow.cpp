@@ -23,6 +23,7 @@
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeData>
+#include <QModelIndex>
 #include <QObject>
 #include <QPlainTextEdit>
 #include <QPoint>
@@ -32,6 +33,8 @@
 #include <QScrollArea>
 #include <QStatusBar>
 #include <QString>
+#include <QStyleOptionViewItem>
+#include <QStyledItemDelegate>
 #include <QTextBrowser>
 #include <QToolBar>
 #include <QTreeWidget>
@@ -97,13 +100,26 @@ QString groupTitle(const std::string& prefix) {
         {"quad", QObject::tr("Quad layout")},
         {"surface", QObject::tr("Surface")},
         {"solid", QObject::tr("Solid")},
+        {"sketch", QObject::tr("Sketch")},
+        {"fillet", QObject::tr("Fillet")},
         {"deviation", QObject::tr("Deviation")},
+        {"view", QObject::tr("View")},
         {"object", QObject::tr("Object")},
         {"project", QObject::tr("Project")},
     };
     const auto it = titles.find(prefix);
     return it != titles.end() ? it->second : QString::fromStdString(prefix);
 }
+
+/// A column of the Objects list that is not edited in place.
+class ReadOnlyDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+    QWidget*
+    createEditor(QWidget*, const QStyleOptionViewItem&, const QModelIndex&) const override {
+        return nullptr;
+    }
+};
 
 /// The user guide's first page: installed beside the program (doc/user on Windows,
 /// share/mesh2cad/user on Linux), else in the source tree of a build that isn't installed.
@@ -193,6 +209,11 @@ void MainWindow::buildDocks() {
     tree_->header()->setStretchLastSection(false);
     tree_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
     tree_->header()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    // The id shows first, so it can be read without hovering; the name column keeps the tree
+    // lines and the visibility box. Only names are edited in place.
+    tree_->header()->moveSection(2, 0);
+    tree_->setItemDelegateForColumn(2, new ReadOnlyDelegate(tree_));
+    tree_->setItemDelegateForColumn(1, new ReadOnlyDelegate(tree_));
     tree_->setSelectionMode(QAbstractItemView::ExtendedSelection);
     tree_->setContextMenuPolicy(Qt::CustomContextMenu);
     tree_->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::SelectedClicked);

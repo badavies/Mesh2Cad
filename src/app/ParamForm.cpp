@@ -8,11 +8,13 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPoint>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QString>
 #include <QStringList>
 #include <QToolButton>
+#include <QToolTip>
 #include <QVBoxLayout>
 #include <QVariant>
 #include <QWidget>
@@ -51,6 +53,15 @@ QString valueText(const Json& v) {
     if (v.is_number_integer()) return QString::number(v.get<long long>());
     if (v.is_number()) return QString::number(v.get<double>(), 'g', 12);
     return QString::fromStdString(v.dump());
+}
+
+/// The object kinds an "x-object" offers: one kind or a list; empty for any.
+std::vector<std::string> kindsOf(const Json& x) {
+    std::vector<std::string> kinds;
+    for (const Json& kind : x.is_array() ? x : Json::array({x})) {
+        if (kind != "any") kinds.push_back(kind.get<std::string>());
+    }
+    return kinds;
 }
 
 /// One item of a list of objects, with each property's ids as 1, for a placeholder:
@@ -135,10 +146,7 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
             field.editor = combo;
             combo->setObjectName(QString::fromStdString(key));
         } else if (prop.contains("x-object")) {
-            const Json& x = prop["x-object"];
-            for (const Json& kind : x.is_array() ? x : Json::array({x})) {
-                if (kind != "any") field.kinds.push_back(kind.get<std::string>());
-            }
+            field.kinds = kindsOf(prop["x-object"]);
             auto* combo = new QComboBox;
             combo->setObjectName(QString::fromStdString(key));
             field.type = "object";
@@ -173,9 +181,7 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
                 // A list of objects by id, typed as their numbers: "12, 13, 14".
                 field.type = "ids";
                 const Json& x = prop["items"]["x-object"];
-                for (const Json& kind : x.is_array() ? x : Json::array({x})) {
-                    if (kind != "any") field.kinds.push_back(kind.get<std::string>());
-                }
+                field.kinds = kindsOf(x);
                 const QString kind =
                     x.is_string() && x != "any"
                         ? QString::fromStdString(x.get<std::string>()).replace('_', ' ')
@@ -208,8 +214,21 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
                     prop["items"].contains("properties")) {
                     // A list of objects: show one, so the shape to type is plain.
                     edit->setPlaceholderText(tr("JSON, e.g. %1").arg(example(prop["items"])));
+                    for (const auto& [itemKey, itemProp] : prop["items"]["properties"].items()) {
+                        if (!itemProp.contains("x-object")) {
+                            field.items.clear();
+                            break;
+                        }
+                        field.items.emplace_back(itemKey, kindsOf(itemProp["x-object"]));
+                    }
                 } else if (placeholder.isEmpty() || placeholder == tr("optional")) {
                     edit->setPlaceholderText(tr("JSON"));
+                }
+                if (!field.items.empty()) {
+                    // Every item is objects (surface.build's flat areas): build it from the rows
+                    // picked in the Objects list, with Add and Clear buttons.
+                    addItemsRow(key, field, edit, tip);
+                    continue;
                 }
             }
             field.editor = edit;
@@ -259,6 +278,7 @@ void ParamForm::setObjects(std::shared_ptr<const DocSnapshot> snapshot) {
 }
 
 void ParamForm::setSelectedObjects(const std::vector<ObjectId>& ids) {
+    picked_ = ids;
     if (!snapshot_) return;
     const auto fits = [this](const Field& field, ObjectId id) {
         const DocumentObject* o = snapshot_->find(id);
@@ -299,6 +319,97 @@ void ParamForm::setSelectedObjects(const std::vector<ObjectId>& ids) {
             }
         }
     }
+}
+
+void ParamForm::addItemsRow(const std::string& key,
+                            Field& field,
+                            QLineEdit* edit,
+                            const QString& tip) {
+    QStringList names;
+    for (const auto& kinds : std::views::values(field.items)) {
+        QStringList either;
+        for (const std::string& kind : kinds)
+            either << QString::fromStdString(kind).replace('_', ' ');
+        names << (either.isEmpty() ? tr("an object") : tr("a %1").arg(either.join(tr(" or "))));
+    }
+    const QString pick =
+        tr("Select %1 in the Objects list (Ctrl+click), then Add").arg(names.join(tr(" and ")));
+    // Keeps the example typed JSON shows.
+    edit->setPlaceholderText(
+        tr("Pick %1, then Add; or %2").arg(names.join(tr(" and ")), edit->placeholderText()));
+    edit->setObjectName(QString::fromStdString(key));
+    edit->setToolTip(tip);
+    auto* row = new QWidget;
+    auto* h = new QHBoxLayout(row);
+    h->setContentsMargins(0, 0, 0, 0);
+    auto* add = new QToolButton;
+    add->setText(tr("Add"));
+    add->setObjectName(QStringLiteral("add"));
+    add->setToolTip(pick);
+    connect(add, &QToolButton::clicked, this, [this, key, add, pick] {
+        if (!addPicked(key))
+            QToolTip::showText(add->mapToGlobal(QPoint(0, add->height())), pick, add);
+    });
+    auto* clear = new QToolButton;
+    clear->setText(tr("Clear"));
+    clear->setObjectName(QStringLiteral("clear"));
+    connect(clear, &QToolButton::clicked, edit, &QLineEdit::clear);
+    h->addWidget(edit, 1);
+    h->addWidget(add);
+    h->addWidget(clear);
+    field.editor = edit;
+    fields_->addRow(label(key) + (field.required ? " *" : ""), row);
+    editors_[key] = field;
+}
+
+bool ParamForm::addPicked(const std::string& key) {
+    const auto it = editors_.find(key);
+    if (it == editors_.end() || it->second.items.empty() || !snapshot_) return false;
+    const Field& field = it->second;
+    const auto fits = [this](const std::vector<std::string>& kinds, ObjectId id) {
+        const DocumentObject* o = snapshot_->find(id);
+        return o != nullptr &&
+               (kinds.empty() || std::ranges::find(kinds, o->kind()) != kinds.end());
+    };
+    // Each property takes the first picked object of its kinds, in the order they were picked.
+    Json item = Json::object();
+    std::vector<ObjectId> used;
+    for (const auto& [itemKey, kinds] : field.items) {
+        for (const ObjectId id : picked_) {
+            if (fits(kinds, id) && std::ranges::find(used, id) == used.end()) {
+                item[itemKey] = id;
+                used.push_back(id);
+                break;
+            }
+        }
+    }
+    // One not picked is the newest object of its kinds made from a picked one, or that a picked
+    // one was made from, so a selection alone brings the plane fitted to it and the other way
+    // round.
+    const auto related = [this](const DocumentObject& o, const ObjectId id) {
+        const DocumentObject* other = snapshot_->find(id);
+        return std::ranges::find(o.provenance.inputs, id) != o.provenance.inputs.end() ||
+               (other != nullptr && std::ranges::find(other->provenance.inputs, o.id) !=
+                                        other->provenance.inputs.end());
+    };
+    for (const auto& [itemKey, kinds] : field.items) {
+        if (item.contains(itemKey) || used.empty()) continue;
+        for (const DocumentObject& o : std::views::reverse(snapshot_->objects)) {
+            if (!fits(kinds, o.id) || std::ranges::find(used, o.id) != used.end()) continue;
+            if (std::ranges::any_of(used, [&](const ObjectId id) { return related(o, id); })) {
+                item[itemKey] = o.id;
+                used.push_back(o.id);
+                break;
+            }
+        }
+    }
+    if (item.size() != field.items.size()) return false;
+    auto* edit = static_cast<QLineEdit*>(field.editor);
+    Json list = Json::parse(edit->text().toStdString(), nullptr, false);
+    if (!list.is_array()) list = Json::array();
+    if (std::ranges::find(list, item) == list.end()) list.push_back(item);
+    edit->setText(QString::fromStdString(list.dump()));
+    return true;
 }
 
 bool ParamForm::appendPoint(const std::string& key, const Vec3d& point) {

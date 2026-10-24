@@ -144,7 +144,7 @@ Delete the faces of a selection from its mesh. *(changes the document)*
 
 ### `fillet.fit`
 
-Round edges of a solid with the constant-radius fillet a scan shows (ADR-033): the edge nearest each of edge_points (between two planes, cylinders, cones or spheres, as primitive.trim, primitive.box and solid.boolean make them) gets a rolling-ball fillet whose radius brings the solid closest to the selected band of the mesh, found by rounding at trial radii (about 25 tries). radius_mm rounds at that radius instead, for example a nominal value. Adds a solid object; the solid is unchanged. Fails, adding nothing, when the band's P95 distance to the rounded solid is above max_residual_mm or Open CASCADE cannot round the edges (a radius too large for the faces either side). *(changes the document)*
+Round edges of a solid with the constant-radius fillet a scan shows: the edge nearest each of edge_points (between two planes, cylinders, cones or spheres, as primitive.trim, primitive.box and solid.boolean make them) gets a rolling-ball fillet whose radius brings the solid closest to the selected band of the mesh, found by rounding at trial radii (about 25 tries). radius_mm rounds at that radius instead, for example a nominal value. Adds a solid object; the solid is unchanged. Fails, adding nothing, when the band's P95 distance to the rounded solid is above max_residual_mm or Open CASCADE cannot round the edges (a radius too large for the faces either side). *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -330,7 +330,7 @@ Show or hide an object in the viewport, or several (ids) as one undo step. *(cha
 
 ### `plane.fit`
 
-Fit a least-squares plane to the faces of a selection. *(read-only)*
+Fit a least-squares plane to the faces of a selection (area-weighted, as align.datum fits its datums) and add it as a plane primitive, ready for surface.build's flat areas, primitive.trim or solid.export. Unlike primitive.fit it has no residual limit, so the result reports how flat the selection is: the plane's RMS, largest and P95 distance. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -626,7 +626,7 @@ Combine two solids into a new one: fuse joins them, cut removes tool_id from id,
 
 ### `solid.export`
 
-Write a solid, sketches and planes to a STEP AP242 file in millimetres (ADR-034), each a product named after its object: a sketch as one wire per loop (Fusion 360 imports the curves as a sketch), a plane primitive as a rectangular face around its fitted region (a surface body to sketch on or make a construction plane from). Then read the file back and check it holds one valid closed solid with the same volume (within 0.1%), or none if no solid was given, and as many faces and edges outside it as were written. Fails, writing nothing, if the solid is not valid. *(writes a file)*
+Write a solid, sketches and planes to a STEP AP242 file in millimetres, each a product named after its object: a sketch as one wire per loop (Fusion 360 imports the curves as a sketch), a plane primitive as a rectangular face around its fitted region (a surface body to sketch on or make a construction plane from). Then read the file back and check it holds one valid closed solid with the same volume (within 0.1%), or none if no solid was given, and as many faces and edges outside it as were written. Fails, writing nothing, if the solid is not valid. *(writes a file)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -685,7 +685,7 @@ Revolve a sketch's profile (its largest loop less the loops inside it) by angle_
 
 ### `surface.build`
 
-Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds the surface (faces meeting at more than 10 degrees) is made again with twice the smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced from the irregular vertices, are merged into one face each. With refine_to_mm, a fit farther from the mesh than that (95th percentile) has its cage subdivided once and is fitted again, up to max_refinements times. An open cage (from quad.remesh keep_outline) needs thickness_mm: its fitted sheet becomes a wall that thick, behind the faces' side, with a sharp-edged rim. Each flat area (a selection of the mesh and a plane fitted to it with primitive.fit) holds the cage vertices over it on the plane while fitting, so the surface there is that plane, without the scan's noise and bumps, and blends into the rest at the area's edge. Adds a solid object; the quad layout and mesh are unchanged. Edges where a closed cage turns by more than crease_angle_deg (as where quad.remesh crease_angle_deg aligned it to a part's sharp edges), and the mesh turns by more than half that under the faces on either side, stay sharp edges of the surface: the fit follows them, faces are not merged across them and the fold checks leave them out. Reports the surface's fairness: how fast its mean curvature changes across each face, which zebra stripes show as waviness. Fails, adding nothing, unless the result is one valid closed solid of positive volume whose faces, after the last fit, meet at no more than 90 degrees and (unless check_crossing is false) whose surface does not cross itself. *(changes the document)*
+Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit surface follows the mesh, convert the limit surface to B-spline faces (exact where the cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds the surface (faces meeting at more than 10 degrees) is made again with twice the smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced from the irregular vertices, are merged into one face each. With refine_to_mm, a fit farther from the mesh than that (95th percentile) has its cage subdivided once and is fitted again, up to max_refinements times. An open cage (from quad.remesh keep_outline) needs thickness_mm: its fitted sheet becomes a wall that thick, behind the faces' side, with a sharp-edged rim. Each flat area (a selection of the mesh and a plane fitted to it with plane.fit or primitive.fit) holds the cage vertices over it on the plane while fitting, so the surface there is that plane, without the scan's noise and bumps, and blends into the rest at the area's edge. Adds a solid object; the quad layout and mesh are unchanged. Edges where a closed cage turns by more than crease_angle_deg (as where quad.remesh crease_angle_deg aligned it to a part's sharp edges), and the mesh turns by more than half that under the faces on either side, stay sharp edges of the surface: the fit follows them, faces are not merged across them and the fold checks leave them out. Reports the surface's fairness: how fast its mean curvature changes across each face, which zebra stripes show as waviness. Fails, adding nothing, unless the result is one valid closed solid of positive volume whose faces, after the last fit, meet at no more than 90 degrees and (unless check_crossing is false) whose surface does not cross itself. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -693,7 +693,7 @@ Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark
 | `crease_angle_deg` | number |  | Of a closed cage: edges where its faces turn by more than this stay sharp edges of the surface. Use the angle quad.remesh crease_angle_deg aligned the cage with; 0 = smooth everywhere, as an organic part needs. Default `0`. |
 | `fairing` | integer |  | Rounds of fairing of the shape the smoothing keeps: the cage starts on the scan, noise and all, and fairing that shape first gives a calmer surface (zebra stripes) at the same distance to the mesh; 0 = keep the cage's own shape. Default `5`. |
 | `fit` | boolean |  | Fit the cage to the mesh first. Default `true`. |
-| `flat` | array |  | Areas held flat while fitting, each {selection_id, plane_id}: faces of the mesh and a plane primitive fitted to them (primitive.fit). Cage vertices whose closest mesh face is selected stay on the plane. Needs fit. Default `[]`. |
+| `flat` | array |  | Areas held flat while fitting, each {selection_id, plane_id}: faces of the mesh and a plane primitive fitted to them (plane.fit or primitive.fit). Cage vertices whose closest mesh face is selected stay on the plane. Needs fit. Default `[]`. |
 | `id` | quad_layout id | yes | The quad layout. |
 | `isolation_level` | integer |  | Refinement around irregular vertices: higher gives smaller caps and more faces' pieces. Default `2`. |
 | `iterations` | integer |  | Rounds of fitting. Default `3`. |

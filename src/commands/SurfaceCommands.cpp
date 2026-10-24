@@ -81,27 +81,26 @@ void addSurfaceCommands(std::vector<Command>& out) {
         "surface.build",
         "Build a closed B-rep solid from a quad layout: fit the cage so its Catmull-Clark limit "
         "surface follows the mesh, convert the limit surface to B-spline faces (exact where the "
-        "cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that folds "
-        "the surface (faces meeting at more than 10 degrees) is made again with twice the "
+        "cage is regular, close-fitting caps at irregular vertices) and sew them. A fit that "
+        "folds the surface (faces meeting at more than 10 degrees) is made again with twice the "
         "smoothing, up to four fits in all. Rectangles of cage quads, bounded by lines traced "
         "from the irregular vertices, are merged into one face each. With refine_to_mm, a fit "
         "farther from the mesh than that (95th percentile) has its cage subdivided once and is "
-        "fitted again, up to max_refinements times. An open cage (from quad.remesh "
-        "keep_outline) needs thickness_mm: its fitted sheet becomes a wall that thick, behind "
-        "the faces' side, with a sharp-edged rim. Each flat area (a selection of the mesh and "
-        "a plane fitted to it with primitive.fit) holds the cage vertices over it on the plane "
-        "while fitting, so the surface there is that plane, without the scan's noise and bumps, "
-        "and blends into the rest at the area's edge. Adds a solid object; the quad layout and "
-        "mesh are unchanged. Edges where a closed cage turns by more than crease_angle_deg "
-        "(as where quad.remesh crease_angle_deg aligned it to a part's sharp edges), and the "
-        "mesh turns by more than half that under the faces on either side, stay sharp "
-        "edges of the surface: the fit follows them, faces are not merged across them and the "
-        "fold checks leave them out. Reports the surface's fairness: how fast its mean "
-        "curvature changes across each face, which zebra stripes show as waviness. Fails, adding "
-        "nothing, unless the result is one valid closed "
-        "solid "
-        "of positive volume whose faces, after the last fit, meet at no more than 90 degrees "
-        "and (unless check_crossing is false) whose surface does not cross itself.",
+        "fitted again, up to max_refinements times. An open cage (from quad.remesh keep_outline) "
+        "needs thickness_mm: its fitted sheet becomes a wall that thick, behind the faces' side, "
+        "with a sharp-edged rim. Each flat area (a selection of the mesh and a plane fitted to it "
+        "with plane.fit or primitive.fit) holds the cage vertices over it on the plane while "
+        "fitting, so the surface there is that plane, without the scan's noise and bumps, and "
+        "blends into the rest at the area's edge. Adds a solid object; the quad layout and mesh "
+        "are unchanged. Edges where a closed cage turns by more than crease_angle_deg (as where "
+        "quad.remesh crease_angle_deg aligned it to a part's sharp edges), and the mesh turns by "
+        "more than half that under the faces on either side, stay sharp edges of the surface: the "
+        "fit follows them, faces are not merged across them and the fold checks leave them out. "
+        "Reports the surface's fairness: how fast its mean curvature changes across each face, "
+        "which zebra stripes show as waviness. Fails, adding nothing, unless the result is one "
+        "valid closed solid of positive volume whose faces, after the last fit, meet at no more "
+        "than 90 degrees and (unless check_crossing is false) whose surface does not cross "
+        "itself.",
         R"({
             "type":"object",
             "properties":{
@@ -120,7 +119,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
                 "refine_to_mm":{"type":"number","minimum":0,"default":0,"description":"While the fit's 95th-percentile distance to the mesh is above this, subdivide the fitted cage once (four times the quads, same layout) and fit again; 0 = off."},
                 "max_refinements":{"type":"integer","minimum":0,"maximum":3,"default":2,"description":"Most subdivisions refine_to_mm may make."},
                 "thickness_mm":{"type":"number","minimum":0,"default":0,"description":"For an open cage: thicken the fitted sheet by this much, against its faces' direction; required for an open cage and only for one."},
-                "flat":{"type":"array","default":[],"description":"Areas held flat while fitting, each {selection_id, plane_id}: faces of the mesh and a plane primitive fitted to them (primitive.fit). Cage vertices whose closest mesh face is selected stay on the plane. Needs fit.","items":{"type":"object","properties":{
+                "flat":{"type":"array","default":[],"description":"Areas held flat while fitting, each {selection_id, plane_id}: faces of the mesh and a plane primitive fitted to them (plane.fit or primitive.fit). Cage vertices whose closest mesh face is selected stay on the plane. Needs fit.","items":{"type":"object","properties":{
                     "selection_id":{"type":"integer","x-object":"selection","minimum":0,"description":"Faces of the mesh (mesh_id) that are flat."},
                     "plane_id":{"type":"integer","x-object":"primitive","minimum":0,"description":"A plane primitive fitted to them."}},
                     "required":["selection_id","plane_id"],"additionalProperties":false}},
@@ -456,7 +455,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
 
     out.push_back(makeCommand(
         "fillet.fit",
-        "Round edges of a solid with the constant-radius fillet a scan shows (ADR-033): the "
+        "Round edges of a solid with the constant-radius fillet a scan shows: the "
         "edge nearest each of edge_points (between two planes, cylinders, cones or spheres, as "
         "primitive.trim, primitive.box and solid.boolean make them) gets a rolling-ball fillet "
         "whose radius brings the solid closest to the selected band of the mesh, found by "
@@ -531,7 +530,7 @@ void addSurfaceCommands(std::vector<Command>& out) {
 
     Command exportStep = makeCommand(
         "solid.export",
-        "Write a solid, sketches and planes to a STEP AP242 file in millimetres (ADR-034), each a "
+        "Write a solid, sketches and planes to a STEP AP242 file in millimetres, each a "
         "product named after its object: a sketch as one wire per loop (Fusion 360 imports the "
         "curves as a sketch), a plane primitive as a rectangular face around its fitted region "
         "(a surface body to sketch on or make a construction plane from). Then read the file "
