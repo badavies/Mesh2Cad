@@ -721,6 +721,8 @@ void addSurfaceCommands(std::vector<Command>& out) {
         true,
         [](CommandContext& context, const Json& params) -> Result<Json> {
             M2C_TRY(object, requireObject(context, params, "id", "sketch"));
+            if (!params.contains("distance_mm"))
+                return fail(ErrorCode::InvalidArgument, "parameter 'distance_mm' is required");
             M2C_TRY(distance, optionalNumber(params, "distance_mm", 0.0, -1e6, 1e6));
             M2C_TRY(back, optionalNumber(params, "back_distance_mm", 0.0, 0.0, 1e6));
             M2C_TRY(extent, optionalString(params, "extent"));

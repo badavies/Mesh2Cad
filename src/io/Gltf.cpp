@@ -13,6 +13,7 @@
 #include <limits>
 #include <numbers>
 #include <ostream>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -20,6 +21,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "m2c/core/Base64.h"
 #include "m2c/core/Error.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -123,24 +125,6 @@ void append(std::string& bytes, const std::vector<T>& values) {
     std::memcpy(bytes.data() + at, values.data(), values.size() * sizeof(T));
 }
 
-std::string base64(const std::string& bytes) {
-    constexpr std::string_view digits =
-        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string out;
-    out.reserve((bytes.size() + 2) / 3 * 4);
-    for (std::size_t i = 0; i < bytes.size(); i += 3) {
-        const std::size_t n = std::min<std::size_t>(3, bytes.size() - i);
-        std::uint32_t chunk = 0;
-        for (std::size_t k = 0; k < 3; ++k) {
-            chunk = (chunk << 8U) | (k < n ? static_cast<unsigned char>(bytes[i + k]) : 0U);
-        }
-        for (std::size_t k = 0; k < 4; ++k) {
-            out.push_back(k <= n ? digits[(chunk >> (18U - 6U * k)) & 63U] : '=');
-        }
-    }
-    return out;
-}
-
 void writeWord(std::ostream& out, const std::uint32_t word) {
     out.write(reinterpret_cast<const char*>(&word), sizeof(word));
 }
@@ -177,7 +161,9 @@ Result<void> writeGltf(const TriMesh& mesh, std::ostream& out, const GltfOptions
     using Json = nlohmann::ordered_json;
     Json bufferJson{{"byteLength", buffer.size()}};
     if (!options.binary)
-        bufferJson["uri"] = "data:application/octet-stream;base64," + base64(buffer);
+        bufferJson["uri"] =
+            "data:application/octet-stream;base64," +
+            encodeBase64({reinterpret_cast<const std::uint8_t*>(buffer.data()), buffer.size()});
     const Json gltf{
         {"asset", {{"version", "2.0"}, {"generator", "Mesh2Cad"}}},
         {"scene", 0},

@@ -116,7 +116,10 @@ Result<FilletFitResult> fitFillet(const Solid& solid,
         if (!tb) return std::unexpected(tb.error());
         double fa = (*ta)->rms, fb = (*tb)->rms;
         while (hi - lo > kRelativeTolerance * (hi + lo) / 2.0) {
-            if (fa <= fb) {
+            // Where neither radius builds (next to a failed neighbour), keep the side holding
+            // the best radius rather than always the lower one.
+            const bool neither = std::isinf(fa) && std::isinf(fb);
+            if (neither ? radii[bestIndex] <= a : fa <= fb) {
                 hi = b;
                 b = a;
                 fb = fa;

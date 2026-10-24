@@ -823,9 +823,8 @@ Json MainWindow::selectionTarget(const ObjectId mesh, const bool subtract, const
 
 void MainWindow::adoptSelection(const Result<Json>& result) {
     if (result && result->is_object() && result->contains("selection_id")) {
-        selected_ = (*result)["selection_id"].get<ObjectId>();
-        refreshTree();
-        showCurrent();
+        chooseObject((*result)["selection_id"].get<ObjectId>());
+        form_->setSelectedObjects(selectedIds_); // the open form takes it, as from a click
     }
 }
 
@@ -920,7 +919,8 @@ void MainWindow::openFiles(const QStringList& files) {
                     QMessageBox::warning(
                         this, tr("Import"), QString::fromStdString(r.error().message));
                 } else {
-                    selected_ = (*r)["id"].get<ObjectId>();
+                    chooseObject((*r)["id"].get<ObjectId>());
+                    form_->setSelectedObjects(selectedIds_);
                 }
             });
         }

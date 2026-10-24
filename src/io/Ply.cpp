@@ -313,8 +313,8 @@ Result<TriMesh> readBody(Reader& reader, const Header& header, const bool weld) 
                     double countValue = 0.0;
                     // The ASCII reader accepts any number here, so also refuse NaN and counts
                     // too large to convert.
-                    if (!reader.read(p.countType, countValue) || countValue < 0.0 ||
-                        countValue > 4294967295.0) {
+                    if (!reader.read(p.countType, countValue) ||
+                        !(countValue >= 0.0 && countValue <= 4294967295.0)) {
                         return fail(ErrorCode::Parse,
                                     "truncated or invalid PLY list in '" + elementName +
                                         "' element");
@@ -327,7 +327,8 @@ Result<TriMesh> readBody(Reader& reader, const Header& header, const bool weld) 
                             return fail(ErrorCode::Parse, "truncated PLY list data");
                         }
                         if (slot == indexSlot) {
-                            if (v < 0.0 || v > static_cast<double>(kMaxIndex)) {
+                            if (!(v >= 0.0 &&
+                                  v <= static_cast<double>(kMaxIndex))) { // also refuses NaN
                                 return fail(ErrorCode::Parse, "invalid PLY vertex index");
                             }
                             poly.push_back(static_cast<std::uint32_t>(v));

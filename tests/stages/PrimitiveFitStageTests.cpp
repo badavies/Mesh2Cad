@@ -79,6 +79,14 @@ TEST_CASE("A sphere fit recovers the centre and radius", "[stages][fit]") {
     CHECK_THAT(turnAngle(fit.primitive, points), WithinAbs(2 * 0.54, 0.01));
 }
 
+TEST_CASE("Points all round a sphere turn through a full circle", "[stages][fit]") {
+    // Symmetric, so their normals cancel out.
+    const Primitive sphere{.kind = PrimitiveKind::Sphere, .point = {1, 2, 3}, .radiusMm = 2.0};
+    const std::vector<Vec3d> points{
+        {3, 2, 3}, {-1, 2, 3}, {1, 4, 3}, {1, 0, 3}, {1, 2, 5}, {1, 2, 1}};
+    CHECK_THAT(turnAngle(sphere, points), WithinAbs(2 * std::numbers::pi, 1e-12));
+}
+
 TEST_CASE("A plane fit takes the principal axes and the start's side", "[stages][fit]") {
     std::vector<Vec3d> points;
     for (int i = 0; i < 10; ++i) {

@@ -54,9 +54,6 @@ public:
           summary_(summary) {}
 
     [[nodiscard]] const SolidShape& shape() const noexcept { return *shape_; }
-    [[nodiscard]] const std::shared_ptr<const SolidShape>& shapePtr() const noexcept {
-        return shape_;
-    }
     [[nodiscard]] const std::vector<SurfacePatch>& faces() const noexcept { return *faces_; }
     [[nodiscard]] const TriMesh& display() const noexcept { return display_->mesh; }
     /// The display mesh with the face and (u, v) of each of its triangles and vertices.

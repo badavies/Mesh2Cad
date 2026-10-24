@@ -224,6 +224,22 @@ Result<CageFitResult> fitCage(const QuadLayout& cage,
                 }
             }
         }
+        // Fairing pulls held vertices by a flat area's edge towards their other neighbours;
+        // back onto their planes, so the smoothing term keeps the area flat.
+        if (!params.held.empty()) {
+            std::vector<Vec3d> faired(cage.vertexCount());
+            for (Eigen::Index v = 0; v < n; ++v) {
+                faired[static_cast<std::size_t>(v)] = {
+                    .x = reference(v), .y = reference(n + v), .z = reference(2 * n + v)};
+            }
+            holdOnPlanes(faired, params.held);
+            for (Eigen::Index v = 0; v < n; ++v) {
+                const auto& [x, y, z] = faired[static_cast<std::size_t>(v)];
+                reference(v) = x;
+                reference(n + v) = y;
+                reference(2 * n + v) = z;
+            }
+        }
     }
     // The held-plane term: weight * (normal . p - normal . point)^2 per held vertex.
     std::vector<Eigen::Triplet<double>> holdEntries;

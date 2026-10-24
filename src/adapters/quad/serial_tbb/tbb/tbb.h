@@ -121,9 +121,17 @@ public:
     void spawn(task& child) { run(child); }
 
     static void spawn_root_and_wait(task& root) {
+        // Frees the tasks however run() ends, so one that throws leaks none.
+        struct Free {
+            Free() = default;
+            Free(const Free&) = delete;
+            Free& operator=(const Free&) = delete;
+            ~Free() {
+                for (task* t : owned()) delete t;
+                owned().clear();
+            }
+        } release;
         run(root);
-        for (task* t : owned()) delete t;
-        owned().clear();
     }
 
 private:

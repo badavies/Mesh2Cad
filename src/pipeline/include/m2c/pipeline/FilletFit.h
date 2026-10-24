@@ -27,7 +27,7 @@ struct FilletFitResult {
     double rmsMm{0.0}; ///< From the band's points to the rounded solid.
     double maxMm{0.0};
     double p95Mm{0.0};
-    std::size_t builds{0}; ///< Fillets the kernel built while fitting.
+    std::size_t builds{0}; ///< Radii tried while fitting, each a fillet build (failed or not).
 };
 
 /// Rounds the edges of `solid` nearest edgePoints (filletEdges) at the radius that brings the

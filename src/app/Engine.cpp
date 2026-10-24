@@ -193,8 +193,12 @@ void Engine::showProgress(const std::string& command,
     if (fraction >= 0.0) text += QStringLiteral(" (%1%)").arg(qRound(fraction * 100.0));
     QMetaObject::invokeMethod(
         this,
-        [this, text] {
-            busyShown_ = true; // so the status clears when the command finishes
+        [this, text, command] {
+            // An agent's command shows the Cancel button too; the status clears when it ends.
+            if (!busyShown_) {
+                busyShown_ = true;
+                emit busyChanged(true, QString::fromStdString(command));
+            }
             emit progressChanged(text);
         },
         Qt::QueuedConnection);
@@ -365,6 +369,7 @@ void Engine::onReadyRead(int connectionId) {
                                 std::chrono::steady_clock::now() - started)
                                 .count();
             c->authenticated = c->rpc->authenticated();
+            publish(); // the clients hear doc.changed before the reply, as the UI sees it first
             // Log what the client did, so the person can follow an agent's work.
             QString logText;
             bool failed = false;
@@ -413,6 +418,8 @@ void Engine::onDisconnected(const int connectionId) {
     const auto it = connections_.find(connectionId);
     if (it == connections_.end()) return;
     it->second->socket->deleteLater();
+    // Nobody is left to hear the reply, and the Cancel button no longer reaches the request.
+    it->second->rpc->cancelAll();
     // The engine thread may still hold the connection for a queued request; the shared pointer
     // keeps its context alive until that request finishes.
     connections_.erase(it);

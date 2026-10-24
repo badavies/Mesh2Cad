@@ -280,6 +280,10 @@ void addViewCommands(std::vector<Command>& out) {
             M2C_TRY(focusId, optionalId(params, "focus_id"));
             M2C_TRY(selection, optionalSelection(context, params, "selection_id"));
             M2C_TRY(highlight, optionalId(params, "highlight_id"));
+            if (*highlight && !context.document.find(**highlight)) {
+                return fail(ErrorCode::NotFound,
+                            "no object with id " + std::to_string(**highlight));
+            }
 
             Scene scene;
             scene.highlight = *highlight;

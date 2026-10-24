@@ -159,10 +159,10 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                                   return Json{{"id", *id}, {"name", *name}};
                               }));
 
-    out.push_back(
-        makeCommand("object.show",
-                    "Show or hide an object in the viewport, or several (ids) as one undo step.",
-                    R"({
+    out.push_back(makeCommand(
+        "object.show",
+        "Show or hide an object in the viewport, or several (ids) as one undo step.",
+        R"({
             "type":"object",
             "properties":{
                 "id":{"type":"integer","x-object":"any","minimum":0},
@@ -170,17 +170,19 @@ void addDocumentCommands(const CommandRegistry& registry, std::vector<Command>& 
                 "visible":{"type":"boolean"}
             },
             "required":["visible"],"additionalProperties":false})",
-                    true,
-                    [](CommandContext& context, const Json& params) -> Result<Json> {
-                        M2C_TRY(ids, idOrIds(context, params));
-                        M2C_TRY(visible, optionalBool(params, "visible", true));
-                        for (const ObjectId id : *ids) {
-                            M2C_TRY(done, context.document.setVisible(id, *visible));
-                        }
-                        if (params.contains("id"))
-                            return Json{{"id", ids->front()}, {"visible", *visible}};
-                        return Json{{"ids", *ids}, {"visible", *visible}};
-                    }));
+        true,
+        [](CommandContext& context, const Json& params) -> Result<Json> {
+            M2C_TRY(ids, idOrIds(context, params));
+            if (!params.contains("visible")) {
+                return fail(ErrorCode::InvalidArgument, "parameter 'visible' is required");
+            }
+            M2C_TRY(visible, optionalBool(params, "visible", true));
+            for (const ObjectId id : *ids) {
+                M2C_TRY(done, context.document.setVisible(id, *visible));
+            }
+            if (params.contains("id")) return Json{{"id", ids->front()}, {"visible", *visible}};
+            return Json{{"ids", *ids}, {"visible", *visible}};
+        }));
 
     out.push_back(makeCommand(
         "mesh.import",

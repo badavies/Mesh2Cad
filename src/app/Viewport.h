@@ -18,6 +18,7 @@
 #include <QOpenGLFunctions_3_3_Core>
 #include <QVector3D>
 
+#include "m2c/core/DeviationField.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Vec3.h"
 
@@ -101,7 +102,6 @@ public:
     /// quad layout or sketch; a mesh shows as current instead).
     void setCurrent(ObjectId meshId, ObjectId selectionId, ObjectId highlightId = 0);
     void setMode(Mode mode);
-    [[nodiscard]] Mode mode() const noexcept { return mode_; }
     void setBrushRadius(double mm);
     [[nodiscard]] double brushRadius() const noexcept { return brushRadius_; }
     void setCreaseAngle(double degrees) { creaseAngle_ = degrees; }
@@ -111,7 +111,6 @@ public:
     void setWireframe(bool on);
     void setShowBackFaces(bool on);
     void setColorBlindPalette(bool on);
-    [[nodiscard]] bool colorBlindPalette() const noexcept { return colorBlind_; }
 
     void fitAll();
     void fitObject(ObjectId id);
@@ -165,7 +164,8 @@ protected:
 private:
     /// Selections a mesh's overlay was built from.
     struct SelectionKey {
-        const MeshSelection* faces{nullptr};
+        std::shared_ptr<const MeshSelection>
+            faces; ///< Held, so a new one cannot reuse its address.
         ObjectId id{0};
         bool current{false};
         bool operator==(const SelectionKey&) const = default;
@@ -186,7 +186,8 @@ private:
         GLuint selBuffer{0}, selTexture{0};
         bool hasSelection{false};
         // Deviation colours, one per vertex.
-        std::pair<const DeviationField*, bool> colorKey{nullptr, false}; ///< (field, colour-blind)
+        std::optional<DeviationField> colorField; ///< Its colours' field, held while shown.
+        bool colorBlind{false};                   ///< Whether they use the colour-blind palette.
         GLuint colorBuffer{0};
         bool hasColors{false};
         std::vector<DeviationMarker> markers;

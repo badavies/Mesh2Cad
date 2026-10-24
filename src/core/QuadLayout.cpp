@@ -216,14 +216,25 @@ double signedVolume(const QuadLayout& cage) {
 }
 
 std::vector<std::uint32_t> cageEdges(const QuadLayout& cage) {
-    std::vector<std::uint32_t> edges;
+    // Lower vertex first, sorted and without repeats: an open sheet's boundary edges are in one
+    // face only, in either direction.
+    std::vector<std::uint64_t> keys;
+    keys.reserve(cage.faceVertices().size());
     for (std::size_t f = 0; f + 1 < cage.faceStarts().size(); ++f) {
         const std::uint32_t begin = cage.faceStarts()[f], end = cage.faceStarts()[f + 1];
         for (std::uint32_t k = begin; k < end; ++k) {
-            const std::uint32_t a = cage.faceVertices()[k];
-            if (const std::uint32_t b = cage.faceVertices()[k + 1 < end ? k + 1 : begin]; a < b)
-                edges.insert(edges.end(), {a, b});
+            keys.push_back(
+                edgeKey(cage.faceVertices()[k], cage.faceVertices()[k + 1 < end ? k + 1 : begin]));
         }
+    }
+    std::ranges::sort(keys);
+    const auto repeats = std::ranges::unique(keys);
+    keys.erase(repeats.begin(), repeats.end());
+    std::vector<std::uint32_t> edges;
+    edges.reserve(2 * keys.size());
+    for (const std::uint64_t key : keys) {
+        edges.insert(edges.end(),
+                     {static_cast<std::uint32_t>(key >> 32U), static_cast<std::uint32_t>(key)});
     }
     return edges;
 }
