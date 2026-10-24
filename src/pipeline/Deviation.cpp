@@ -64,7 +64,7 @@ std::vector<DeviationHotspot> deviationHotspots(const TriMesh& mesh, const Devia
     const double tolerance = field.stats().toleranceMm;
     const std::size_t faceCount = mesh.faceCount();
     // Each face's sign (0 within tolerance) and the vertex deciding it.
-    std::vector<int> sign(faceCount, 0);
+    std::vector sign(faceCount, 0);
     std::vector<std::uint32_t> worst(faceCount, 0);
     for (std::size_t f = 0; f < faceCount; ++f) {
         const auto v = mesh.face(f);
@@ -76,7 +76,7 @@ std::vector<DeviationHotspot> deviationHotspots(const TriMesh& mesh, const Devia
         if (std::abs(d[w]) > tolerance) sign[f] = d[w] > 0.0 ? 1 : -1;
     }
     const FaceAdjacency adjacency = buildFaceAdjacency(mesh);
-    std::vector<bool> seen(faceCount, false);
+    std::vector seen(faceCount, false);
     std::vector<DeviationHotspot> out;
     std::vector<std::uint32_t> stack;
     for (std::size_t start = 0; start < faceCount; ++start) {
@@ -90,8 +90,8 @@ std::vector<DeviationHotspot> deviationHotspots(const TriMesh& mesh, const Devia
             stack.pop_back();
             h.faces.push_back(f);
             for (std::uint32_t k = adjacency.offsets[f]; k < adjacency.offsets[f + 1]; ++k) {
-                const std::uint32_t g = adjacency.neighbours[k];
-                if (!seen[g] && sign[g] == h.sign) {
+                if (const std::uint32_t g = adjacency.neighbours[k];
+                    !seen[g] && sign[g] == h.sign) {
                     seen[g] = true;
                     stack.push_back(g);
                 }
@@ -115,12 +115,12 @@ std::vector<DeviationHotspot> deviationHotspots(const TriMesh& mesh, const Devia
             for (const std::uint32_t k : v) {
                 vertices.push_back(k);
                 const Vec3d& p = mesh.positions()[k];
-                h.bounds.min = {std::min(h.bounds.min.x, p.x),
-                                std::min(h.bounds.min.y, p.y),
-                                std::min(h.bounds.min.z, p.z)};
-                h.bounds.max = {std::max(h.bounds.max.x, p.x),
-                                std::max(h.bounds.max.y, p.y),
-                                std::max(h.bounds.max.z, p.z)};
+                h.bounds.min = {.x = std::min(h.bounds.min.x, p.x),
+                                .y = std::min(h.bounds.min.y, p.y),
+                                .z = std::min(h.bounds.min.z, p.z)};
+                h.bounds.max = {.x = std::max(h.bounds.max.x, p.x),
+                                .y = std::max(h.bounds.max.y, p.y),
+                                .z = std::max(h.bounds.max.z, p.z)};
             }
         }
         h.maxSignedMm = d[worst[h.seedFace]];

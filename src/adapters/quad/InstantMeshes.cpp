@@ -109,7 +109,7 @@ Result<void> constrainToGuides(MultiResolutionHierarchy& hierarchy,
     for (Eigen::Index v = 0; v < V.cols(); ++v) {
         positions[static_cast<std::size_t>(v)] = {.x = V(0, v), .y = V(1, v), .z = V(2, v)};
     }
-    std::vector<std::uint32_t> indices(F.data(), F.data() + F.size());
+    std::vector indices(F.data(), F.data() + F.size());
     double edgeSum = 0.0;
     for (Eigen::Index f = 0; f < F.cols(); ++f) {
         for (Eigen::Index k = 0; k < 3; ++k) {
@@ -147,7 +147,7 @@ Result<void> constrainToGuides(MultiResolutionHierarchy& hierarchy,
                                      static_cast<Float>(nearest.point.z));
                 for (Eigen::Index j = 0; j < 3; ++j) {
                     const std::uint32_t v = F(j, nearest.face);
-                    Vector3f local = tangent - tangent.dot(N.col(v)) * N.col(v);
+                    const Vector3f local = tangent - tangent.dot(N.col(v)) * N.col(v);
                     if (local.squaredNorm() <= 0) continue;
                     hierarchy.CQ().col(v) = local.normalized();
                     hierarchy.CQw()[v] = 1.0f;

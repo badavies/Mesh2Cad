@@ -18,7 +18,7 @@ slice(const TriMesh& input, const Vec3d& point, const Vec3d& normal) {
     if (!(length(normal) > 0.0)) {
         return fail(ErrorCode::InvalidArgument, "the section plane's normal must not be zero");
     }
-    return guarded("sectioning", [&]() -> Result<std::vector<std::vector<Vec3d>>> {
+    return guarded("sectioning", [&] -> Result<std::vector<std::vector<Vec3d>>> {
         const SurfaceMesh mesh = toSurfaceMesh(input);
         const CGAL::Polygon_mesh_slicer<SurfaceMesh, Kernel> slicer(mesh);
         std::vector<std::vector<Point>> cuts;
@@ -30,7 +30,7 @@ slice(const TriMesh& input, const Vec3d& point, const Vec3d& normal) {
         for (const auto& cut : cuts) {
             auto& polyline = out.emplace_back();
             polyline.reserve(cut.size());
-            for (const Point& p : cut) polyline.push_back({p.x(), p.y(), p.z()});
+            for (const Point& p : cut) polyline.push_back({.x = p.x(), .y = p.y(), .z = p.z()});
         }
         return out;
     });

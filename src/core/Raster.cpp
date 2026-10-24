@@ -8,8 +8,11 @@
 #include <cstdint>
 #include <limits>
 #include <span>
+#include <string_view>
 
 #include "m2c/core/SelectionColors.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 
 namespace m2c {
 
@@ -19,15 +22,15 @@ Vec3d unit(const Vec3d& v) {
     return v * (1.0 / length(v));
 }
 
-Rgb mix(const Rgb& a, const Rgb& b, double t) {
-    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t};
+Rgb mix(const Rgb& a, const Rgb& b, const double t) {
+    return {.r = a.r + (b.r - a.r) * t, .g = a.g + (b.g - a.g) * t, .b = a.b + (b.b - a.b) * t};
 }
 
-Rgb scaled(const Rgb& c, double s) {
-    return {c.r * s, c.g * s, c.b * s};
+Rgb scaled(const Rgb& c, const double s) {
+    return {.r = c.r * s, .g = c.g * s, .b = c.b * s};
 }
 
-std::uint8_t channel(double v) {
+std::uint8_t channel(const double v) {
     return static_cast<std::uint8_t>(std::lround(std::clamp(v, 0.0, 1.0) * 255.0));
 }
 
@@ -36,7 +39,7 @@ std::uint8_t channel(double v) {
 Rgb Image::at(const int x, const int y) const {
     const auto i = 3 * (static_cast<std::size_t>(y) * static_cast<std::size_t>(width) +
                         static_cast<std::size_t>(x));
-    return {rgb[i] / 255.0, rgb[i + 1] / 255.0, rgb[i + 2] / 255.0};
+    return {.r = rgb[i] / 255.0, .g = rgb[i + 1] / 255.0, .b = rgb[i + 2] / 255.0};
 }
 
 Raster::Raster(const int width,
@@ -44,7 +47,7 @@ Raster::Raster(const int width,
                const Aabb& box,
                const Vec3d& from,
                const Vec3d& up,
-               const Rgb background,
+               const Rgb& background,
                const Framing framing)
     : image_{.width = width, .height = height, .rgb = {}},
       depth_(static_cast<std::size_t>(width) * static_cast<std::size_t>(height),
@@ -55,10 +58,10 @@ Raster::Raster(const int width,
     // Frame the box's corners with a 5% margin on each side.
     double minX = std::numeric_limits<double>::infinity(), maxX = -minX, minY = minX, maxY = -minX;
     double minZ = minX, maxZ = -minX;
-    for (int k = 0; k < 8; ++k) {
-        const Vec3d c{(k & 1) != 0 ? box.max.x : box.min.x,
-                      (k & 2) != 0 ? box.max.y : box.min.y,
-                      (k & 4) != 0 ? box.max.z : box.min.z};
+    for (unsigned k = 0; k < 8; ++k) {
+        const Vec3d c{.x = (k & 1U) != 0 ? box.max.x : box.min.x,
+                      .y = (k & 2U) != 0 ? box.max.y : box.min.y,
+                      .z = (k & 4U) != 0 ? box.max.z : box.min.z};
         minX = std::min(minX, dot(c, right_));
         maxX = std::max(maxX, dot(c, right_));
         minY = std::min(minY, dot(c, up_));
@@ -86,12 +89,12 @@ Raster::Raster(const int width,
 }
 
 Raster::Screen Raster::project(const Vec3d& p) const {
-    return {0.5 * image_.width + (dot(p, right_) - centreX_) * scale_,
-            0.5 * image_.height - (dot(p, up_) - centreY_) * scale_,
-            dot(p, forward_)};
+    return {.x = 0.5 * image_.width + (dot(p, right_) - centreX_) * scale_,
+            .y = 0.5 * image_.height - (dot(p, up_) - centreY_) * scale_,
+            .depth = dot(p, forward_)};
 }
 
-void Raster::put(const int x, const int y, const Rgb c) {
+void Raster::put(const int x, const int y, const Rgb& c) {
     const auto i = static_cast<std::size_t>(y) * static_cast<std::size_t>(image_.width) +
                    static_cast<std::size_t>(x);
     image_.rgb[3 * i] = channel(c.r);
@@ -101,21 +104,21 @@ void Raster::put(const int x, const int y, const Rgb c) {
 
 void Raster::triangles(const std::span<const Vec3d> positions,
                        const std::span<const std::uint32_t> indices,
-                       const Rgb front,
-                       const Rgb back,
+                       const Rgb& front,
+                       const Rgb& back,
                        const std::span<const Rgb> vertexColors,
                        const std::span<const std::uint8_t> marks,
                        const double biasMm,
                        const std::span<const Rgb> markColors) {
     for (std::size_t f = 0; f + 2 < indices.size(); f += 3) {
-        const std::array<std::uint32_t, 3> v{indices[f], indices[f + 1], indices[f + 2]};
+        const std::array v{indices[f], indices[f + 1], indices[f + 2]};
         const Vec3d n = cross(positions[v[1]] - positions[v[0]], positions[v[2]] - positions[v[0]]);
         if (!(length(n) > 0.0)) continue;
         // The app's shading: ambient plus diffuse from a light at the eye.
         const double facing = dot(unit(n), forward_);
         const double shade = 0.25 + 0.75 * std::abs(facing);
         const bool isFront = facing < 0.0;
-        std::array<Rgb, 3> color{front, front, front};
+        std::array color{front, front, front};
         for (std::size_t k = 0; k < 3; ++k) {
             if (!isFront) {
                 color[k] = back;
@@ -128,7 +131,7 @@ void Raster::triangles(const std::span<const Vec3d> positions,
                                0.8);
             }
         }
-        const std::array<Screen, 3> s{
+        const std::array s{
             project(positions[v[0]]), project(positions[v[1]]), project(positions[v[2]])};
         const double area =
             (s[1].x - s[0].x) * (s[2].y - s[0].y) - (s[2].x - s[0].x) * (s[1].y - s[0].y);
@@ -156,9 +159,9 @@ void Raster::triangles(const std::span<const Vec3d> positions,
                            static_cast<std::size_t>(x)];
                 if (!(z < d)) continue;
                 d = z;
-                const Rgb c{w0 * color[0].r + w1 * color[1].r + w2 * color[2].r,
-                            w0 * color[0].g + w1 * color[1].g + w2 * color[2].g,
-                            w0 * color[0].b + w1 * color[1].b + w2 * color[2].b};
+                const Rgb c{.r = w0 * color[0].r + w1 * color[1].r + w2 * color[2].r,
+                            .g = w0 * color[0].g + w1 * color[1].g + w2 * color[2].g,
+                            .b = w0 * color[0].b + w1 * color[1].b + w2 * color[2].b};
                 put(x, y, scaled(c, shade));
             }
         }
@@ -167,7 +170,7 @@ void Raster::triangles(const std::span<const Vec3d> positions,
 
 void Raster::lines(const std::span<const Vec3d> points,
                    const std::span<const std::uint32_t> segments,
-                   const Rgb color,
+                   const Rgb& color,
                    const bool onTop) {
     for (std::size_t k = 0; k + 1 < segments.size(); k += 2) {
         const Screen a = project(points[segments[k]]), b = project(points[segments[k + 1]]);
@@ -197,9 +200,10 @@ void Raster::axisTriad() {
         Vec3d direction;
         Rgb color;
     };
-    std::array<Axis, 3> axes{{{{1, 0, 0}, {0.90, 0.31, 0.31}},
-                              {{0, 1, 0}, {0.39, 0.78, 0.39}},
-                              {{0, 0, 1}, {0.35, 0.55, 0.94}}}};
+    std::array<Axis, 3> axes{
+        {{.direction = {.x = 1, .y = 0, .z = 0}, .color = {.r = 0.90, .g = 0.31, .b = 0.31}},
+         {.direction = {.x = 0, .y = 1, .z = 0}, .color = {.r = 0.39, .g = 0.78, .b = 0.39}},
+         {.direction = {.x = 0, .y = 0, .z = 1}, .color = {.r = 0.35, .g = 0.55, .b = 0.94}}}};
     // The axis furthest from the camera first, so nearer ones draw over it.
     std::ranges::stable_sort(axes, [&](const Axis& a, const Axis& b) {
         return dot(a.direction, forward_) > dot(b.direction, forward_);
@@ -212,10 +216,11 @@ void Raster::axisTriad() {
         for (int i = 0; i <= steps; ++i) {
             const double t = static_cast<double>(i) / steps;
             // Two pixels wide.
-            for (int k = 0; k < 4; ++k) {
-                const int x = static_cast<int>(std::floor(ox + dx * t)) + (k & 1);
-                const int y = static_cast<int>(std::floor(oy + dy * t)) + (k >> 1);
-                if (x >= 0 && y >= 0 && x < image_.width && y < image_.height)
+            for (unsigned k = 0; k < 4; ++k) {
+                const int x = static_cast<int>(std::floor(ox + dx * t)) + static_cast<int>(k & 1U);
+                if (const int y =
+                        static_cast<int>(std::floor(oy + dy * t)) + static_cast<int>(k >> 1U);
+                    x >= 0 && y >= 0 && x < image_.width && y < image_.height)
                     put(x, y, axis.color);
             }
         }
@@ -223,7 +228,7 @@ void Raster::axisTriad() {
 }
 
 void Raster::label(
-    const int x, const int y, const std::string_view text, const Rgb color, const int scale) {
+    const int x, const int y, const std::string_view text, const Rgb& color, const int scale) {
     // 5 x 7 glyphs, one byte per row, the five low bits from left to right.
     static constexpr std::array<std::array<std::uint8_t, 7>, 26> kGlyphs{{
         {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11}, // A
@@ -259,10 +264,12 @@ void Raster::label(
         const int left = x + static_cast<int>(i) * 6 * scale;
         for (int row = 0; row < 7 * scale; ++row) {
             for (int col = 0; col < 5 * scale; ++col) {
-                if ((glyph[static_cast<std::size_t>(row / scale)] >> (4 - col / scale) & 1) == 0)
+                if ((static_cast<unsigned>(glyph[static_cast<std::size_t>(row / scale)]) >>
+                         static_cast<unsigned>(4 - col / scale) &
+                     1U) == 0)
                     continue;
-                const int px = left + col, py = y + row;
-                if (px >= 0 && py >= 0 && px < image_.width && py < image_.height)
+                if (const int px = left + col, py = y + row;
+                    px >= 0 && py >= 0 && px < image_.width && py < image_.height)
                     put(px, py, color);
             }
         }

@@ -206,7 +206,7 @@ void uniteCrossingShells(SurfaceMesh& mesh) {
 } // namespace
 
 Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
-    return guarded("mesh repair", [&]() -> Result<RepairResult> {
+    return guarded("mesh repair", [&] -> Result<RepairResult> {
         // Work on the polygon soup: it can represent any broken input, and CGAL's soup repair and
         // orientation are the most robust way back to a valid mesh.
         std::vector<Point> points;
@@ -275,9 +275,8 @@ Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
 }
 
 Result<bool> selfIntersects(const TriMesh& mesh) {
-    return guarded("the self-intersection check", [&]() -> Result<bool> {
-        return scanIntersections(toSurfaceMesh(mesh)).crossing;
-    });
+    return guarded("the self-intersection check",
+                   [&] -> Result<bool> { return scanIntersections(toSurfaceMesh(mesh)).crossing; });
 }
 
 } // namespace m2c::cgal

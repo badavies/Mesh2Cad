@@ -4,10 +4,11 @@
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
-#include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <format>
 #include <fstream>
+#include <ios>
 #include <iterator>
 #include <mutex>
 #include <optional>
@@ -75,7 +76,7 @@ McpServer::callReporting(const std::string& command, const Json& arguments, cons
     }
     std::mutex mutex;
     std::condition_variable_any tick;
-    std::jthread heartbeat([&](const std::stop_token& stop) {
+    std::jthread const heartbeat([&](const std::stop_token& stop) {
         const auto started = std::chrono::steady_clock::now();
         std::unique_lock lock(mutex);
         for (;;) {
@@ -94,8 +95,11 @@ McpServer::callReporting(const std::string& command, const Json& arguments, cons
                           {{"progressToken", token},
                            {"progress", seconds},
                            {"message",
-                            command + (stage.empty() ? " running" : ": " + stage) + ", " +
-                                std::to_string(static_cast<long long>(seconds)) + " s"}}}});
+                            std::format("{}{}{}, {} s",
+                                        command,
+                                        stage.empty() ? " running" : ": ",
+                                        stage,
+                                        static_cast<long long>(seconds))}}}});
         }
     });
     return call_(command, arguments); // the heartbeat stops and is joined on return
@@ -173,8 +177,9 @@ Json McpServer::callTool(const Json& params) {
     Json token;
     if (params.contains("_meta") && params["_meta"].is_object() &&
         params["_meta"].contains("progressToken")) {
-        const Json& t = params["_meta"]["progressToken"];
-        if (t.is_string() || t.is_number_integer()) token = t;
+        if (const Json& t = params["_meta"]["progressToken"];
+            t.is_string() || t.is_number_integer())
+            token = t;
     }
 
     auto reply = callReporting(command, arguments, token);

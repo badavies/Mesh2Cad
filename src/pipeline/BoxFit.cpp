@@ -72,21 +72,22 @@ Vec3d mostFaced(const std::vector<Facet>& facets) {
 
 /// Start axes from the faces' normals: the most-faced direction, then the most-faced direction
 /// across it (any perpendicular one when no face is across it).
-std::array<Vec3d, 3> startAxes(const TriMesh& mesh, std::span<const std::uint32_t> faces) {
+std::array<Vec3d, 3> startAxes(const TriMesh& mesh, const std::span<const std::uint32_t> faces) {
     std::vector<Facet> facets;
     for (const std::uint32_t f : faces) {
         const auto [i, j, k] = mesh.face(f);
         const Vec3d& a = mesh.positions()[i];
-        const Vec3d n = cross(mesh.positions()[j] - a, mesh.positions()[k] - a);
-        if (length(n) > 0.0) facets.push_back({.normal = unit(n), .area = length(n) / 2.0});
+        if (const Vec3d n = cross(mesh.positions()[j] - a, mesh.positions()[k] - a);
+            length(n) > 0.0)
+            facets.push_back({.normal = unit(n), .area = length(n) / 2.0});
     }
     Vec3d first = mostFaced(facets);
     if (length(first) == 0.0) first = {.x = 0, .y = 0, .z = 1};
     const double across = std::sin(kFacingDeg * std::numbers::pi / 180.0);
     std::vector<Facet> side;
     for (const Facet& f : facets) {
-        const Vec3d flat = f.normal - first * dot(f.normal, first);
-        if (std::abs(dot(f.normal, first)) < across && length(flat) > 0.0) {
+        if (const Vec3d flat = f.normal - first * dot(f.normal, first);
+            std::abs(dot(f.normal, first)) < across && length(flat) > 0.0) {
             side.push_back({.normal = unit(flat), .area = f.area});
         }
     }
@@ -100,7 +101,7 @@ std::array<Vec3d, 3> startAxes(const TriMesh& mesh, std::span<const std::uint32_
 }
 
 /// The box around the points along the axes.
-OrientedBox extentBox(std::span<const Vec3d> points, const std::array<Vec3d, 3>& axes) {
+OrientedBox extentBox(const std::span<const Vec3d> points, const std::array<Vec3d, 3>& axes) {
     std::array<double, 3> lo{}, hi{};
     lo.fill(std::numeric_limits<double>::infinity());
     hi.fill(-std::numeric_limits<double>::infinity());
@@ -110,21 +111,22 @@ OrientedBox extentBox(std::span<const Vec3d> points, const std::array<Vec3d, 3>&
             hi[k] = std::max(hi[k], dot(p, axes[k]));
         }
     }
-    OrientedBox box{
-        .center = {}, .axes = axes, .sizeMm = {hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]}};
+    OrientedBox box{.center = {},
+                    .axes = axes,
+                    .sizeMm = {.x = hi[0] - lo[0], .y = hi[1] - lo[1], .z = hi[2] - lo[2]}};
     for (std::size_t k = 0; k < 3; ++k) box.center = box.center + axes[k] * ((lo[k] + hi[k]) / 2.0);
     return box;
 }
 
-double& size(OrientedBox& box, std::size_t k) {
+double& size(OrientedBox& box, const std::size_t k) {
     return k == 0 ? box.sizeMm.x : k == 1 ? box.sizeMm.y : box.sizeMm.z;
 }
 
-double size(const OrientedBox& box, std::size_t k) {
+double size(const OrientedBox& box, const std::size_t k) {
     return k == 0 ? box.sizeMm.x : k == 1 ? box.sizeMm.y : box.sizeMm.z;
 }
 
-double rmsDistance(const OrientedBox& box, std::span<const Vec3d> points) {
+double rmsDistance(const OrientedBox& box, const std::span<const Vec3d> points) {
     double sum2 = 0.0;
     for (const Vec3d& p : points) sum2 += distanceTo(box, p) * distanceTo(box, p);
     return std::sqrt(sum2 / static_cast<double>(points.size()));
@@ -141,25 +143,24 @@ Vec3d turned(const Vec3d& v, const Vec3d& w) {
 
 /// One Gauss-Newton step: each point's residual is its distance outside (or inside) the plane of
 /// the box face nearest it, over the centre, a turn of the axes and the half-sizes.
-OrientedBox step(const OrientedBox& box, std::span<const Vec3d> points) {
+OrientedBox step(const OrientedBox& box, const std::span<const Vec3d> points) {
     Eigen::Matrix<double, 9, 9> jtj = Eigen::Matrix<double, 9, 9>::Zero();
     Eigen::Matrix<double, 9, 1> jtr = Eigen::Matrix<double, 9, 1>::Zero();
     OrientedBox b = box;
     for (const Vec3d& p : points) {
         const Vec3d d = p - box.center;
-        const Vec3d q{dot(d, box.axes[0]), dot(d, box.axes[1]), dot(d, box.axes[2])};
+        const Vec3d q{.x = dot(d, box.axes[0]), .y = dot(d, box.axes[1]), .z = dot(d, box.axes[2])};
         const std::array qa{q.x, q.y, q.z};
         std::size_t k = 0;
         double worst = -std::numeric_limits<double>::infinity();
         for (std::size_t a = 0; a < 3; ++a) {
-            const double g = std::abs(qa[a]) - size(b, a) / 2.0;
-            if (g > worst) {
+            if (const double g = std::abs(qa[a]) - size(b, a) / 2.0; g > worst) {
                 worst = g;
                 k = a;
             }
         }
         const double s = qa[k] < 0.0 ? -1.0 : 1.0;
-        const Vec3d e{k == 0 ? 1.0 : 0.0, k == 1 ? 1.0 : 0.0, k == 2 ? 1.0 : 0.0};
+        const Vec3d e{.x = k == 0 ? 1.0 : 0.0, .y = k == 1 ? 1.0 : 0.0, .z = k == 2 ? 1.0 : 0.0};
         const Vec3d dc = box.axes[k] * -s; // centre
         const Vec3d dw = cross(e, q) * s;  // turn, in the box's frame
         Eigen::Matrix<double, 9, 1> j = Eigen::Matrix<double, 9, 1>::Zero();
@@ -170,7 +171,7 @@ OrientedBox step(const OrientedBox& box, std::span<const Vec3d> points) {
     }
     jtj += kDamping * std::max(jtj.trace(), 1.0) * Eigen::Matrix<double, 9, 9>::Identity();
     const Eigen::Matrix<double, 9, 1> x = jtj.ldlt().solve(-jtr);
-    b.center = b.center + Vec3d{x(0), x(1), x(2)};
+    b.center = b.center + Vec3d{.x = x(0), .y = x(1), .z = x(2)};
     const Vec3d w = box.axes[0] * x(3) + box.axes[1] * x(4) + box.axes[2] * x(5);
     const Vec3d a0 = unit(turned(box.axes[0], w));
     const Vec3d a1 = unit(turned(box.axes[1], w) - a0 * dot(turned(box.axes[1], w), a0));
@@ -187,8 +188,8 @@ OrientedBox worldOrdered(const OrientedBox& box) {
         std::size_t pick = 0;
         double best = -1.0;
         for (std::size_t k = 0; k < 3; ++k) {
-            const std::array c{box.axes[k].x, box.axes[k].y, box.axes[k].z};
-            if (!used[k] && std::abs(c[world]) > best) {
+            if (const std::array c{box.axes[k].x, box.axes[k].y, box.axes[k].z};
+                !used[k] && std::abs(c[world]) > best) {
                 best = std::abs(c[world]);
                 pick = k;
             }
@@ -212,7 +213,7 @@ fitBox(const TriMesh& mesh, std::span<const std::uint32_t> faces, const BoxFitPa
         return fail(ErrorCode::InvalidArgument, "the residual limit must be positive");
     }
     if (faces.empty()) return fail(ErrorCode::InvalidArgument, "the region has no faces");
-    if (std::ranges::any_of(faces, [&](std::uint32_t f) { return f >= mesh.faceCount(); })) {
+    if (std::ranges::any_of(faces, [&](const std::uint32_t f) { return f >= mesh.faceCount(); })) {
         return fail(ErrorCode::InvalidArgument, "face index out of range");
     }
     const std::vector<Vec3d> points = regionPoints(mesh, faces);
@@ -225,8 +226,7 @@ fitBox(const TriMesh& mesh, std::span<const std::uint32_t> faces, const BoxFitPa
             length(next.center - current.center) + length(next.sizeMm - current.sizeMm) +
             length(next.axes[0] - current.axes[0]) + length(next.axes[1] - current.axes[1]);
         current = next;
-        const double rms = rmsDistance(current, points);
-        if (rms < bestRms) {
+        if (const double rms = rmsDistance(current, points); rms < bestRms) {
             bestRms = rms;
             best = current;
         }

@@ -15,6 +15,7 @@
 
 #include "m2c/adapters/quad/QuadRemesh.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/QuadLayout.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/core/TriMesh.h"

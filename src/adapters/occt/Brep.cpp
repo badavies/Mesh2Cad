@@ -6,11 +6,10 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
+#include <expected>
 #include <filesystem>
 #include <ios>
 #include <memory>
-#include <mutex>
 #include <span>
 #include <sstream>
 #include <string>
@@ -33,8 +32,6 @@
 #include <Geom_BSplineSurface.hxx>
 #include <IFSelect_ReturnStatus.hxx>
 #include <Interface_Static.hxx>
-#include <Message.hxx>
-#include <Message_Messenger.hxx>
 #include <NCollection_Array1.hxx>
 #include <NCollection_Array2.hxx>
 #include <NCollection_IndexedDataMap.hxx>
@@ -46,9 +43,7 @@
 #include <STEPControl_Writer.hxx>
 #include <ShapeAnalysis_Surface.hxx>
 #include <ShapeFix_Solid.hxx>
-#include <Standard_Failure.hxx>
 #include <Standard_Handle.hxx>
-#include <Standard_Version.hxx>
 #include <StepBasic_Product.hxx>
 #include <StepData_StepModel.hxx>
 #include <TCollection_HAsciiString.hxx>
@@ -72,6 +67,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/Parallel.h"
 #include "m2c/core/Primitive.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/Sketch.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
@@ -206,7 +202,7 @@ Result<Solid> makeSolid(std::vector<SurfacePatch> faces,
         return fail(ErrorCode::InvalidArgument, "the sewing tolerance must be positive");
     }
     if (!display) return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
-    return guarded("sewing", [&]() -> Result<Solid> {
+    return guarded("sewing", [&] -> Result<Solid> {
         BRepBuilderAPI_Sewing sewing(params.toleranceMm);
         for (const SurfacePatch& patch : faces) {
             BRepBuilderAPI_MakeFace const face(toSurface(patch), Precision::Confusion());
@@ -272,10 +268,10 @@ Result<TopoDS_Shape> planeFace(const FittedPrimitive& fit) {
                        gp_Dir(s.direction.x, s.direction.y, s.direction.z));
     double u0 = Precision::Infinite(), u1 = -Precision::Infinite();
     double v0 = u0, v1 = u1;
-    for (int c = 0; c < 8; ++c) {
-        const gp_Pnt corner((c & 1) != 0 ? fit.extent.max.x : fit.extent.min.x,
-                            (c & 2) != 0 ? fit.extent.max.y : fit.extent.min.y,
-                            (c & 4) != 0 ? fit.extent.max.z : fit.extent.min.z);
+    for (unsigned c = 0; c < 8; ++c) {
+        const gp_Pnt corner((c & 1U) != 0 ? fit.extent.max.x : fit.extent.min.x,
+                            (c & 2U) != 0 ? fit.extent.max.y : fit.extent.min.y,
+                            (c & 4U) != 0 ? fit.extent.max.z : fit.extent.min.z);
         double u = 0.0, v = 0.0;
         ElSLib::Parameters(plane, corner, u, v);
         u0 = std::min(u0, u);
@@ -292,7 +288,7 @@ Result<TopoDS_Shape> planeFace(const FittedPrimitive& fit) {
 /// The shape's solids summarised together, and counts of what is outside them.
 StepContents contents(const TopoDS_Shape& shape) {
     TopoDS_Compound solids;
-    BRep_Builder builder;
+    BRep_Builder const builder;
     builder.MakeCompound(solids);
     for (TopExp_Explorer it(shape, TopAbs_SOLID); it.More(); it.Next()) {
         builder.Add(solids, it.Current());
@@ -309,9 +305,10 @@ StepContents contents(const TopoDS_Shape& shape) {
 
 } // namespace
 
-Result<StepContents> writeStep(std::span<const StepPart> parts, const std::filesystem::path& path) {
+Result<StepContents> writeStep(const std::span<const StepPart> parts,
+                               const std::filesystem::path& path) {
     if (parts.empty()) return fail(ErrorCode::InvalidArgument, "there is nothing to write");
-    return guarded("STEP export", [&]() -> Result<StepContents> {
+    return guarded("STEP export", [&] -> Result<StepContents> {
         std::vector<TopoDS_Shape> shapes;
         for (const StepPart& part : parts) {
             Result<TopoDS_Shape> shape = TopoDS_Shape();
@@ -341,8 +338,7 @@ Result<StepContents> writeStep(std::span<const StepPart> parts, const std::files
                             "Open CASCADE could not convert " + parts[k].name + " to STEP");
             }
             // The transfer's product, which Open CASCADE names with a number after it.
-            const opencascade::handle<TCollection_HAsciiString> name =
-                new TCollection_HAsciiString(parts[k].name.c_str());
+            const opencascade::handle name = new TCollection_HAsciiString(parts[k].name.c_str());
             for (int i = before + 1; i <= writer.Model()->NbEntities(); ++i) {
                 const auto product =
                     opencascade::handle<StepBasic_Product>::DownCast(writer.Model()->Value(i));
@@ -356,7 +352,7 @@ Result<StepContents> writeStep(std::span<const StepPart> parts, const std::files
             return fail(ErrorCode::Io, "could not write " + utf8(path));
         }
         TopoDS_Compound all;
-        BRep_Builder builder;
+        BRep_Builder const builder;
         builder.MakeCompound(all);
         for (const TopoDS_Shape& shape : shapes) builder.Add(all, shape);
         return contents(all);
@@ -366,13 +362,13 @@ Result<StepContents> writeStep(std::span<const StepPart> parts, const std::files
 Result<void>
 writeStep(const Solid& solid, const std::filesystem::path& path, const std::string& name) {
     const StepPart part{.name = name, .shape = &solid};
-    auto written = writeStep(std::span(&part, 1), path);
-    if (!written) return std::unexpected(written.error());
+    if (auto written = writeStep(std::span(&part, 1), path); !written)
+        return std::unexpected(written.error());
     return {};
 }
 
 Result<std::string> writeBrep(const Solid& solid, const BrepFormat format) {
-    return guarded("BREP export", [&]() -> Result<std::string> {
+    return guarded("BREP export", [&] -> Result<std::string> {
         std::ostringstream out(std::ios::binary);
         if (format == BrepFormat::Binary) {
             BinTools::Write(solid.shape().shape, out);
@@ -391,7 +387,7 @@ Result<Solid> readBrep(const std::string& brep,
     if (!display && !faces.empty()) {
         return fail(ErrorCode::InvalidArgument, "a solid needs a display mesh");
     }
-    return guarded("BREP import", [&]() -> Result<Solid> {
+    return guarded("BREP import", [&] -> Result<Solid> {
         std::istringstream in(brep, std::ios::binary);
         TopoDS_Shape shape;
         if (format == BrepFormat::Binary) {
@@ -449,9 +445,9 @@ signedDistances(const Solid& solid, const std::vector<Vec3d>& points, const Prog
         volume6 += dot(a, cross(b, c));
     }
     const double outward = volume6 >= 0.0 ? 1.0 : -1.0;
-    return guarded("distance to the solid", [&]() -> Result<std::vector<double>> {
+    return guarded("distance to the solid", [&] -> Result<std::vector<double>> {
         std::vector<std::array<double, 4>> ranges(faceCount, {0.0, 1.0, 0.0, 1.0});
-        std::vector<double> turn(faceCount, 1.0); // -1 where a kernel face is reversed
+        std::vector turn(faceCount, 1.0); // -1 where a kernel face is reversed
         for (int k = 1; k <= kernelFaces.Extent(); ++k) {
             const TopoDS_Face& face = TopoDS::Face(kernelFaces(k));
             const auto f = static_cast<std::size_t>(k - 1);
@@ -515,7 +511,7 @@ signedDistances(const Solid& solid, const std::vector<Vec3d>& points, const Prog
 }
 
 Result<StepContents> readStep(const std::filesystem::path& path) {
-    return guarded("STEP import", [&]() -> Result<StepContents> {
+    return guarded("STEP import", [&] -> Result<StepContents> {
         STEPControl_Reader reader;
         if (reader.ReadFile(utf8(path).c_str()) != IFSelect_RetDone) {
             return fail(ErrorCode::Parse, "could not read " + utf8(path) + " as STEP");

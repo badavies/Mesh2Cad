@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <iomanip>
 #include <ios>
 #include <map>
@@ -45,7 +46,6 @@
 #include <TopLoc_Location.hxx>
 #include <TopTools_ShapeMapHasher.hxx>
 #include <TopoDS.hxx>
-#include <TopoDS_Edge.hxx>
 #include <TopoDS_Face.hxx>
 #include <TopoDS_Shell.hxx>
 #include <TopoDS_Solid.hxx>
@@ -60,6 +60,7 @@
 #include "m2c/core/Primitive.h"
 #include "m2c/core/Solid.h"
 #include "m2c/core/SpatialIndex.h"
+#include "m2c/core/SurfacePatch.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -226,7 +227,7 @@ Result<FaceTessellation> triangulate(const TopoDS_Shape& solid) {
 }
 
 Result<TriMesh> weldedTriangulation(const Solid& solid) {
-    return guarded("triangulating the solid", [&]() -> Result<TriMesh> {
+    return guarded("triangulating the solid", [&] -> Result<TriMesh> {
         auto faces = triangulate(solid.shape().shape);
         if (!faces) return std::unexpected(faces.error());
         return weld(faces->mesh, false);
@@ -234,11 +235,11 @@ Result<TriMesh> weldedTriangulation(const Solid& solid) {
 }
 
 Result<TriMesh> exportTriangulation(const Solid& solid, const ExportTessellation& params) {
-    if (!(params.chordMm > 0.0) || !(params.angleDeg > 0.0 && params.angleDeg <= 90.0)) {
+    if (!(params.chordMm > 0.0) || !(params.angleDeg > 0.0) || !(params.angleDeg <= 90.0)) {
         return fail(ErrorCode::InvalidArgument,
                     "the chord must be positive and the angle between 0 and 90 degrees");
     }
-    return guarded("triangulating the solid for export", [&]() -> Result<TriMesh> {
+    return guarded("triangulating the solid for export", [&] -> Result<TriMesh> {
         // A copy of the topology without triangulations: BRepMesh keeps a face's triangulation
         // when it is already finer than asked, and the solid's own display stays as it was.
         const TopoDS_Shape copy = BRepBuilderAPI_Copy(solid.shape().shape, false, false).Shape();
@@ -273,8 +274,8 @@ Result<TrimResult> trimPrimitives(const std::vector<FittedPrimitive>& primitives
                                   const TriMesh& scan,
                                   const TrimParams& params) {
     if (primitives.empty()) return fail(ErrorCode::InvalidArgument, "no primitives to trim");
-    if (!(params.maxDistanceMm > 0.0) || !(params.minCoverage > 0.0 && params.minCoverage <= 1.0) ||
-        !(params.sewToleranceMm > 0.0)) {
+    if (!(params.maxDistanceMm > 0.0) || !(params.minCoverage > 0.0) ||
+        !(params.minCoverage <= 1.0) || !(params.sewToleranceMm > 0.0)) {
         return fail(ErrorCode::InvalidArgument,
                     "the distance, sewing tolerance and coverage (0 to 1) must be positive");
     }
@@ -282,13 +283,13 @@ Result<TrimResult> trimPrimitives(const std::vector<FittedPrimitive>& primitives
     const double diagonal = length(bounds.max - bounds.min);
     const double margin = std::max(0.1 * diagonal, 10.0 * params.maxDistanceMm);
     std::array<gp_Pnt, 8> box;
-    for (int k = 0; k < 8; ++k) {
+    for (unsigned k = 0; k < 8; ++k) {
         box[static_cast<std::size_t>(k)] =
-            gp_Pnt((k & 1) ? bounds.max.x + margin : bounds.min.x - margin,
-                   (k & 2) ? bounds.max.y + margin : bounds.min.y - margin,
-                   (k & 4) ? bounds.max.z + margin : bounds.min.z - margin);
+            gp_Pnt((k & 1U) != 0 ? bounds.max.x + margin : bounds.min.x - margin,
+                   (k & 2U) != 0 ? bounds.max.y + margin : bounds.min.y - margin,
+                   (k & 4U) != 0 ? bounds.max.z + margin : bounds.min.z - margin);
     }
-    return guarded("trimming", [&]() -> Result<TrimResult> {
+    return guarded("trimming", [&] -> Result<TrimResult> {
         NCollection_List<TopoDS_Shape> faces;
         for (const FittedPrimitive& fit : primitives) {
             auto face = boundedFace(fit, box);
@@ -307,8 +308,8 @@ Result<TrimResult> trimPrimitives(const std::vector<FittedPrimitive>& primitives
         BRepBuilderAPI_Sewing sewing(params.sewToleranceMm);
         for (TopExp_Explorer it(split.Shape(), TopAbs_FACE); it.More(); it.Next()) {
             ++splitFaces;
-            const TopoDS_Face& face = TopoDS::Face(it.Current());
-            if (coverage(face, index, params.maxDistanceMm) >= params.minCoverage) {
+            if (const TopoDS_Face& face = TopoDS::Face(it.Current());
+                coverage(face, index, params.maxDistanceMm) >= params.minCoverage) {
                 sewing.Add(face);
                 ++keptFaces;
             }

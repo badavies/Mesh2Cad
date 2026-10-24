@@ -82,8 +82,9 @@ void fitCapInterior(BicubicPatch& patch, F f) {
     design.setZero();
     int r = 0;
     for (int k = 0; k < positions; ++k) {
-        const double s = (k % kCapFit + 0.5) / kCapFit;
-        const double t = (k / kCapFit + 0.5) / kCapFit;
+        const int column = k % kCapFit, line = k / kCapFit;
+        const double s = (column + 0.5) / kCapFit;
+        const double t = (line + 0.5) / kCapFit;
         const Vec3d want = rest(s, t);
         const auto bu = bernstein(s);
         const auto bv = bernstein(t);
@@ -188,8 +189,7 @@ Result<PatchResult> extractPatches(const QuadLayout& cage, const PatchParams& pa
     for (std::uint32_t f = 0; f < lim.ptexFaceCount(); ++f) {
         corner = f > 0 && lim.cageFace(f) == lim.cageFace(f - 1) ? corner + 1 : 0;
         const auto v = cage.face(lim.cageFace(f));
-        const std::size_t n = v.size();
-        if (n == 4) {
+        if (const std::size_t n = v.size(); n == 4) {
             result.sharp.push_back(
                 {sharp(v[0], v[1]), sharp(v[3], v[2]), sharp(v[0], v[3]), sharp(v[1], v[2])});
         } else {

@@ -319,8 +319,7 @@ QuadPartition partitionQuads(const QuadLayout& cage,
     }
     std::vector<bool> corner = topo.singular;
     for (std::uint32_t v = 0; v < cage.vertexCount(); ++v) {
-        const auto& at = fencesAt[v];
-        if (!corner[v] && !at.empty())
+        if (const auto& at = fencesAt[v]; !corner[v] && !at.empty())
             corner[v] = at.size() != 2 || topo.straightOn(v, at[0]) != at[1];
     }
     QuadPartition out;

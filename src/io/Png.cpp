@@ -3,8 +3,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <filesystem>
 #include <fstream>
+#include <ios>
 #include <miniz.h>
 #include <string>
 #include <vector>
@@ -25,7 +27,7 @@ Result<std::vector<std::uint8_t>> encodePng(const Image& image) {
         image.rgb.data(), image.width, image.height, 3, &size, MZ_DEFAULT_LEVEL, MZ_FALSE);
     if (png == nullptr) return fail(ErrorCode::Io, "could not encode the PNG");
     const auto* bytes = static_cast<const std::uint8_t*>(png);
-    std::vector<std::uint8_t> out(bytes, bytes + size);
+    std::vector out(bytes, bytes + size);
     mz_free(png);
     return out;
 }

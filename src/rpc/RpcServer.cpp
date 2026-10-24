@@ -162,7 +162,7 @@ std::optional<Json> RpcServer::handleOne(const Json& request) {
     const Progress outer = context_.progress;
     const CancelToken token = CancelToken::make();
     context_.progress = Progress(
-        [this, &id, &method, &outer](std::string_view stage, double fraction) {
+        [this, &id, &method, &outer](const std::string_view stage, double fraction) {
             if (events_) {
                 Json event{{"id", id}, {"command", method}, {"stage", std::string(stage)}};
                 if (fraction >= 0.0) event["fraction"] = fraction;

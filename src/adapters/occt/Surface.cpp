@@ -3,6 +3,7 @@
 #include "m2c/adapters/occt/Surface.h"
 
 #include <cmath>
+#include <expected>
 #include <numbers>
 #include <vector>
 
@@ -35,11 +36,11 @@ Result<opencascade::handle<Geom_Surface>> toGeomSurface(const Primitive& s) {
         return fail(ErrorCode::InvalidArgument, "the primitive's radius must be positive");
     }
     if (s.kind == PrimitiveKind::Cone &&
-        !(s.halfAngleRad > 0.0 && s.halfAngleRad < std::numbers::pi / 2)) {
+        (!(s.halfAngleRad > 0.0) || !(s.halfAngleRad < std::numbers::pi / 2))) {
         return fail(ErrorCode::InvalidArgument,
                     "a cone's half-angle must be within (0, 90) degrees");
     }
-    const Vec3d d = s.kind == PrimitiveKind::Sphere ? Vec3d{0, 0, 1} : s.direction;
+    const Vec3d d = s.kind == PrimitiveKind::Sphere ? Vec3d{.x = 0, .y = 0, .z = 1} : s.direction;
     const gp_Ax3 frame(gp_Pnt(s.point.x, s.point.y, s.point.z), gp_Dir(d.x, d.y, d.z));
     switch (s.kind) {
     case PrimitiveKind::Plane:
@@ -57,7 +58,7 @@ Result<opencascade::handle<Geom_Surface>> toGeomSurface(const Primitive& s) {
 
 Result<std::vector<double>> surfaceDistances(const Primitive& primitive,
                                              const std::vector<Vec3d>& points) {
-    return guarded("primitive surface", [&]() -> Result<std::vector<double>> {
+    return guarded("primitive surface", [&] -> Result<std::vector<double>> {
         auto surface = toGeomSurface(primitive);
         if (!surface) return std::unexpected(surface.error());
         GeomAPI_ProjectPointOnSurf project;

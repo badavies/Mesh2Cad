@@ -95,11 +95,12 @@ Json sketchJson(const Sketch& sketch) {
 
 Result<Sketch> sketchFrom(const Json& j) {
     const auto point = [](const Json& p) {
-        return Vec2d{p.at(0).get<double>(), p.at(1).get<double>()};
+        return Vec2d{.x = p.at(0).get<double>(), .y = p.at(1).get<double>()};
     };
     Sketch sketch;
     const Json& plane = j.at("plane");
-    sketch.plane = {vec(plane.at("origin")), vec(plane.at("u")), vec(plane.at("v"))};
+    sketch.plane = {
+        .origin = vec(plane.at("origin")), .u = vec(plane.at("u")), .v = vec(plane.at("v"))};
     for (const Json& loop : j.at("loops")) {
         SketchLoop& out = sketch.loops.emplace_back();
         for (const Json& c : loop) {

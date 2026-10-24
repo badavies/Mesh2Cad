@@ -9,16 +9,21 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "m2c/commands/Command.h"
 #include "m2c/commands/JsonConvert.h"
 #include "m2c/core/Base64.h"
 #include "m2c/core/DeviationColors.h"
+#include "m2c/core/DeviationField.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/QuadLayout.h"
 #include "m2c/core/Raster.h"
 #include "m2c/core/SelectionColors.h"
 #include "m2c/core/Sketch.h"
+#include "m2c/core/TriMesh.h"
+#include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
 #include "m2c/io/Png.h"
 
@@ -30,15 +35,15 @@ namespace m2c::cmd {
 namespace {
 
 // The app's viewport colours (src/app/Viewport.cpp).
-constexpr Rgb kBackground{0.17, 0.18, 0.20};
-constexpr Rgb kMesh{0.80, 0.82, 0.86};
-constexpr Rgb kSolid{0.55, 0.66, 0.82};
-constexpr Rgb kPrimitive{0.56, 0.78, 0.60};
-constexpr Rgb kBack{0.72, 0.30, 0.30};
-constexpr Rgb kCage{0.95, 0.60, 0.20};
-constexpr Rgb kSketch{0.30, 0.85, 0.95};
-constexpr Rgb kHighlight{1.00, 0.82, 0.25};
-constexpr Rgb kLabel{0.85, 0.86, 0.88};
+constexpr Rgb kBackground{.r = 0.17, .g = 0.18, .b = 0.20};
+constexpr Rgb kMesh{.r = 0.80, .g = 0.82, .b = 0.86};
+constexpr Rgb kSolid{.r = 0.55, .g = 0.66, .b = 0.82};
+constexpr Rgb kPrimitive{.r = 0.56, .g = 0.78, .b = 0.60};
+constexpr Rgb kBack{.r = 0.72, .g = 0.30, .b = 0.30};
+constexpr Rgb kCage{.r = 0.95, .g = 0.60, .b = 0.20};
+constexpr Rgb kSketch{.r = 0.30, .g = 0.85, .b = 0.95};
+constexpr Rgb kHighlight{.r = 1.00, .g = 0.82, .b = 0.25};
+constexpr Rgb kLabel{.r = 0.85, .g = 0.86, .b = 0.88};
 
 struct View {
     Vec3d from;
@@ -46,24 +51,24 @@ struct View {
 };
 
 std::optional<View> standardView(const std::string& name) {
-    const Vec3d z{0, 0, 1}, y{0, 1, 0};
-    if (name == "iso") return View{{1, -1, 1}, z};
-    if (name == "front") return View{{0, -1, 0}, z};
-    if (name == "back") return View{{0, 1, 0}, z};
-    if (name == "left") return View{{-1, 0, 0}, z};
-    if (name == "right") return View{{1, 0, 0}, z};
-    if (name == "top") return View{{0, 0, 1}, y};
-    if (name == "bottom") return View{{0, 0, -1}, y};
+    constexpr Vec3d z{.x = 0, .y = 0, .z = 1}, y{.x = 0, .y = 1, .z = 0};
+    if (name == "iso") return View{.from = {.x = 1, .y = -1, .z = 1}, .up = z};
+    if (name == "front") return View{.from = {.x = 0, .y = -1, .z = 0}, .up = z};
+    if (name == "back") return View{.from = {.x = 0, .y = 1, .z = 0}, .up = z};
+    if (name == "left") return View{.from = {.x = -1, .y = 0, .z = 0}, .up = z};
+    if (name == "right") return View{.from = {.x = 1, .y = 0, .z = 0}, .up = z};
+    if (name == "top") return View{.from = {.x = 0, .y = 0, .z = 1}, .up = y};
+    if (name == "bottom") return View{.from = {.x = 0, .y = 0, .z = -1}, .up = y};
     return std::nullopt;
 }
 
 void grow(Aabb& box, const Aabb& more) {
-    box.min = {std::min(box.min.x, more.min.x),
-               std::min(box.min.y, more.min.y),
-               std::min(box.min.z, more.min.z)};
-    box.max = {std::max(box.max.x, more.max.x),
-               std::max(box.max.y, more.max.y),
-               std::max(box.max.z, more.max.z)};
+    box.min = {.x = std::min(box.min.x, more.min.x),
+               .y = std::min(box.min.y, more.min.y),
+               .z = std::min(box.min.z, more.min.z)};
+    box.max = {.x = std::max(box.max.x, more.max.x),
+               .y = std::max(box.max.y, more.max.y),
+               .z = std::max(box.max.z, more.max.z)};
 }
 
 Aabb pointsBox(const std::vector<Vec3d>& points) {
@@ -73,7 +78,7 @@ Aabb pointsBox(const std::vector<Vec3d>& points) {
 }
 
 /// The newest visible deviation of a mesh as vertex colours, or none.
-std::vector<Rgb> deviationColors(const std::vector<DocumentObject>& objects, ObjectId mesh) {
+std::vector<Rgb> deviationColors(const std::vector<DocumentObject>& objects, const ObjectId mesh) {
     const DeviationData* newest = nullptr;
     for (const DocumentObject& o : objects) {
         if (o.visible && o.deviation() != nullptr && o.deviation()->meshId == mesh) {
@@ -86,7 +91,7 @@ std::vector<Rgb> deviationColors(const std::vector<DocumentObject>& objects, Obj
     const double range = deviationRange(stats.p95AbsMm, stats.toleranceMm);
     for (const double d : newest->field.distances()) {
         const Rgb8 c = deviationColor(d, stats.toleranceMm, range, false);
-        out.push_back({c.r / 255.0, c.g / 255.0, c.b / 255.0});
+        out.push_back({.r = c.r / 255.0, .g = c.g / 255.0, .b = c.b / 255.0});
     }
     return out;
 }
@@ -114,7 +119,8 @@ std::optional<Aabb> objectBounds(const Document& document, const DocumentObject&
     if (o.deviation() != nullptr) return m.bounds();
     std::vector<Vec3d> points;
     for (const std::uint32_t f : o.selection()->faces->indices()) {
-        for (std::size_t k = 0; k < 3; ++k) points.push_back(m.positions()[m.indices()[3 * f + k]]);
+        for (std::size_t k = 0; k < 3; ++k)
+            points.push_back(m.positions()[m.indices()[std::size_t{3} * f + k]]);
     }
     if (points.empty()) return std::nullopt;
     return pointsBox(points);
@@ -136,7 +142,7 @@ struct Scene {
 /// section lies inside its mesh).
 Json draw(Raster& raster, const Scene& scene) {
     Json drawn = Json::array();
-    const auto color = [&](const DocumentObject& o, Rgb base) {
+    const auto color = [&](const DocumentObject& o, const Rgb& base) {
         return scene.highlight && *scene.highlight == o.id ? kHighlight : base;
     };
     const std::vector<DocumentObject>& objects = scene.objects;
@@ -255,7 +261,9 @@ void addViewCommands(std::vector<Command>& out) {
                 }
                 // Up is +Z unless the camera looks along it.
                 const bool vertical = std::abs(from->z) > 0.99 * length(*from);
-                view = View{*from, vertical ? Vec3d{0, 1, 0} : Vec3d{0, 0, 1}};
+                view = View{.from = *from,
+                            .up = vertical ? Vec3d{.x = 0, .y = 1, .z = 0}
+                                           : Vec3d{.x = 0, .y = 0, .z = 1}};
             }
             M2C_TRY(width, optionalInteger(params, "width", 800, 16, 4096));
             M2C_TRY(height, optionalInteger(params, "height", 600, 16, 4096));
@@ -345,8 +353,9 @@ void addViewCommands(std::vector<Command>& out) {
                 const Vec3d centre = (bounds->min + bounds->max) * 0.5;
                 const Vec3d half = (bounds->max - bounds->min) * 0.6;
                 const double floor = std::max(0.5, 0.1 * length(half));
-                const Vec3d pad{
-                    std::max(half.x, floor), std::max(half.y, floor), std::max(half.z, floor)};
+                const Vec3d pad{.x = std::max(half.x, floor),
+                                .y = std::max(half.y, floor),
+                                .z = std::max(half.z, floor)};
                 frame = Aabb{.min = centre - pad, .max = centre + pad};
             }
 
@@ -373,7 +382,7 @@ void addViewCommands(std::vector<Command>& out) {
                                 .rgb = std::vector<std::uint8_t>(12 * static_cast<std::size_t>(w) *
                                                                  static_cast<std::size_t>(h))};
                 Json panels = Json::array();
-                const std::array<const char*, 4> names{"front", "right", "top", "iso"};
+                constexpr std::array<const char*, 4> names{"front", "right", "top", "iso"};
                 for (std::size_t k = 0; k < names.size(); ++k) {
                     const View v = *standardView(names[k]);
                     Raster raster(w, h, frame, v.from, v.up, kBackground, Framing::Sphere);

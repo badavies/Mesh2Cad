@@ -2,6 +2,7 @@
 // Section sketches (ARCHITECTURE.md section 7): a mesh cut with a plane, and the lines, arcs and
 // splines fitted to the cut.
 
+#include <array>
 #include <cstddef>
 #include <string>
 #include <utility>
@@ -12,6 +13,7 @@
 #include "m2c/core/Error.h"
 #include "m2c/core/Primitive.h"
 #include "m2c/core/Sketch.h"
+#include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
 #include "m2c/pipeline/Section.h"
 
@@ -36,11 +38,11 @@ Result<SketchPlane> sectionPlane(const CommandContext& context, const Json& para
     if (params.contains("plane")) {
         M2C_TRY(name, requireString(params, "plane"));
         if (*name == "yz") {
-            plane.u = {0, 1, 0};
-            plane.v = {0, 0, 1};
+            plane.u = {.x = 0, .y = 1, .z = 0};
+            plane.v = {.x = 0, .y = 0, .z = 1};
         } else if (*name == "zx") {
-            plane.u = {0, 0, 1};
-            plane.v = {1, 0, 0};
+            plane.u = {.x = 0, .y = 0, .z = 1};
+            plane.v = {.x = 1, .y = 0, .z = 0};
         } else if (*name != "xy") {
             return fail(ErrorCode::InvalidArgument, "plane must be xy, yz or zx");
         }
@@ -101,13 +103,13 @@ void addSketchCommands(std::vector<Command>& out) {
             p.minCurvePoints = static_cast<int>(*minPoints);
             M2C_TRY(name, optionalString(params, "name"));
             M2C_TRY(section, sectionMesh(*mesh->mesh, *plane, p));
-            std::vector<ObjectId> inputs{mesh->id};
+            std::vector inputs{mesh->id};
             if (params.contains("plane_id"))
                 inputs.push_back(params.at("plane_id").get<ObjectId>());
             Json loops = Json::array();
             for (const SketchLoop& loop : section->sketch.loops) {
-                std::size_t count[3]{}; // by CurveKind
-                for (const SketchCurve& c : loop.curves) ++count[static_cast<int>(c.kind)];
+                std::array<std::size_t, 3> count{}; // by CurveKind
+                for (const SketchCurve& c : loop.curves) ++count[static_cast<std::size_t>(c.kind)];
                 loops.push_back({{"lines", count[0]}, {"arcs", count[1]}, {"splines", count[2]}});
             }
             M2C_TRY(id,

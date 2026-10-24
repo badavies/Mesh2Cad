@@ -99,8 +99,9 @@ Result<CageFitResult> fitCage(const QuadLayout& cage,
     }
     for (const HeldPlane& plane : params.held) {
         if (std::abs(length(plane.normal) - 1.0) > 1e-9 ||
-            std::ranges::any_of(plane.vertices,
-                                [&cage](std::uint32_t v) { return v >= cage.vertexCount(); })) {
+            std::ranges::any_of(plane.vertices, [&cage](const std::uint32_t v) {
+                return v >= cage.vertexCount();
+            })) {
             return fail(ErrorCode::InvalidArgument,
                         "a held plane needs a unit normal and vertices of the cage");
         }
@@ -199,7 +200,7 @@ Result<CageFitResult> fitCage(const QuadLayout& cage,
     // fairing does not round off an edge.
     Eigen::VectorXd reference = start;
     if (params.fairingRounds > 0) {
-        std::vector<bool> pinned(cage.vertexCount(), false);
+        std::vector pinned(cage.vertexCount(), false);
         for (const auto& [a, b] : params.creases) pinned[a] = pinned[b] = true;
         std::map<std::pair<std::uint32_t, std::uint32_t>, int> edgeFaces;
         for (std::size_t f = 0; f < cage.faceCount(); ++f) {

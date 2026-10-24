@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <expected>
 #include <numbers>
 #include <utility>
 #include <vector>
@@ -24,7 +25,7 @@ namespace {
 /// Refits, grows and checks the regions region growing finds, and keeps track of free faces.
 class Collector {
 public:
-    Collector(const TriMesh& mesh, const SegmentParams& params, double minArea)
+    Collector(const TriMesh& mesh, const SegmentParams& params, const double minArea)
         : mesh_(mesh), params_(params), minArea_(minArea), free_(mesh.faceCount(), 1),
           mark_(mesh.faceCount(), 0),
           cosLimit_(std::cos(params.maxAngleDeg * std::numbers::pi / 180.0)) {}
@@ -65,7 +66,7 @@ public:
         // A few rows of vertices along a sharp edge fit a thin cylinder too, but the faces
         // between them do not face the way it does.
         const auto fitting =
-            std::ranges::count_if(r.faces, [&](std::uint32_t f) { return fits(r, f); });
+            std::ranges::count_if(r.faces, [&](const std::uint32_t f) { return fits(r, f); });
         if (static_cast<double>(fitting) < 0.95 * static_cast<double>(r.faces.size())) return;
         if (r.primitive.kind == PrimitiveKind::Plane) {
             Primitive& plane = r.primitive;

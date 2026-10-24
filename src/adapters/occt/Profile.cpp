@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <expected>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -19,6 +20,7 @@
 #include <GC_MakeArcOfCircle.hxx>
 #include <GeomAPI_Interpolate.hxx>
 #include <Geom_BSplineCurve.hxx>
+#include <Standard_Handle.hxx>
 #include <Standard_Version.hxx>
 #if OCC_VERSION_HEX >= 0x080000
 #include <NCollection_HArray1.hxx>
@@ -71,9 +73,9 @@ gp_Dir dir(const Vec3d& d) {
     return {d.x, d.y, d.z};
 }
 
-Vec2d onArc(const SketchCurve& arc, double t) {
+Vec2d onArc(const SketchCurve& arc, const double t) {
     const double angle = arc.startRad + arc.sweepRad * t;
-    return arc.centre + Vec2d{std::cos(angle), std::sin(angle)} * arc.radiusMm;
+    return arc.centre + Vec2d{.x = std::cos(angle), .y = std::sin(angle)} * arc.radiusMm;
 }
 
 /// The loop as a polygon, for area and containment: each line's start, a point every 5 degrees
@@ -112,7 +114,8 @@ bool inside(const std::vector<Vec2d>& p, const Vec2d& q) {
 
 /// The curve's edges: one for a line or arc, one per knot span for a spline. A spline made one
 /// edge of many spans gives a face whose volume the kernel integrates up to 2% wrong.
-Result<std::vector<TopoDS_Edge>> edges(const SketchPlane& plane, const SketchCurve& c, bool alone) {
+Result<std::vector<TopoDS_Edge>>
+edges(const SketchPlane& plane, const SketchCurve& c, const bool alone) {
     const auto at = [&](const Vec2d& p) { return pnt(plane.toWorld(p)); };
     if (c.kind == CurveKind::Line)
         return std::vector{BRepBuilderAPI_MakeEdge(at(c.start()), at(c.end())).Edge()};
@@ -132,7 +135,7 @@ Result<std::vector<TopoDS_Edge>> edges(const SketchPlane& plane, const SketchCur
     const bool periodic = alone && length(c.end() - c.start()) <= kGapMm;
     const std::size_t n = c.points.size() - (periodic ? 1 : 0);
     if (n < 2) return fail(ErrorCode::InvalidArgument, "a spline needs at least two points");
-    const opencascade::handle<PointArray> points = new PointArray(1, static_cast<int>(n));
+    const opencascade::handle points = new PointArray(1, static_cast<int>(n));
     for (std::size_t k = 0; k < n; ++k) points->SetValue(static_cast<int>(k) + 1, at(c.points[k]));
     GeomAPI_Interpolate interpolate(points, periodic, 1e-9);
     interpolate.Perform();
@@ -148,8 +151,10 @@ Result<std::vector<TopoDS_Edge>> edges(const SketchPlane& plane, const SketchCur
 }
 
 /// The loop's edges in its own direction, turned anticlockwise about the plane's normal or not.
-Result<TopoDS_Wire>
-wire(const SketchPlane& plane, const SketchLoop& loop, bool anticlockwise, double signedArea) {
+Result<TopoDS_Wire> wire(const SketchPlane& plane,
+                         const SketchLoop& loop,
+                         const bool anticlockwise,
+                         const double signedArea) {
     BRepBuilderAPI_MakeWire maker;
     for (const SketchCurve& c : loop.curves) {
         auto made = edges(plane, c, loop.curves.size() == 1);
@@ -231,7 +236,7 @@ Result<TopoDS_Face> profileFace(const Sketch& sketch) {
 Result<TopoDS_Shape> sketchWires(const Sketch& sketch) {
     if (auto checked = checkLoops(sketch); !checked) return std::unexpected(checked.error());
     TopoDS_Compound out;
-    BRep_Builder builder;
+    BRep_Builder const builder;
     builder.MakeCompound(out);
     for (const SketchLoop& loop : sketch.loops) {
         auto made = wire(sketch.plane, loop, true, signedArea(polygon(loop)));
@@ -245,7 +250,7 @@ Result<Solid> extrudeSketch(const Sketch& sketch, const double forwardMm, const 
     if (!(forwardMm + backwardMm > 0.0) || !std::isfinite(forwardMm + backwardMm)) {
         return fail(ErrorCode::InvalidArgument, "the extrusion must have a positive length");
     }
-    return guarded("extruding the sketch", [&]() -> Result<Solid> {
+    return guarded("extruding the sketch", [&] -> Result<Solid> {
         auto face = profileFace(sketch);
         if (!face) return std::unexpected(face.error());
         const Vec3d n = sketch.plane.normal();
@@ -269,7 +274,7 @@ Result<Solid> revolveSketch(const Sketch& sketch,
                     "the angle must be above 0 and at most 360 degrees");
     }
     // Which side of the axis each loop's points are on: a solid needs them all on one side.
-    const Vec2d across{-axisDirection.y, axisDirection.x};
+    const Vec2d across{.x = -axisDirection.y, .y = axisDirection.x};
     double lo = 0.0, hi = 0.0;
     for (const SketchLoop& loop : sketch.loops) {
         for (const Vec2d& p : polygon(loop)) {
@@ -281,7 +286,7 @@ Result<Solid> revolveSketch(const Sketch& sketch,
     if (lo < -kGapMm && hi > kGapMm) {
         return fail(ErrorCode::InvalidArgument, "the profile crosses the axis");
     }
-    return guarded("revolving the sketch", [&]() -> Result<Solid> {
+    return guarded("revolving the sketch", [&] -> Result<Solid> {
         auto face = profileFace(sketch);
         if (!face) return std::unexpected(face.error());
         const SketchPlane& plane = sketch.plane;

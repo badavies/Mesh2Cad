@@ -23,5 +23,10 @@ Checks: >
 HeaderFilterRegex: '.*/src/.*'
 WarningsAsErrors: ''
 CheckOptions:
+  # Libraries whose public headers forward to internal ones: Qt's QFoo headers (emit, qRound,
+  # QStringList), OpenGL through Qt, the Windows API through windows.h, and oneTBB.
   - key: misc-include-cleaner.IgnoreHeaders
-    value: 'nlohmann[/\\].*;Eigen[/\\].*;miniz.*;CGAL[/\\].*'
+    value: 'nlohmann[/\\].*;Eigen[/\\].*;miniz.*;CGAL[/\\].*;Qt[A-Za-z]*[/\\]q[a-z0-9_]*\.h;GL[/\\].*;KHR[/\\].*;[a-z]*api[a-z]*\.h;win[a-z]*\.h;minwindef\.h;tbb[/\\].*'
+  # A cast to void marks a result that is deliberately dropped (best-effort calls).
+  - key: bugprone-unused-return-value.AllowCastToVoid
+    value: true

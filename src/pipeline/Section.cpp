@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <expected>
 #include <numbers>
 #include <optional>
 #include <span>
@@ -23,8 +24,8 @@ namespace m2c {
 namespace {
 
 constexpr double kTwoPi = 2.0 * std::numbers::pi;
-const double kSmoothJoinCos = std::cos(20.0 * std::numbers::pi / 180.0);
-const double kNoCornerCos = std::cos(30.0 * std::numbers::pi / 180.0);
+constexpr double kSmoothJoinCos = 0.9396926207859084; // cos 20 degrees
+constexpr double kNoCornerCos = 0.8660254037844387;   // cos 30 degrees
 
 double distanceToSegment(const Vec2d& a, const Vec2d& b, const Vec2d& p) noexcept {
     SketchCurve line;
@@ -37,14 +38,14 @@ double angleOf(const Vec2d& v) noexcept {
 }
 
 /// Anticlockwise turn from angle a to angle b, in [0, 2 pi).
-double turnBetween(double a, double b) noexcept {
+double turnBetween(const double a, const double b) noexcept {
     const double t = std::fmod(b - a, kTwoPi);
     return t < 0.0 ? t + kTwoPi : t;
 }
 
 /// Least-squares circle through the points: the algebraic (Kasa) fit, then Gauss-Newton steps on
 /// the distances. Empty if the points are (nearly) on a line.
-std::optional<SketchCurve> fitCircle(std::span<const Vec2d> points) {
+std::optional<SketchCurve> fitCircle(const std::span<const Vec2d> points) {
     Vec2d mean;
     for (const Vec2d& p : points) mean = mean + p;
     mean = mean * (1.0 / static_cast<double>(points.size()));
@@ -63,7 +64,7 @@ std::optional<SketchCurve> fitCircle(std::span<const Vec2d> points) {
         Eigen::Matrix3d jtj = Eigen::Matrix3d::Zero();
         Eigen::Vector3d jtr = Eigen::Vector3d::Zero();
         for (const Vec2d& p : points) {
-            const Vec2d d = p - mean - Vec2d{c.x(), c.y()};
+            const Vec2d d = p - mean - Vec2d{.x = c.x(), .y = c.y()};
             const double len = length(d);
             if (len <= 0.0) continue;
             const Eigen::Vector3d j(-d.x / len, -d.y / len, -1.0);
@@ -75,7 +76,7 @@ std::optional<SketchCurve> fitCircle(std::span<const Vec2d> points) {
     if (!c.allFinite() || !(c.z() > 0.0)) return std::nullopt;
     SketchCurve circle;
     circle.kind = CurveKind::Arc;
-    circle.centre = mean + Vec2d{c.x(), c.y()};
+    circle.centre = mean + Vec2d{.x = c.x(), .y = c.y()};
     circle.radiusMm = c.z();
     return circle;
 }
@@ -85,8 +86,11 @@ std::optional<SketchCurve> fitCircle(std::span<const Vec2d> points) {
 /// from the chord. Empty if it is not within `tol` of every point or, with `mustBow`, does not bow
 /// away from its chord by more than `tol` (scan noise can make a point that far from a straight
 /// chord, so the arc's own height above the chord counts).
-std::optional<SketchCurve>
-arcThrough(std::span<const Vec2d> q, std::size_t i, std::size_t j, double tol, bool mustBow) {
+std::optional<SketchCurve> arcThrough(const std::span<const Vec2d> q,
+                                      const std::size_t i,
+                                      const std::size_t j,
+                                      const double tol,
+                                      const bool mustBow) {
     if (j < i + 2) return std::nullopt;
     const Vec2d a = q[i], b = q[j];
     const double chord = length(b - a);
@@ -94,14 +98,13 @@ arcThrough(std::span<const Vec2d> q, std::size_t i, std::size_t j, double tol, b
     Vec2d mid = q[i + 1];
     double bow = 0.0;
     for (std::size_t k = i + 1; k < j; ++k) {
-        const double dist = distanceToSegment(a, b, q[k]);
-        if (dist > bow) {
+        if (const double dist = distanceToSegment(a, b, q[k]); dist > bow) {
             bow = dist;
             mid = q[k];
         }
     }
     const Vec2d m = (a + b) * 0.5;
-    const Vec2d d = Vec2d{a.y - b.y, b.x - a.x} * (1.0 / chord);
+    const Vec2d d = Vec2d{.x = a.y - b.y, .y = b.x - a.x} * (1.0 / chord);
     const double h2 = chord * chord / 4.0;
     // The centre M + d t is as far from `mid` as from a and b.
     const double across = dot(d, m - mid);
@@ -143,7 +146,7 @@ arcThrough(std::span<const Vec2d> q, std::size_t i, std::size_t j, double tol, b
 /// The largest j in [first, n] for which fits(j) holds, searching by doubling then halving, or 0
 /// if fits(first) fails.
 template <class Fits>
-std::size_t extend(std::size_t first, std::size_t n, Fits&& fits) {
+std::size_t extend(std::size_t first, const std::size_t n, Fits&& fits) {
     if (first > n || !fits(first)) return 0;
     std::size_t good = first, step = 1;
     std::size_t bad = n + 1;
@@ -164,19 +167,20 @@ std::size_t extend(std::size_t first, std::size_t n, Fits&& fits) {
 }
 
 /// Unit tangent at the start (atEnd false) or end of a line or arc, in its direction.
-Vec2d tangent(const SketchCurve& c, bool atEnd) noexcept {
+Vec2d tangent(const SketchCurve& c, const bool atEnd) noexcept {
     if (c.kind == CurveKind::Arc) {
         const double angle = c.startRad + (atEnd ? c.sweepRad : 0.0);
         const double sign = c.sweepRad < 0.0 ? -1.0 : 1.0;
-        return Vec2d{-std::sin(angle), std::cos(angle)} * sign;
+        return Vec2d{.x = -std::sin(angle), .y = std::cos(angle)} * sign;
     }
     const Vec2d d = c.end() - c.start();
     return d * (1.0 / length(d));
 }
 
 /// Douglas-Peucker: the points of q[first..last] needed to stay within tol of them all.
-std::vector<Vec2d> thin(std::span<const Vec2d> q, std::size_t first, std::size_t last, double tol) {
-    std::vector<bool> keep(last - first + 1, false);
+std::vector<Vec2d>
+thin(const std::span<const Vec2d> q, std::size_t first, std::size_t last, const double tol) {
+    std::vector keep(last - first + 1, false);
     keep.front() = keep.back() = true;
     std::vector<std::pair<std::size_t, std::size_t>> stack{{first, last}};
     while (!stack.empty()) {
@@ -185,8 +189,7 @@ std::vector<Vec2d> thin(std::span<const Vec2d> q, std::size_t first, std::size_t
         std::size_t far = a;
         double farthest = tol;
         for (std::size_t k = a + 1; k < b; ++k) {
-            const double dist = distanceToSegment(q[a], q[b], q[k]);
-            if (dist > farthest) {
+            if (const double dist = distanceToSegment(q[a], q[b], q[k]); dist > farthest) {
                 farthest = dist;
                 far = k;
             }
@@ -208,7 +211,10 @@ struct Piece {
     std::size_t first{0}, last{0}; ///< The points it covers, first and last included.
 };
 
-bool lineFits(std::span<const Vec2d> q, std::size_t i, std::size_t j, double tol) {
+bool lineFits(const std::span<const Vec2d> q,
+              const std::size_t i,
+              const std::size_t j,
+              const double tol) {
     if (!(length(q[j] - q[i]) > 0.0)) return false;
     for (std::size_t k = i + 1; k < j; ++k) {
         if (distanceToSegment(q[i], q[j], q[k]) > tol) return false;
@@ -217,8 +223,11 @@ bool lineFits(std::span<const Vec2d> q, std::size_t i, std::size_t j, double tol
 }
 
 /// A curve of the given kind from q[i] to q[j] within tol of the points between, if there is one.
-std::optional<SketchCurve>
-curveThrough(std::span<const Vec2d> q, CurveKind kind, std::size_t i, std::size_t j, double tol) {
+std::optional<SketchCurve> curveThrough(std::span<const Vec2d> q,
+                                        const CurveKind kind,
+                                        const std::size_t i,
+                                        const std::size_t j,
+                                        const double tol) {
     if (kind == CurveKind::Arc) return arcThrough(q, i, j, tol, false);
     if (j <= i || !lineFits(q, i, j, tol)) return std::nullopt;
     SketchCurve line;
@@ -227,17 +236,18 @@ curveThrough(std::span<const Vec2d> q, CurveKind kind, std::size_t i, std::size_
 }
 
 /// Curve by curve from q[0] to q[n], the line or arc that covers the most points.
-std::vector<Piece> greedyPieces(std::span<const Vec2d> q, double tol) {
+std::vector<Piece> greedyPieces(std::span<const Vec2d> q, const double tol) {
     const std::size_t n = q.size() - 1;
     std::vector<Piece> pieces;
     for (std::size_t i = 0; i < n;) {
         const std::size_t lineEnd = std::max(
-            i + 1, extend(i + 1, n, [&](std::size_t j) { return lineFits(q, i, j, tol); }));
+            i + 1, extend(i + 1, n, [&](const std::size_t j) { return lineFits(q, i, j, tol); }));
         // An arc must bow away from its chord, or the line would do.
-        const std::size_t arcEnd = extend(
-            i + 2, n, [&](std::size_t j) { return arcThrough(q, i, j, tol, false).has_value(); });
+        const std::size_t arcEnd = extend(i + 2, n, [&](const std::size_t j) {
+            return arcThrough(q, i, j, tol, false).has_value();
+        });
         const auto arc = arcEnd > lineEnd ? arcThrough(q, i, arcEnd, tol, true) : std::nullopt;
-        Piece piece{{}, i, arc ? arcEnd : lineEnd};
+        Piece piece{.curve = {}, .first = i, .last = arc ? arcEnd : lineEnd};
         if (arc) {
             piece.curve = *arc;
         } else {
@@ -249,7 +259,10 @@ std::vector<Piece> greedyPieces(std::span<const Vec2d> q, double tol) {
     return pieces;
 }
 
-double squaredError(std::span<const Vec2d> q, const SketchCurve& c, std::size_t i, std::size_t j) {
+double squaredError(const std::span<const Vec2d> q,
+                    const SketchCurve& c,
+                    const std::size_t i,
+                    const std::size_t j) {
     double sum = 0.0;
     for (std::size_t k = i; k <= j; ++k) sum += distanceTo(c, q[k]) * distanceTo(c, q[k]);
     return sum;
@@ -262,9 +275,9 @@ double squaredError(std::span<const Vec2d> q, const SketchCurve& c, std::size_t 
 /// moved towards or away from each other together. Repeats until nothing moves (at most 16
 /// rounds).
 void refineJunctions(std::span<const Vec2d> q, std::vector<Piece>& pieces, double tol) {
-    constexpr std::size_t kWindow = 32;
     bool moved = true;
     for (int round = 0; round < 16 && moved; ++round) {
+        constexpr std::size_t kWindow = 32;
         moved = false;
         for (std::size_t k = 1; k < pieces.size(); ++k) {
             Piece& before = pieces[k - 1];
@@ -331,7 +344,7 @@ void refineJunctions(std::span<const Vec2d> q, std::vector<Piece>& pieces, doubl
 }
 
 /// q is the polyline from `start`, closed: q[n] is q[0].
-std::vector<Vec2d> closedFrom(std::span<const Vec2d> p, std::size_t start) {
+std::vector<Vec2d> closedFrom(const std::span<const Vec2d> p, const std::size_t start) {
     std::vector<Vec2d> q(p.size() + 1);
     for (std::size_t k = 0; k < q.size(); ++k) q[k] = p[(start + k) % p.size()];
     return q;
@@ -373,8 +386,7 @@ Result<LoopFit> fitLoop(std::span<const Vec2d> points, const SectionParams& para
     double sharpest = 2.0;
     for (std::size_t k = 0; k < n; ++k) {
         const Vec2d in = p[k] - p[(k + n - 1) % n], out = p[(k + 1) % n] - p[k];
-        const double c = dot(in, out) / (length(in) * length(out));
-        if (c < sharpest) {
+        if (const double c = dot(in, out) / (length(in) * length(out)); c < sharpest) {
             sharpest = c;
             start = k;
         }
@@ -421,7 +433,7 @@ sectionMesh(const TriMesh& mesh, const SketchPlane& plane, const SectionParams& 
     SectionResult out;
     out.sketch.plane = plane;
     for (const auto& polyline : *cut) {
-        if (polyline.size() < 4 || !(polyline.front() == polyline.back())) {
+        if (polyline.size() < 4 || polyline.front() != polyline.back()) {
             ++out.openPieces;
             continue;
         }

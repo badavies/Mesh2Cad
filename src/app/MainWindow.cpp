@@ -59,7 +59,6 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Error.h"
-#include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
 #include "m2c/rpc/Session.h"
@@ -124,12 +123,12 @@ public:
 /// The user guide's first page: installed beside the program (doc/user on Windows,
 /// share/mesh2cad/user on Linux), else in the source tree of a build that isn't installed.
 QString userGuideIndex() {
-    const QDir bin(QCoreApplication::applicationDirPath());
-    for (const QString& dir : {bin.filePath(QStringLiteral("../doc/user")),
+    for (const QDir bin(QCoreApplication::applicationDirPath());
+         const QString& dir : {bin.filePath(QStringLiteral("../doc/user")),
                                bin.filePath(QStringLiteral("../share/mesh2cad/user")),
                                QStringLiteral(MESH2CAD_SOURCE_DIR "/docs/user")}) {
-        const QFileInfo index(QDir(dir).filePath(QStringLiteral("README.md")));
-        if (index.isFile()) return index.canonicalFilePath();
+        if (const QFileInfo index(QDir(dir).filePath(QStringLiteral("README.md"))); index.isFile())
+            return index.canonicalFilePath();
     }
     return {};
 }
@@ -630,13 +629,14 @@ void MainWindow::refreshTree() {
     }
     // Select the rows selected before, the first of them current; selected_ may have been set
     // on its own (a new selection adopted from a tool).
-    std::erase_if(selectedIds_, [this](ObjectId id) { return snapshot_->find(id) == nullptr; });
+    std::erase_if(selectedIds_,
+                  [this](const ObjectId id) { return snapshot_->find(id) == nullptr; });
     if (selected_ != 0 && (selectedIds_.empty() || selectedIds_.front() != selected_))
         selectedIds_.assign(1, selected_);
     if (selected_ == 0) selectedIds_.clear();
     for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
-        const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
-        if (id == selected_) tree_->setCurrentItem(*it);
+        if (const auto id = (*it)->data(0, kIdRole).value<ObjectId>(); id == selected_)
+            tree_->setCurrentItem(*it);
     }
     for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
         if (std::ranges::find(selectedIds_, (*it)->data(0, kIdRole).value<ObjectId>()) !=
@@ -653,10 +653,10 @@ void MainWindow::onTreeSelection() {
     for (const QTreeWidgetItem* item : tree_->selectedItems())
         now.push_back(item->data(0, kIdRole).value<ObjectId>());
     std::erase_if(selectedIds_,
-                  [&](ObjectId id) { return std::ranges::find(now, id) == now.end(); });
+                  [&](const ObjectId id) { return std::ranges::find(now, id) == now.end(); });
     for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
-        const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
-        if ((*it)->isSelected() && std::ranges::find(selectedIds_, id) == selectedIds_.end())
+        if (const auto id = (*it)->data(0, kIdRole).value<ObjectId>();
+            (*it)->isSelected() && std::ranges::find(selectedIds_, id) == selectedIds_.end())
             selectedIds_.push_back(id);
     }
     selected_ = selectedIds_.empty() ? 0 : selectedIds_.front();
@@ -712,7 +712,7 @@ const char* MainWindow::infoCommand(const DocumentObject& o) {
                                       : nullptr;
 }
 
-void MainWindow::showInfo(const ObjectId id) {
+void MainWindow::showInfo(const ObjectId id) const {
     const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
     const char* info = o != nullptr ? infoCommand(*o) : nullptr;
     if (info == nullptr) return;
@@ -754,8 +754,7 @@ Json MainWindow::formDefaults(const Command& command) const {
         const Json kinds = x.is_array() ? x : Json::array({x});
         ObjectId id = 0;
         for (std::size_t i = 0; i < kinds.size() && id == 0; ++i) {
-            const std::string kind = kinds[i].get<std::string>();
-            if (kind == "any") {
+            if (const std::string kind = kinds[i].get<std::string>(); kind == "any") {
                 id = selected_;
             } else if (kind == "selection") {
                 id = currentSelection();
@@ -862,7 +861,7 @@ void MainWindow::onLasso(const QPolygonF& ndc, const bool subtract, const bool a
     run("select.lasso", p, [this](const Result<Json>& r) { adoptSelection(r); });
 }
 
-void MainWindow::onObjectClicked(const Hit hit) {
+void MainWindow::onObjectClicked(const Hit& hit) {
     // With fillet.fit open a click on a solid marks an edge to round (a point near it);
     // otherwise it selects what was clicked, which also fills the open form.
     const DocumentObject* o = snapshot_ ? snapshot_->find(hit.objectId) : nullptr;
@@ -885,7 +884,7 @@ void MainWindow::onFaceClicked(Hit hit, const bool subtract, const bool add) {
     run("select.crease", p, [this](const Result<Json>& r) { adoptSelection(r); });
 }
 
-void MainWindow::onMeasured(Hit a, Hit b) {
+void MainWindow::onMeasured(Hit a, Hit b) const {
     // Points snap to a vertex or edge within a few pixels of the click.
     run("measure.distance",
         {{"a", {{"id", a.meshId}, {"point", toJson(a.point)}}},

@@ -31,7 +31,7 @@ struct GrownRegion {
 /// The regions do not overlap; they are rough, to be refitted. Deterministic. The mesh must be a
 /// manifold triangle mesh (as mesh.repair leaves it).
 [[nodiscard]] Result<std::vector<GrownRegion>>
-growRegions(const TriMesh& mesh, const std::vector<char>& free, const GrowParams& params);
+growRegions(const TriMesh& input, const std::vector<char>& free, const GrowParams& params);
 
 /// CGAL's least-squares estimate of a cylinder or sphere through the given faces, from their
 /// centroids and normals (the start that region growing would refine). Fails when the faces are
