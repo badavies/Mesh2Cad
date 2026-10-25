@@ -14,6 +14,8 @@ Headers live in this folder (no `m2c/app/` prefix); everything is in namespace `
 - `MainWindow.h`: `MainWindow`, the window and menus; `openFiles` imports meshes or opens a project.
 - `Viewport.h`: `Viewport` (OpenGL 3.3 view of a `DocSnapshot`), interaction `Mode` and `Hit`.
 - `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema: objects and required fields first and tuning parameters with defaults under Advanced; drop-downs for objects, check boxes for booleans and lists of options, spin boxes for numbers with a default, comma-separated numbers for points and id lists, a counted list with Undo last for picked points, and JSON (with an example) for lists of objects.
+- `WorkflowPanel.h`: `WorkflowPanel`, the pipeline's four tracks of steps and the current object's stage gate, read from the snapshot and from `mesh.info` and `shells.detect` run in the background (`Engine::run` with `background`: no busy cursor, no log line) once per mesh version.
+- `ToolCatalog.h`: `toolInfo`, each command's title and Tools menu group by task.
 - `Camera.h`: `Camera` (orbit camera, +Z up) and `Mat4d` (double-precision 4x4 matrix).
 - `DeviationColors.h`: `deviationColor` and `deviationRange`, the deviation colour scale.
 

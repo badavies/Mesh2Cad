@@ -212,12 +212,14 @@ void Engine::writeLog(const Json& entry) const {
     log_->flush();
 }
 
-void Engine::run(const QString& command, const Json& params, Done done) {
+void Engine::run(const QString& command, const Json& params, Done done, const bool background) {
     ++pending_;
-    busyShown_ = true;
-    emit busyChanged(true, command);
+    if (!background) {
+        busyShown_ = true;
+        emit busyChanged(true, command);
+    }
     const std::string name = command.toStdString();
-    post([this, name, params, done = std::move(done)] {
+    post([this, name, params, background, done = std::move(done)] {
         const auto started = std::chrono::steady_clock::now();
         const CancelToken token = CancelToken::make();
         {
@@ -235,17 +237,20 @@ void Engine::run(const QString& command, const Json& params, Done done) {
                             .count();
         publish(); // the UI sees the new document before the callback runs
         const Command* c = registry_.find(name);
-        const bool quiet = result && c != nullptr && !c->mutatesDocument && !wroteFile(c, *result);
+        const bool quiet =
+            background || (result && c != nullptr && !c->mutatesDocument && !wroteFile(c, *result));
         QString line = summarize("ui", name, result);
         if (ms >= 100)
             line += QStringLiteral("  (%1 s)").arg(static_cast<double>(ms) / 1000.0, 0, 'f', 1);
         QMetaObject::invokeMethod(
             this,
-            [this, result = std::move(result), done, line, quiet, name] {
+            [this, result = std::move(result), done, line, quiet, background, name] {
                 --pending_;
                 if (!quiet) emit logLine(line, !result.has_value());
-                busyShown_ = pending_ > 0;
-                emit busyChanged(busyShown_, QString::fromStdString(name));
+                if (!background || (busyShown_ && pending_ == 0)) {
+                    busyShown_ = pending_ > 0;
+                    emit busyChanged(busyShown_, QString::fromStdString(name));
+                }
                 if (done) done(result);
             },
             Qt::QueuedConnection);
