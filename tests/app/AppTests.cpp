@@ -252,6 +252,21 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
         screenshot(view, "measure");
     }
 
+    SECTION("crease and measure orbit when dragged off the mesh, as the brush does") {
+        const QPointF corner(20, 20); // the sphere fills the middle of the view only
+        REQUIRE_FALSE(view->pickObject(corner).has_value());
+        for (const Mode mode : {Mode::Crease, Mode::Measure, Mode::Brush}) {
+            view->setMode(mode);
+            const Mat4d before = view->viewProjection();
+            drag(view, {corner, corner + QPointF(40, 0), corner + QPointF(80, 10)});
+            QApplication::processEvents();
+            CHECK(view->viewProjection().m != before.m);
+        }
+        CHECK_FALSE(engine.busy());
+        CHECK(countKind(*engine.snapshot(), "selection") == 0);
+        CHECK(countKind(*engine.snapshot(), "measurement") == 0);
+    }
+
     SECTION("an agent on the local socket edits the same document") {
         REQUIRE(engine.startLocalServer().startsWith("Listening"));
         const auto info = readSessionFile(defaultSessionFile());
