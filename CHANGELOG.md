@@ -41,6 +41,11 @@ to it are additive within 1.x.
   the schema's limits, `mesh.segment`'s `kinds` a box for each kind, and **Reset to defaults**
   puts every setting back. `fillet.fit`'s edge points are counted, numbered in the viewport and
   taken back one at a time with **Undo last**.
+- The Workflow panel covers the whole pipeline in four tracks (prepare and align, organic
+  surfacing, prismatic parts and features, verify and export) and shows the current object's
+  stage gate: whether a mesh is closed, manifold and one shell, a solid valid and closed, or a
+  deviation within tolerance, and what to do if not. The Tools menu groups commands by task
+  with titles, the command's name beside each.
 
 ### Prismatic and hybrid parts (M4)
 

@@ -51,7 +51,9 @@
 #include "MainWindow.h"
 #include "ParamForm.h"
 #include "TestMeshes.h"
+#include "ToolCatalog.h"
 #include "Viewport.h"
+#include "WorkflowPanel.h"
 
 using namespace m2c;
 using namespace m2c::app;
@@ -600,7 +602,7 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
             ++groups;
         }
     }
-    CHECK(groups > 10);
+    CHECK(groups == static_cast<int>(toolGroups().size())); // by task, not by prefix
     std::set<ObjectId> listed;
     for (QTreeWidgetItemIterator it(tree); *it != nullptr; ++it) {
         const auto id = (*it)->data(0, Qt::UserRole + 1).value<ObjectId>();
@@ -656,7 +658,7 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
     // primitive.solid offers only primitives, the fitted cylinder first; choosing one selects it.
     QAction* tool = nullptr;
     for (QAction* a : window.findChildren<QAction*>()) {
-        if (a->text() == "primitive.solid") tool = a;
+        if (a->objectName() == "primitive.solid") tool = a;
     }
     REQUIRE(tool != nullptr);
     tool->trigger();
@@ -675,7 +677,7 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
 
     // solid.extrude offers the sketch, and follows the document: a deleted sketch goes.
     for (QAction* a : window.findChildren<QAction*>()) {
-        if (a->text() == "solid.extrude") a->trigger();
+        if (a->objectName() == "solid.extrude") a->trigger();
     }
     id = form->findChild<QComboBox*>("id");
     REQUIRE(id != nullptr);
@@ -1015,7 +1017,7 @@ TEST_CASE("Selecting rows in the Objects list fills the open form", "[app][fit]"
     };
     const auto open = [&](const char* tool) {
         for (QAction* a : window.findChildren<QAction*>()) {
-            if (a->text() == tool) a->trigger();
+            if (a->objectName() == tool) a->trigger();
         }
         return window.findChild<ParamForm*>();
     };
@@ -1117,7 +1119,7 @@ TEST_CASE("Clicks pick solids and primitives, and mark fillet edges", "[app][fit
 
     // With fillet.fit open, two clicks on the solid are two edge points; Clear empties them.
     for (QAction* a : window.findChildren<QAction*>()) {
-        if (a->text() == "fillet.fit") a->trigger();
+        if (a->objectName() == "fillet.fit") a->trigger();
     }
     auto* form = window.findChild<ParamForm*>();
     REQUIRE(form != nullptr);
@@ -1138,7 +1140,7 @@ TEST_CASE("Clicks pick solids and primitives, and mark fillet edges", "[app][fit
 
     // With another tool open, a click on a primitive selects its row.
     for (QAction* action : window.findChildren<QAction*>()) {
-        if (action->text() == "solid.info") action->trigger();
+        if (action->objectName() == "solid.info") action->trigger();
     }
     run("object.show", {{"id", box}, {"visible", false}});
     run("object.show", {{"id", primitives[2]}, {"visible", true}});
@@ -1371,6 +1373,79 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
 
 // The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or
 // better. Hidden from normal runs; see tests/README.md for how to run it on a Release build.
+TEST_CASE("The workflow lists every track and shows the stage gate", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto ball = dir.path() / "ball.stl";
+    const auto cap = dir.path() / "cap.stl";
+    REQUIRE(writeMesh(makeSphere(10.0, 3), ball).has_value());
+    REQUIRE(writeMesh(makeCap(10.0, 1.0, 6), cap).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    auto* workflow = window.findChild<WorkflowPanel*>();
+    REQUIRE(workflow != nullptr);
+    CHECK(workflow->gateText().startsWith("Import a scan"));
+
+    // Every track's steps are there, past M1: surfacing, prismatic tools, deviation and export.
+    for (const char* step : {"holes.fill",
+                             "align.symmetry",
+                             "quad.remesh",
+                             "surface.build",
+                             "mesh.segment",
+                             "primitive.trim",
+                             "solid.boolean",
+                             "fillet.fit",
+                             "deviation.compute",
+                             "solid.export"}) {
+        INFO(step);
+        CHECK(workflow->findChild<QPushButton*>(step) != nullptr);
+    }
+    workflow->findChild<QPushButton*>("surface.build")->click();
+    CHECK(window.findChild<ParamForm*>()->command()->name == "surface.build");
+
+    // A closed sphere passes the repair gate; an open cap does not, and says why. The check runs
+    // in the background, without a busy cursor or a log line.
+    QStringList log;
+    QObject::connect(&engine, &Engine::logLine, [&](const QString& line, bool) { log << line; });
+    window.openFiles({QString::fromStdString(ball.string())});
+    REQUIRE(waitFor([&] { return workflow->gateText().contains("closed, manifold"); }));
+    CHECK(workflow->gatePassed());
+    window.openFiles({QString::fromStdString(cap.string())});
+    REQUIRE(waitFor([&] { return workflow->gateText().contains("not ready"); }));
+    CHECK_FALSE(workflow->gatePassed());
+    CHECK(workflow->gateText().contains("open edges around holes: Fill holes"));
+    REQUIRE(waitFor([&] { return !engine.busy(); }));
+    CHECK_FALSE(std::ranges::any_of(log, [](const QString& l) {
+        return l.contains("mesh.info") || l.contains("shells.detect");
+    }));
+
+    // The Tools menu groups commands by task and titles them, with the command's name beside.
+    QMenu* tools = nullptr;
+    for (QAction* a : window.menuBar()->actions()) {
+        if (a->text() == "&Tools") tools = a->menu();
+    }
+    REQUIRE(tools != nullptr);
+    QStringList groups;
+    for (QAction* a : tools->actions()) {
+        if (a->isVisible()) groups << a->text();
+    }
+    CHECK(groups.contains("Mesh cleanup"));
+    CHECK(groups.contains("Surfacing"));
+    CHECK_FALSE(groups.contains("Holes")); // no one-item groups by prefix
+    QAction* fill = nullptr;
+    for (QAction* a : window.findChildren<QAction*>()) {
+        if (a->objectName() == "holes.fill") fill = a;
+    }
+    REQUIRE(fill != nullptr);
+    CHECK(fill->text() == QStringLiteral("Fill holes…\tholes.fill"));
+}
+
 TEST_CASE("Help opens the user guide and follows its links", "[app]") {
     application();
     const TempDir dir;

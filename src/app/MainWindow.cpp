@@ -47,7 +47,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <map>
 #include <memory>
 #include <ranges>
@@ -65,7 +64,9 @@
 
 #include "Engine.h"
 #include "ParamForm.h"
+#include "ToolCatalog.h"
 #include "Viewport.h"
+#include "WorkflowPanel.h"
 
 namespace m2c::app {
 
@@ -83,31 +84,6 @@ QString projectFilter() {
 
 Json toJson(const Vec3d& v) {
     return Json::array({v.x, v.y, v.z});
-}
-
-QString groupTitle(const std::string& prefix) {
-    static const std::map<std::string, QString> titles{
-        {"mesh", QObject::tr("Mesh")},
-        {"holes", QObject::tr("Holes")},
-        {"shells", QObject::tr("Shells")},
-        {"select", QObject::tr("Select")},
-        {"faces", QObject::tr("Faces")},
-        {"align", QObject::tr("Align")},
-        {"plane", QObject::tr("Fit")},
-        {"primitive", QObject::tr("Primitive")},
-        {"measure", QObject::tr("Measure")},
-        {"quad", QObject::tr("Quad layout")},
-        {"surface", QObject::tr("Surface")},
-        {"solid", QObject::tr("Solid")},
-        {"sketch", QObject::tr("Sketch")},
-        {"fillet", QObject::tr("Fillet")},
-        {"deviation", QObject::tr("Deviation")},
-        {"view", QObject::tr("View")},
-        {"object", QObject::tr("Object")},
-        {"project", QObject::tr("Project")},
-    };
-    const auto it = titles.find(prefix);
-    return it != titles.end() ? it->second : QString::fromStdString(prefix);
 }
 
 /// A column of the Objects list that is not edited in place.
@@ -266,29 +242,21 @@ void MainWindow::buildDocks() {
     objects->setWidget(tree_);
     addDockWidget(Qt::LeftDockWidgetArea, objects);
 
-    // Workflow: the usual order of M0/M1 tools, each opening its form.
-    auto* workflow = new QWidget;
-    auto* steps = new QVBoxLayout(workflow);
-    const auto addStep = [&](const QString& text, const std::function<void()>& action) {
-        auto* button = new QPushButton(text);
-        button->setStyleSheet("text-align: left; padding: 4px 8px;");
-        connect(button, &QPushButton::clicked, this, action);
-        steps->addWidget(button);
-    };
-    addStep(tr("1  Import scan…"), [this] { importMeshes(); });
-    addStep(tr("2  Repair"), [this] { showTool("mesh.repair"); });
-    addStep(tr("    then select spikes and tunnels"), [this] { showTool("select.defects"); });
-    addStep(tr("3  Fill holes"), [this] { showTool("holes.fill"); });
-    addStep(tr("4  Remove small shells"), [this] { showTool("shells.clean"); });
-    addStep(tr("5  Smooth"), [this] { showTool("mesh.smooth"); });
-    addStep(tr("6  Simplify"), [this] { showTool("mesh.simplify"); });
-    addStep(tr("7  Align to principal axes"), [this] { showTool("align.principal"); });
-    addStep(tr("    or align to datums"), [this] { showTool("align.datum"); });
-    addStep(tr("8  Save project…"), [this] { saveProject(false); });
-    steps->addStretch(1);
+    // Workflow: the pipeline's tracks in order, each step opening its tool, under the current
+    // object's stage gate.
+    workflow_ = new WorkflowPanel(engine_);
+    connect(workflow_, &WorkflowPanel::toolRequested, this, [this](const QString& command) {
+        if (command == QLatin1String("mesh.import")) {
+            importMeshes();
+        } else if (command == QLatin1String("project.save")) {
+            saveProject(false);
+        } else {
+            showTool(command);
+        }
+    });
     auto* workflowDock = new QDockWidget(tr("Workflow"), this);
     workflowDock->setObjectName("workflow");
-    workflowDock->setWidget(workflow);
+    workflowDock->setWidget(workflow_);
     addDockWidget(Qt::LeftDockWidgetArea, workflowDock);
 
     form_ = new ParamForm;
@@ -465,19 +433,28 @@ void MainWindow::buildMenus() {
     for (const QDockWidget* dock : findChildren<QDockWidget*>())
         view->addAction(dock->toggleViewAction());
 
-    // Tools: every command, grouped by prefix, each opening its generated form.
+    // Tools: every command by the task it serves, titled for people with the command's name
+    // beside it, each opening its generated form.
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
-    std::map<std::string, QMenu*> groups;
-    for (const Command* c : engine_.registry().list()) {
-        const std::string prefix = c->name.substr(0, c->name.find('.'));
-        if (prefix == "doc" || prefix == "commands") continue;
-        QMenu*& group = groups[prefix];
-        if (group == nullptr) group = tools->addMenu(groupTitle(prefix));
-        QAction* a = group->addAction(QString::fromStdString(c->name));
+    std::map<QString, QMenu*> groups;
+    for (const QString& group : toolGroups()) groups[group] = tools->addMenu(group);
+    std::vector<const Command*> commands = engine_.registry().list();
+    std::ranges::stable_sort(
+        commands, std::ranges::less{}, [](const Command* c) { return toolInfo(c->name).order; });
+    for (const Command* c : commands) {
+        const auto [title, group, order] = toolInfo(c->name);
+        if (group.isEmpty()) continue;
+        QMenu*& menu = groups[group];
+        if (menu == nullptr) menu = tools->addMenu(group);
+        const QString name = QString::fromStdString(c->name);
+        QAction* a = menu->addAction(title + QStringLiteral("…\t") + name);
+        a->setObjectName(name);
         a->setToolTip(QString::fromStdString(c->summary));
         a->setStatusTip(QString::fromStdString(c->summary));
-        const QString name = QString::fromStdString(c->name);
         connect(a, &QAction::triggered, this, [this, name] { showTool(name); });
+    }
+    for (QMenu* menu : std::views::values(groups)) {
+        if (menu->isEmpty()) menu->menuAction()->setVisible(false);
     }
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));
@@ -675,6 +652,7 @@ std::vector<ObjectId> MainWindow::rowsFor(const ObjectId id) const {
 
 void MainWindow::showCurrent() const {
     viewport_->setCurrent(currentMesh(), currentSelection(), selected_);
+    workflow_->setCurrent(snapshot_, selected_ != 0 ? selected_ : currentMesh());
 }
 
 void MainWindow::chooseObject(const ObjectId id) {

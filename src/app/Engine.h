@@ -57,8 +57,10 @@ public:
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
 
-    /// Queues a command from the UI. `done` runs on the UI thread with the result.
-    void run(const QString& command, const Json& params, Done done = {});
+    /// Queues a command from the UI. `done` runs on the UI thread with the result. A
+    /// `background` command (a read-only check the UI makes by itself, such as the Workflow
+    /// panel's stage gate) shows no busy cursor or log line.
+    void run(const QString& command, const Json& params, Done done = {}, bool background = false);
 
     /// Asks the running command to stop, whoever sent it: a long one stops at its next
     /// checkpoint and fails with Cancelled, leaving the document as it was. Queued commands

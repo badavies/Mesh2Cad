@@ -20,6 +20,7 @@ class QTreeWidgetItem;
 namespace m2c::app {
 
 class ParamForm;
+class WorkflowPanel;
 
 /// The desktop app's window: viewport, object list, tool form, workflow, history and log.
 /// Every action becomes a command sent through the Engine, the same way scripts and agents work.
@@ -88,6 +89,7 @@ private:
     Viewport* viewport_{nullptr};
     QTreeWidget* tree_{nullptr};
     ParamForm* form_{nullptr};
+    WorkflowPanel* workflow_{nullptr};
     QListWidget* history_{nullptr};
     QPlainTextEdit* log_{nullptr};
     QLabel* status_{nullptr};
