@@ -170,9 +170,12 @@ endif()
 target_compile_definitions(m2c_cgal_deps INTERFACE CGAL_EIGEN3_ENABLED)
 # CGAL's own checks stay off in Debug builds too, as NDEBUG turns them off in Release. Many of
 # them walk the whole mesh on every call (is_triangle_mesh() before each hole is filled), so a
-# Debug build took over half an hour to fill the holes of a 1.7M-face scan. Only the CGAL adapter
+# Debug build took over half an hour to fill the holes of a 1.7M-face scan. The sanitizer build
+# keeps them, so CI still checks CGAL's preconditions on the test meshes. Only the CGAL adapter
 # includes CGAL, so every CGAL template is still compiled one way.
-target_compile_definitions(m2c_cgal_deps INTERFACE CGAL_NDEBUG)
+if(NOT MESH2CAD_SANITIZE)
+    target_compile_definitions(m2c_cgal_deps INTERFACE CGAL_NDEBUG)
+endif()
 if(MINGW)
     # Even as big objects (Mesh2CadBuild.cmake), unoptimised Debug CGAL objects are too big for
     # binutils 2.39 (the MinGW 13.1 that ships with Qt); -Og shrinks them and keeps them debuggable.

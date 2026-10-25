@@ -292,9 +292,14 @@ TEST_CASE("Hole filling reports progress and stops when cancelled", "[stages][ho
     CHECK(filled->filled == 2);
     CHECK(fractions == std::vector{0.0, 0.5});
 
+    // Cancelled once the first hole is filled: it stops before the second.
     const CancelToken token = CancelToken::make();
-    token.cancel();
-    const auto stopped = fillHoles(holed, {}, Progress({}, token));
+    const Progress cancelHalfway(
+        [&](std::string_view, const double fraction) {
+            if (fraction >= 0.5) token.cancel();
+        },
+        token);
+    const auto stopped = fillHoles(holed, {}, cancelHalfway);
     REQUIRE_FALSE(stopped.has_value());
     CHECK(stopped.error().code == ErrorCode::Cancelled);
     CHECK(stopped.error().message == "cancelled while filling holes");
