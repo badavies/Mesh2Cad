@@ -403,6 +403,9 @@ if(MESH2CAD_SPACEMOUSE)
                             "is built for MSVC)")
     endif()
     find_package(TDxWare_SDK 4.0 CONFIG REQUIRED HINTS "$ENV{TDxWare_SDK_DIR}")
+    # The SDK declares 3DxWare::Navlib as a static library without a file. CMake 4's file API,
+    # which CLion and other IDEs read, rejects that even when nothing links it, so give it one.
+    set_target_properties(3DxWare::Navlib PROPERTIES IMPORTED_LOCATION "${TDxWare_LIBRARIES}")
     set(M2C_HAVE_SPACEMOUSE ON)
     message(STATUS "Mesh2Cad: SpaceMouse navigation on, with the 3DxWare SDK in "
                    "${TDxWare_SDK_DIR}. Do not distribute this build (ADR 0039).")

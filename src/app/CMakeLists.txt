@@ -32,9 +32,7 @@ if(M2C_HAVE_SPACEMOUSE)
     target_sources(m2c_app PRIVATE SpaceMouse.cpp SpaceMouse.h)
     # PUBLIC: MainWindow.h has a member only in this build.
     target_compile_definitions(m2c_app PUBLIC M2C_HAVE_SPACEMOUSE PRIVATE NOMINMAX)
-    # The SDK's 3DxWare::Navlib target has no IMPORTED_LOCATION, so link its parts, as the SDK's
-    # own samples do.
-    target_link_libraries(m2c_app PRIVATE 3DxWare::headers ${TDxWare_LIBRARIES})
+    target_link_libraries(m2c_app PRIVATE 3DxWare::Navlib)
     # The SDK's library comes without its debug database.
     target_link_options(m2c_app INTERFACE /ignore:4099)
 endif()
