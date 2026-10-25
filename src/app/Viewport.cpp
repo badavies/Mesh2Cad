@@ -276,6 +276,7 @@ Viewport::Viewport(QWidget* parent) : QOpenGLWidget(parent) {
     interactionTimer_.setSingleShot(true);
     interactionTimer_.setInterval(250);
     connect(&interactionTimer_, &QTimer::timeout, this, [this] {
+        if (navigating_) return;
         interacting_ = false;
         update();
     });
@@ -440,6 +441,11 @@ void Viewport::setCamera(const Camera& camera) {
 void Viewport::setNavigationPivot(const std::optional<Vec3d> pivot) {
     navigationPivot_ = pivot;
     update();
+}
+
+void Viewport::setNavigating(const bool navigating) {
+    navigating_ = navigating;
+    markInteracting();
 }
 
 void Viewport::setStandardView(const double yaw, const double pitch) {

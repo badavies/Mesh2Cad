@@ -1,6 +1,6 @@
 # 0039. Optional SpaceMouse navigation through the 3DxWare SDK, off by default
 
-- Status: Accepted
+- Status: Accepted; the camera keeping +Z up is superseded by 0040
 - Date: 2026-10-25
 
 ## Context

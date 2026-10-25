@@ -71,8 +71,9 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
   distance, drawn over everything so a worst point on the back still shows, and the hover text
   of the Measure, Brush and Crease tools ends with the distance at the cursor
   (`| dev: +0.234 mm`).
-- A SpaceMouse moves the camera like a mouse orbit does: no command, nothing in History. The
-  camera keeps +Z up, so the 3D mouse's roll is dropped; it turns around the point the Navigation
-  Library hit-tests at the centre of the view (`Viewport::pickRay`), shown as a blue dot.
+- A SpaceMouse moves the camera like a mouse orbit does: no command, nothing in History. It
+  turns the view freely, roll included (ADR-040), around the point the Navigation Library
+  hit-tests at the centre of the view (`Viewport::pickRay`), shown as a blue dot; that point
+  becomes the camera's target. The standard views level the camera again.
 - `--screenshot out.png FILE` renders and quits (CI smoke test). `--no-agent-socket` turns the
   local socket off.

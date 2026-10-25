@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstddef>
 #include <numbers>
+#include <optional>
 
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -42,8 +43,11 @@ Vec3d Camera::forward() const {
 
 Vec3d Camera::right() const {
     const double y = yawDeg * kDeg;
-    // Perpendicular to the view direction in the XY plane; stays defined looking straight down.
-    return {.x = -std::sin(y), .y = std::cos(y), .z = 0.0};
+    // Perpendicular to the view direction in the XY plane, which stays defined looking straight
+    // down, then turned by the roll.
+    const Vec3d level{.x = -std::sin(y), .y = std::cos(y), .z = 0.0};
+    const double r = rollDeg * kDeg;
+    return level * std::cos(r) + cross(level, forward()) * std::sin(r);
 }
 
 Vec3d Camera::up() const {
@@ -115,6 +119,7 @@ void Camera::fit(const Aabb& box) {
 void Camera::setView(const double yaw, const double pitch) {
     yawDeg = yaw;
     pitchDeg = pitch;
+    rollDeg = 0.0;
 }
 
 Mat4d Camera::cameraToWorld() const {
@@ -127,24 +132,23 @@ Mat4d Camera::cameraToWorld() const {
     return m;
 }
 
-void Camera::setCameraToWorld(const Mat4d& transform) {
+void Camera::setCameraToWorld(const Mat4d& transform, const std::optional<Vec3d> focus) {
     const Vec3d r{.x = transform.at(0, 0), .y = transform.at(1, 0), .z = transform.at(2, 0)};
-    const Vec3d u{.x = transform.at(0, 1), .y = transform.at(1, 1), .z = transform.at(2, 1)};
-    const Vec3d back{.x = transform.at(0, 2), .y = transform.at(1, 2), .z = transform.at(2, 2)};
+    const Vec3d back = normalized(
+        Vec3d{.x = transform.at(0, 2), .y = transform.at(1, 2), .z = transform.at(2, 2)});
     const Vec3d e{.x = transform.at(0, 3), .y = transform.at(1, 3), .z = transform.at(2, 3)};
-    constexpr double kMaxPitch = 89.9;
     const double horizontal = std::hypot(back.x, back.y);
-    if (u.z < 0.0) {
-        // Upside down: turned past straight up or down. Stop there, facing the same way.
-        pitchDeg = back.z > 0.0 ? kMaxPitch : -kMaxPitch;
-    } else {
-        pitchDeg = std::clamp(std::atan2(back.z, horizontal) / kDeg, -kMaxPitch, kMaxPitch);
-        // Looking straight up or down, the line of sight gives no heading; the right axis does.
-        yawDeg = horizontal > 1e-9 * length(back) ? std::atan2(back.y, back.x) / kDeg
-                                                  : std::atan2(-r.x, r.y) / kDeg;
-    }
-    const Vec3d f = forward();
-    distance = std::clamp(dot(target - e, f), sceneRadius * 1e-4, sceneRadius * 100.0);
+    pitchDeg = std::atan2(back.z, horizontal) / kDeg;
+    // Looking straight up or down, the line of sight gives no heading; the right axis does.
+    yawDeg = horizontal > 1e-9 ? std::atan2(back.y, back.x) / kDeg : std::atan2(-r.x, r.y) / kDeg;
+    // The roll turns the level right axis onto the given one. Over the top, the heading has
+    // swung round and the roll is near 180 degrees.
+    rollDeg = 0.0;
+    const Vec3d level = right();
+    const Vec3d f = back * -1.0;
+    rollDeg = std::atan2(dot(r, cross(level, f)), dot(r, level)) / kDeg;
+    const double ahead = dot(focus.value_or(target) - e, f);
+    if (ahead > sceneRadius * 1e-3) distance = std::min(ahead, sceneRadius * 100.0);
     target = e + f * distance;
 }
 

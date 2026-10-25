@@ -1453,7 +1453,7 @@ TEST_CASE("The camera follows a 3D mouse's camera-to-world transform", "[app]") 
         CHECK(close(c.eye(), other.eye()));
         CHECK(std::abs(dot(camera.target - c.target, c.forward())) < 1e-9);
     }
-    SECTION("roll is dropped") {
+    SECTION("roll is kept") {
         // Turn the right and up axes 20 degrees around the line of sight.
         const double a = 20 * std::numbers::pi / 180;
         const Vec3d r = camera.right() * std::cos(a) + camera.up() * std::sin(a);
@@ -1465,9 +1465,14 @@ TEST_CASE("The camera follows a 3D mouse's camera-to-world transform", "[app]") 
         c.setCameraToWorld(rolled);
         CHECK(std::abs(c.yawDeg - 30) < 1e-9);
         CHECK(std::abs(c.pitchDeg - 20) < 1e-9);
+        CHECK(std::abs(c.rollDeg - 20) < 1e-9);
+        CHECK(close(c.right(), r));
+        CHECK(close(c.up(), u));
+        // A standard view levels it again.
+        c.setView(30, 20);
         CHECK(std::abs(c.right().z) < 1e-12);
     }
-    SECTION("upside down past straight up, it stops looking down from above") {
+    SECTION("upside down, it stays upside down") {
         Mat4d over = m;
         for (int row = 0; row < 3; ++row) {
             over.at(row, 0) = -m.at(row, 0);
@@ -1475,8 +1480,11 @@ TEST_CASE("The camera follows a 3D mouse's camera-to-world transform", "[app]") 
         }
         Camera c = camera;
         c.setCameraToWorld(over);
-        CHECK(c.pitchDeg == 89.9);
+        CHECK(std::abs(c.pitchDeg - 20) < 1e-9);
         CHECK(std::abs(c.yawDeg - 30) < 1e-9);
+        CHECK(std::abs(std::abs(c.rollDeg) - 180) < 1e-9);
+        CHECK(c.up().z < 0);
+        CHECK(close(c.eye(), camera.eye()));
     }
     SECTION("looking straight down, the right axis gives the heading") {
         Mat4d down; // right +X, up +Y, back +Z
@@ -1484,8 +1492,49 @@ TEST_CASE("The camera follows a 3D mouse's camera-to-world transform", "[app]") 
         Camera c = camera;
         c.setCameraToWorld(down);
         CHECK(std::abs(c.yawDeg + 90) < 1e-9);
-        CHECK(c.pitchDeg == 89.9);
+        CHECK(std::abs(c.pitchDeg - 90) < 1e-9);
+        CHECK(std::abs(c.rollDeg) < 1e-9);
         CHECK(close(c.eye(), {.x = 0, .y = 0, .z = 100}));
+    }
+    SECTION("any pose comes back unchanged, so the 3D mouse never jumps") {
+        // Tumble the camera about a pivot in steps, over the top and back, as the 3D mouse does.
+        const Vec3d pivot{.x = 12, .y = 18, .z = 9};
+        const auto turn = [](const Vec3d& v, const Vec3d& axis, double angle) {
+            const Vec3d k = normalized(axis);
+            return v * std::cos(angle) + cross(k, v) * std::sin(angle) +
+                   k * (dot(k, v) * (1 - std::cos(angle)));
+        };
+        Camera c = camera;
+        for (int step = 0; step < 60; ++step) {
+            const Mat4d before = c.cameraToWorld();
+            const Vec3d axis = step % 3 == 0   ? column(before, 0)
+                               : step % 3 == 1 ? Vec3d{.x = 0.3, .y = -0.5, .z = 1}
+                                               : column(before, 2);
+            Mat4d after = before;
+            for (int col = 0; col < 3; ++col) {
+                const Vec3d v = turn(column(before, col), axis, 0.2);
+                after.at(0, col) = v.x, after.at(1, col) = v.y, after.at(2, col) = v.z;
+            }
+            const Vec3d eye = pivot + turn(column(before, 3) - pivot, axis, 0.2);
+            after.at(0, 3) = eye.x, after.at(1, 3) = eye.y, after.at(2, 3) = eye.z;
+            c.setCameraToWorld(after, pivot);
+            const Mat4d back = c.cameraToWorld();
+            for (int col = 0; col < 4; ++col) CHECK(close(column(back, col), column(after, col)));
+        }
+    }
+    SECTION("the 3D mouse's pivot on the line of sight becomes the target") {
+        const Vec3d pivot = camera.eye() + camera.forward() * 30.0;
+        Camera c = camera;
+        c.setCameraToWorld(m, pivot);
+        CHECK(close(c.target, pivot));
+        CHECK(std::abs(c.distance - 30) < 1e-9);
+        CHECK(close(c.eye(), camera.eye()));
+    }
+    SECTION("a pivot behind the eye keeps the distance") {
+        Camera c = camera;
+        c.setCameraToWorld(m, camera.eye() - camera.forward() * 10.0);
+        CHECK(std::abs(c.distance - 80) < 1e-9);
+        CHECK(close(c.target, camera.target));
     }
 }
 

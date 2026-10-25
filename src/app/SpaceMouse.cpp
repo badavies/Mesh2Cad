@@ -109,7 +109,7 @@ protected:
 
     long SetCameraMatrix(const navlib::matrix_t& matrix) override {
         Camera camera = viewport_.camera();
-        camera.setCameraToWorld(fromNavlib(matrix));
+        camera.setCameraToWorld(fromNavlib(matrix), pivot_);
         viewport_.setCamera(camera);
         return 0;
     }
@@ -184,7 +184,8 @@ protected:
     long GetSelectionTransform(navlib::matrix_t&) const override { return noData(); }
     long SetSelectionTransform(const navlib::matrix_t&) override { return notSupported(); }
 
-    // IPivot. The library places the pivot; until it does, the camera target is the pivot.
+    // IPivot. The library places the pivot; until it does, the camera target is the pivot. The
+    // camera's target follows it (setCameraToWorld), so a mouse orbit afterwards turns around it.
     long GetPivotPosition(navlib::point_t& position) const override {
         position = toNavlib(pivot_.value_or(viewport_.camera().target));
         return 0;
@@ -235,6 +236,15 @@ protected:
         const auto hit = viewport_.pickRay(hitFrom_, normalized(hitDirection_));
         if (!hit) return noData();
         position = toNavlib(hit->point);
+        return 0;
+    }
+
+    // IState. A frame's setters each call update(), which Qt draws once, so frames need no
+    // batching; huge meshes use their coarse proxy until the motion ends.
+    long SetTransaction(long) override { return 0; }
+
+    long SetMotionFlag(const bool motion) override {
+        viewport_.setNavigating(motion);
         return 0;
     }
 

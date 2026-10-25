@@ -519,7 +519,8 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-036 | oneTBB for deterministic parallel loops | Accepted | Fixed chunks and ordered reductions give the same results on any number of threads; see `docs/adr/0036-onetbb-parallel-chunks.md` |
 | ADR-037 | Our own glTF writer; Open CASCADE only triangulates | Accepted | OCCT's writer needs RapidJSON and the XCAF toolkits, which our builds leave out; see `docs/adr/0037-own-gltf-writer.md` |
 | ADR-038 | Scan spikes and tunnels found by our own search, as a selection | Accepted | Tips and folds grown over their steep sides; tunnels as handles, from patches' Euler characteristic; see `docs/adr/0038-scan-spikes-and-tunnels.md` |
-| ADR-039 | SpaceMouse navigation through the 3DxWare SDK, an optional Windows build, off by default | Accepted | The SDK's licence is not GPL-compatible, so builds with it are for your own machine; see `docs/adr/0039-spacemouse-navigation.md` |
+| ADR-039 | SpaceMouse navigation through the 3DxWare SDK, an optional Windows build, off by default | Accepted; camera part superseded by ADR-040 | The SDK's licence is not GPL-compatible, so builds with it are for your own machine; see `docs/adr/0039-spacemouse-navigation.md` |
+| ADR-040 | A SpaceMouse turns the camera freely, roll included | Accepted | The camera takes the 3DxWare library's transform exactly, so navigation doesn't jump; see `docs/adr/0040-spacemouse-free-camera.md` |
 
 ## 15. Review log
 
