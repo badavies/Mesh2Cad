@@ -4,15 +4,20 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QElapsedTimer>
+#include <QFormLayout>
 #include <QHeaderView>
+#include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QStringList>
 #include <QSurfaceFormat>
 #include <QTextBrowser>
@@ -1174,12 +1179,20 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     REQUIRE(params.has_value());
     CHECK(*params == Json{{"id", 7}}); // empty fields are left to the command's defaults
 
+    // A boolean is a check box at its default, sent only when changed from it.
+    auto* borders = form.findChild<QCheckBox*>("preserve_borders");
+    REQUIRE(borders != nullptr);
+    CHECK(borders->isChecked()); // default true
     form.findChild<QLineEdit*>("target_ratio")->setText("0.25");
-    form.findChild<QComboBox*>("preserve_borders")->setCurrentIndex(2); // "No"
+    borders->setChecked(false);
     params = form.params();
     REQUIRE(params.has_value());
     CHECK((*params)["target_ratio"] == 0.25);
     CHECK((*params)["preserve_borders"] == false);
+    // A typed number is held to the schema's limits (target_ratio is at most 1).
+    form.findChild<QLineEdit*>("target_ratio")->setText("2");
+    CHECK_FALSE(form.params().has_value());
+    form.findChild<QLineEdit*>("target_ratio")->clear();
 
     form.findChild<QLineEdit*>("target_faces")->setText("many");
     CHECK_FALSE(form.params().has_value());
@@ -1258,6 +1271,81 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     CHECK(Json::parse(flat->text().toStdString()).size() == 2);
     form.findChild<QToolButton*>("clear")->click();
     CHECK(flat->text().isEmpty());
+
+    // Fields come in the order a person fills them, with the tuning parameters that have
+    // defaults under Advanced, closed until opened; Reset puts them back and keeps the objects.
+    form.setCommand(registry.find("surface.build"), {{"id", 9}, {"mesh_id", 7}});
+    const auto order = [&] {
+        QStringList names;
+        for (const auto* layout : form.findChildren<QFormLayout*>()) {
+            for (int i = 0; i < layout->rowCount(); ++i) {
+                if (const auto* item = layout->itemAt(i, QFormLayout::FieldRole))
+                    names << item->widget()->objectName();
+            }
+        }
+        return names;
+    };
+    const QStringList names = order();
+    REQUIRE(names.size() >= 4);
+    CHECK(names.mid(0, 2) == QStringList{"id", "mesh_id"});
+    auto* advanced = form.findChild<QToolButton*>("advanced");
+    REQUIRE(advanced != nullptr);
+    CHECK(advanced->text().startsWith("Advanced"));
+    CHECK_FALSE(advanced->isChecked());
+    CHECK(form.findChild<QSpinBox*>("fairing")->value() == 5); // the default
+    // Values passed in that differ from the defaults open Advanced.
+    form.setCommand(registry.find("surface.build"), {{"fairing", 2}});
+    CHECK(form.findChild<QToolButton*>("advanced")->isChecked());
+    CHECK(form.findChild<QSpinBox*>("fairing")->value() == 2);
+    // Numbers with defaults are spin boxes, shown as typed and sent only when changed.
+    form.setCommand(registry.find("mesh.smooth"), {{"id", 7}});
+    auto* iterations = form.findChild<QSpinBox*>("iterations");
+    auto* strength = form.findChild<QDoubleSpinBox*>("strength");
+    REQUIRE(iterations != nullptr);
+    REQUIRE(strength != nullptr);
+    CHECK(strength->text() == "0.5");
+    CHECK(*form.params() == Json{{"id", 7}});
+    iterations->setValue(25);
+    strength->setValue(0.25);
+    form.findChild<QCheckBox*>("preserve_sharp_edges")->setChecked(true);
+    CHECK(*form.params() ==
+          Json{{"id", 7}, {"iterations", 25}, {"strength", 0.25}, {"preserve_sharp_edges", true}});
+    form.findChild<QPushButton*>("reset")->click();
+    CHECK(*form.params() == Json{{"id", 7}});
+
+    // A list of options is a box for each, checked as the default.
+    form.setCommand(registry.find("mesh.segment"), {{"id", 7}});
+    auto* kinds = form.findChild<QWidget*>("kinds");
+    REQUIRE(kinds != nullptr);
+    auto* sphere = kinds->findChild<QCheckBox*>("sphere");
+    REQUIRE(sphere != nullptr);
+    CHECK(kinds->findChild<QCheckBox*>("plane")->isChecked());
+    CHECK_FALSE(sphere->isChecked());
+    CHECK_FALSE(form.params()->contains("kinds"));
+    sphere->setChecked(true);
+    CHECK(form.params()->at("kinds") == Json::array({"plane", "cylinder", "sphere"}));
+    for (auto* box : kinds->findChildren<QCheckBox*>()) box->setChecked(false);
+    CHECK_FALSE(form.params().has_value()); // at least one kind
+
+    // A list of points counts them; Undo last takes the newest off, and the viewport is told.
+    form.setCommand(registry.find("fillet.fit"));
+    std::vector<Vec3d> marked;
+    QObject::connect(
+        &form, &ParamForm::pointsChanged, [&](const std::vector<Vec3d>& p) { marked = p; });
+    REQUIRE(form.appendPoint("edge_points", {1, 2, 3}));
+    REQUIRE(form.appendPoint("edge_points", {4, 5, 6}));
+    CHECK(form.findChild<QLabel*>("count")->text() == "2 points");
+    CHECK(marked.size() == 2);
+    form.findChild<QToolButton*>("undoPoint")->click();
+    CHECK(form.findChild<QLabel*>("count")->text() == "1 point");
+    CHECK(Json::parse(form.findChild<QLineEdit*>("edge_points")->text().toStdString()) ==
+          Json::parse("[[1,2,3]]"));
+    REQUIRE(marked.size() == 1);
+    CHECK(marked[0].z == 3.0);
+    form.findChild<QPushButton*>("reset")->click(); // picked points are not settings
+    CHECK(form.findChild<QLabel*>("count")->text() == "1 point");
+    form.setCommand(registry.find("mesh.info"));
+    CHECK(marked.empty());
 
     // An optional object field starts at None and is left out.
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});

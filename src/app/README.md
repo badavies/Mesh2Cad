@@ -13,7 +13,7 @@ Headers live in this folder (no `m2c/app/` prefix); everything is in namespace `
 - `Engine.h`: `Engine` (owns the `Document` and `CommandRegistry`, runs commands in order on one worker thread, serves the local socket and writes the session file; `cancel` stops the running command, the person's or an agent's, and answers an agent's `rpc.cancel` on the UI thread at once) and `DocSnapshot`.
 - `MainWindow.h`: `MainWindow`, the window and menus; `openFiles` imports meshes or opens a project.
 - `Viewport.h`: `Viewport` (OpenGL 3.3 view of a `DocSnapshot`), interaction `Mode` and `Hit`.
-- `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema: drop-downs for objects, comma-separated numbers for points and id lists, and JSON (with an example) for lists of objects.
+- `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema: objects and required fields first and tuning parameters with defaults under Advanced; drop-downs for objects, check boxes for booleans and lists of options, spin boxes for numbers with a default, comma-separated numbers for points and id lists, a counted list with Undo last for picked points, and JSON (with an example) for lists of objects.
 - `Camera.h`: `Camera` (orbit camera, +Z up) and `Mat4d` (double-precision 4x4 matrix).
 - `DeviationColors.h`: `deviationColor` and `deviationRange`, the deviation colour scale.
 
@@ -43,7 +43,9 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
 - The Objects list shows each object's id first, then its name (edited in place) and a summary.
 - In Navigate mode a click (no drag) on a mesh, solid or primitive selects it in the Objects
   list; with `fillet.fit` open a click on a solid adds the point to `edge_points` instead (the
-  command takes a point near each edge). The selection tools still pick meshes only.
+  command takes a point near each edge), and the viewport numbers the points picked
+  (`Viewport::setMarkedPoints`, fed by `ParamForm::pointsChanged`). The selection tools still pick
+  meshes only.
 - A path field's browse button filters on the parameter's `x-file-types` and opens a Save dialog
   when the command writes files, an Open dialog otherwise (ADR-031).
 - The log panel shows every command that changes the document or writes a file (with the path),

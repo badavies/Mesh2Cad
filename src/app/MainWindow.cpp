@@ -294,6 +294,7 @@ void MainWindow::buildDocks() {
     form_ = new ParamForm;
     connect(form_, &ParamForm::runRequested, this, &MainWindow::runForm);
     connect(form_, &ParamForm::objectChosen, this, &MainWindow::chooseObject);
+    connect(form_, &ParamForm::pointsChanged, viewport_, &Viewport::setMarkedPoints);
     auto* scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setWidget(form_);
