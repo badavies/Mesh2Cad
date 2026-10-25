@@ -36,6 +36,23 @@ to it are additive within 1.x.
   smoothing.
 - In the app, a left drag that starts off the mesh orbits in Crease and Measure, as it already
   did in Brush.
+- Tool forms list the objects and required values first and fold the tuning parameters with
+  defaults under **Advanced**. Booleans are check boxes, numbers with a default spin boxes within
+  the schema's limits, `mesh.segment`'s `kinds` a box for each kind, and **Reset to defaults**
+  puts every setting back. `fillet.fit`'s edge points are counted, numbered in the viewport and
+  taken back one at a time with **Undo last**.
+- The Workflow panel covers the whole pipeline in four tracks (prepare and align, organic
+  surfacing, prismatic parts and features, verify and export) and shows the current object's
+  stage gate: whether a mesh is closed, manifold and one shell, a solid valid and closed, or a
+  deviation within tolerance, and what to do if not. The Tools menu groups commands by task
+  with titles, the command's name beside each.
+- Right-clicking an object offers the tools for its kind with the object filled in, and **Change
+  and run ... again** reopens the command that made it with its parameters. A double-click in
+  History undoes or redoes to that step.
+- An Inspector panel shows Info and read-only results as rows instead of JSON in the Log, with
+  problems highlighted. Clicking a deviation hotspot or a shell looks at it; shells can be
+  selected, kept or split from there, and **Select hotspots** makes each hotspot a selection. A
+  Shell tool (key 6) selects the connected part under a click.
 - Optional 3Dconnexion SpaceMouse navigation in the app on Windows, through the 3DxWare SDK you
   install yourself (`-DMESH2CAD_SPACEMOUSE=ON`, off by default). The SDK's licence is not
   GPL-compatible, so such a build is for your own machine; installers never include it (ADR-039).

@@ -4,15 +4,21 @@
 
 #include <QAction>
 #include <QApplication>
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QElapsedTimer>
+#include <QFormLayout>
 #include <QHeaderView>
+#include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMouseEvent>
 #include <QPlainTextEdit>
 #include <QPushButton>
+#include <QSpinBox>
 #include <QStringList>
 #include <QSurfaceFormat>
 #include <QTextBrowser>
@@ -44,10 +50,13 @@
 
 #include "Camera.h"
 #include "Engine.h"
+#include "InspectorPanel.h"
 #include "MainWindow.h"
 #include "ParamForm.h"
 #include "TestMeshes.h"
+#include "ToolCatalog.h"
 #include "Viewport.h"
+#include "WorkflowPanel.h"
 
 using namespace m2c;
 using namespace m2c::app;
@@ -255,7 +264,7 @@ TEST_CASE("The desktop app selects, measures and serves agents", "[app]") {
     SECTION("crease and measure orbit when dragged off the mesh, as the brush does") {
         const QPointF corner(20, 20); // the sphere fills the middle of the view only
         REQUIRE_FALSE(view->pickObject(corner).has_value());
-        for (const Mode mode : {Mode::Crease, Mode::Measure, Mode::Brush}) {
+        for (const Mode mode : {Mode::Crease, Mode::Shell, Mode::Measure, Mode::Brush}) {
             view->setMode(mode);
             const Mat4d before = view->viewProjection();
             drag(view, {corner, corner + QPointF(40, 0), corner + QPointF(80, 10)});
@@ -494,16 +503,19 @@ TEST_CASE("The viewport draws solids, cages and deviation colours", "[app][surfa
     const ObjectId deviation =
         run("deviation.compute", {{"id", mesh}, {"reference_id", solid}, {"tolerance_mm", 0.5}});
 
-    // Info on the deviation logs its statistics, not an error.
-    auto* log = window.findChild<QPlainTextEdit*>();
-    REQUIRE(log != nullptr);
+    // Info on the deviation shows its statistics in the Inspector, not an error.
+    auto* inspector = window.findChild<InspectorPanel*>();
+    REQUIRE(inspector != nullptr);
     QStringList lines;
-    QObject::connect(&engine, &Engine::logLine, log, [&lines](const QString& line, bool failed) {
-        if (failed) lines << line;
-    });
+    QObject::connect(
+        &engine, &Engine::logLine, inspector, [&lines](const QString& line, bool failed) {
+            if (failed) lines << line;
+        });
     window.showInfo(deviation);
-    REQUIRE(waitFor([&] { return log->toPlainText().contains("\"stats\""); }));
-    CHECK(log->toPlainText().contains("\"rms_mm\""));
+    REQUIRE(waitFor([&] { return inspector->command() == "deviation.info"; }));
+    CHECK(inspector->result()["stats"].contains("rms_mm"));
+    CHECK(inspector->tree()->findItems("Rms (mm)", Qt::MatchExactly | Qt::MatchRecursive).size() ==
+          1);
     CHECK(lines.isEmpty());
 
     Viewport* view = window.viewport();
@@ -596,7 +608,7 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
             ++groups;
         }
     }
-    CHECK(groups > 10);
+    CHECK(groups == static_cast<int>(toolGroups().size())); // by task, not by prefix
     std::set<ObjectId> listed;
     for (QTreeWidgetItemIterator it(tree); *it != nullptr; ++it) {
         const auto id = (*it)->data(0, Qt::UserRole + 1).value<ObjectId>();
@@ -652,7 +664,7 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
     // primitive.solid offers only primitives, the fitted cylinder first; choosing one selects it.
     QAction* tool = nullptr;
     for (QAction* a : window.findChildren<QAction*>()) {
-        if (a->text() == "primitive.solid") tool = a;
+        if (a->objectName() == "primitive.solid") tool = a;
     }
     REQUIRE(tool != nullptr);
     tool->trigger();
@@ -671,7 +683,7 @@ TEST_CASE("The viewport draws fitted primitives", "[app][fit]") {
 
     // solid.extrude offers the sketch, and follows the document: a deleted sketch goes.
     for (QAction* a : window.findChildren<QAction*>()) {
-        if (a->text() == "solid.extrude") a->trigger();
+        if (a->objectName() == "solid.extrude") a->trigger();
     }
     id = form->findChild<QComboBox*>("id");
     REQUIRE(id != nullptr);
@@ -1011,7 +1023,7 @@ TEST_CASE("Selecting rows in the Objects list fills the open form", "[app][fit]"
     };
     const auto open = [&](const char* tool) {
         for (QAction* a : window.findChildren<QAction*>()) {
-            if (a->text() == tool) a->trigger();
+            if (a->objectName() == tool) a->trigger();
         }
         return window.findChild<ParamForm*>();
     };
@@ -1119,7 +1131,7 @@ TEST_CASE("Clicks pick solids and primitives, and mark fillet edges", "[app][fit
 
     // With fillet.fit open, two clicks on the solid are two edge points; Clear empties them.
     for (QAction* a : window.findChildren<QAction*>()) {
-        if (a->text() == "fillet.fit") a->trigger();
+        if (a->objectName() == "fillet.fit") a->trigger();
     }
     auto* form = window.findChild<ParamForm*>();
     REQUIRE(form != nullptr);
@@ -1140,7 +1152,7 @@ TEST_CASE("Clicks pick solids and primitives, and mark fillet edges", "[app][fit
 
     // With another tool open, a click on a primitive selects its row.
     for (QAction* action : window.findChildren<QAction*>()) {
-        if (action->text() == "solid.info") action->trigger();
+        if (action->objectName() == "solid.info") action->trigger();
     }
     run("object.show", {{"id", box}, {"visible", false}});
     run("object.show", {{"id", primitives[2]}, {"visible", true}});
@@ -1181,12 +1193,20 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     REQUIRE(params.has_value());
     CHECK(*params == Json{{"id", 7}}); // empty fields are left to the command's defaults
 
+    // A boolean is a check box at its default, sent only when changed from it.
+    auto* borders = form.findChild<QCheckBox*>("preserve_borders");
+    REQUIRE(borders != nullptr);
+    CHECK(borders->isChecked()); // default true
     form.findChild<QLineEdit*>("target_ratio")->setText("0.25");
-    form.findChild<QComboBox*>("preserve_borders")->setCurrentIndex(2); // "No"
+    borders->setChecked(false);
     params = form.params();
     REQUIRE(params.has_value());
     CHECK((*params)["target_ratio"] == 0.25);
     CHECK((*params)["preserve_borders"] == false);
+    // A typed number is held to the schema's limits (target_ratio is at most 1).
+    form.findChild<QLineEdit*>("target_ratio")->setText("2");
+    CHECK_FALSE(form.params().has_value());
+    form.findChild<QLineEdit*>("target_ratio")->clear();
 
     form.findChild<QLineEdit*>("target_faces")->setText("many");
     CHECK_FALSE(form.params().has_value());
@@ -1265,6 +1285,81 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     CHECK(Json::parse(flat->text().toStdString()).size() == 2);
     form.findChild<QToolButton*>("clear")->click();
     CHECK(flat->text().isEmpty());
+
+    // Fields come in the order a person fills them, with the tuning parameters that have
+    // defaults under Advanced, closed until opened; Reset puts them back and keeps the objects.
+    form.setCommand(registry.find("surface.build"), {{"id", 9}, {"mesh_id", 7}});
+    const auto order = [&] {
+        QStringList names;
+        for (const auto* layout : form.findChildren<QFormLayout*>()) {
+            for (int i = 0; i < layout->rowCount(); ++i) {
+                if (const auto* item = layout->itemAt(i, QFormLayout::FieldRole))
+                    names << item->widget()->objectName();
+            }
+        }
+        return names;
+    };
+    const QStringList names = order();
+    REQUIRE(names.size() >= 4);
+    CHECK(names.mid(0, 2) == QStringList{"id", "mesh_id"});
+    auto* advanced = form.findChild<QToolButton*>("advanced");
+    REQUIRE(advanced != nullptr);
+    CHECK(advanced->text().startsWith("Advanced"));
+    CHECK_FALSE(advanced->isChecked());
+    CHECK(form.findChild<QSpinBox*>("fairing")->value() == 5); // the default
+    // Values passed in that differ from the defaults open Advanced.
+    form.setCommand(registry.find("surface.build"), {{"fairing", 2}});
+    CHECK(form.findChild<QToolButton*>("advanced")->isChecked());
+    CHECK(form.findChild<QSpinBox*>("fairing")->value() == 2);
+    // Numbers with defaults are spin boxes, shown as typed and sent only when changed.
+    form.setCommand(registry.find("mesh.smooth"), {{"id", 7}});
+    auto* iterations = form.findChild<QSpinBox*>("iterations");
+    auto* strength = form.findChild<QDoubleSpinBox*>("strength");
+    REQUIRE(iterations != nullptr);
+    REQUIRE(strength != nullptr);
+    CHECK(strength->text() == "0.5");
+    CHECK(*form.params() == Json{{"id", 7}});
+    iterations->setValue(25);
+    strength->setValue(0.25);
+    form.findChild<QCheckBox*>("preserve_sharp_edges")->setChecked(true);
+    CHECK(*form.params() ==
+          Json{{"id", 7}, {"iterations", 25}, {"strength", 0.25}, {"preserve_sharp_edges", true}});
+    form.findChild<QPushButton*>("reset")->click();
+    CHECK(*form.params() == Json{{"id", 7}});
+
+    // A list of options is a box for each, checked as the default.
+    form.setCommand(registry.find("mesh.segment"), {{"id", 7}});
+    auto* kinds = form.findChild<QWidget*>("kinds");
+    REQUIRE(kinds != nullptr);
+    auto* sphere = kinds->findChild<QCheckBox*>("sphere");
+    REQUIRE(sphere != nullptr);
+    CHECK(kinds->findChild<QCheckBox*>("plane")->isChecked());
+    CHECK_FALSE(sphere->isChecked());
+    CHECK_FALSE(form.params()->contains("kinds"));
+    sphere->setChecked(true);
+    CHECK(form.params()->at("kinds") == Json::array({"plane", "cylinder", "sphere"}));
+    for (auto* box : kinds->findChildren<QCheckBox*>()) box->setChecked(false);
+    CHECK_FALSE(form.params().has_value()); // at least one kind
+
+    // A list of points counts them; Undo last takes the newest off, and the viewport is told.
+    form.setCommand(registry.find("fillet.fit"));
+    std::vector<Vec3d> marked;
+    QObject::connect(
+        &form, &ParamForm::pointsChanged, [&](const std::vector<Vec3d>& p) { marked = p; });
+    REQUIRE(form.appendPoint("edge_points", {1, 2, 3}));
+    REQUIRE(form.appendPoint("edge_points", {4, 5, 6}));
+    CHECK(form.findChild<QLabel*>("count")->text() == "2 points");
+    CHECK(marked.size() == 2);
+    form.findChild<QToolButton*>("undoPoint")->click();
+    CHECK(form.findChild<QLabel*>("count")->text() == "1 point");
+    CHECK(Json::parse(form.findChild<QLineEdit*>("edge_points")->text().toStdString()) ==
+          Json::parse("[[1,2,3]]"));
+    REQUIRE(marked.size() == 1);
+    CHECK(marked[0].z == 3.0);
+    form.findChild<QPushButton*>("reset")->click(); // picked points are not settings
+    CHECK(form.findChild<QLabel*>("count")->text() == "1 point");
+    form.setCommand(registry.find("mesh.info"));
+    CHECK(marked.empty());
 
     // An optional object field starts at None and is left out.
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});
@@ -1372,6 +1467,274 @@ TEST_CASE("The camera follows a 3D mouse's camera-to-world transform", "[app]") 
         CHECK(c.pitchDeg == 89.9);
         CHECK(close(c.eye(), {.x = 0, .y = 0, .z = 100}));
     }
+}
+
+TEST_CASE("The workflow lists every track and shows the stage gate", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto ball = dir.path() / "ball.stl";
+    const auto cap = dir.path() / "cap.stl";
+    REQUIRE(writeMesh(makeSphere(10.0, 3), ball).has_value());
+    REQUIRE(writeMesh(makeCap(10.0, 1.0, 6), cap).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    auto* workflow = window.findChild<WorkflowPanel*>();
+    REQUIRE(workflow != nullptr);
+    CHECK(workflow->gateText().startsWith("Import a scan"));
+
+    // Every track's steps are there, past M1: surfacing, prismatic tools, deviation and export.
+    for (const char* step : {"holes.fill",
+                             "align.symmetry",
+                             "quad.remesh",
+                             "surface.build",
+                             "mesh.segment",
+                             "primitive.trim",
+                             "solid.boolean",
+                             "fillet.fit",
+                             "deviation.compute",
+                             "solid.export"}) {
+        INFO(step);
+        CHECK(workflow->findChild<QPushButton*>(step) != nullptr);
+    }
+    workflow->findChild<QPushButton*>("surface.build")->click();
+    CHECK(window.findChild<ParamForm*>()->command()->name == "surface.build");
+
+    // A closed sphere passes the repair gate; an open cap does not, and says why. The check runs
+    // in the background, without a busy cursor or a log line.
+    QStringList log;
+    QObject::connect(&engine, &Engine::logLine, [&](const QString& line, bool) { log << line; });
+    window.openFiles({QString::fromStdString(ball.string())});
+    REQUIRE(waitFor([&] { return workflow->gateText().contains("closed, manifold"); }));
+    CHECK(workflow->gatePassed());
+    window.openFiles({QString::fromStdString(cap.string())});
+    REQUIRE(waitFor([&] { return workflow->gateText().contains("not ready"); }));
+    CHECK_FALSE(workflow->gatePassed());
+    CHECK(workflow->gateText().contains("open edges around holes: Fill holes"));
+    REQUIRE(waitFor([&] { return !engine.busy(); }));
+    CHECK_FALSE(std::ranges::any_of(log, [](const QString& l) {
+        return l.contains("mesh.info") || l.contains("shells.detect");
+    }));
+
+    // The Tools menu groups commands by task and titles them, with the command's name beside.
+    QMenu* tools = nullptr;
+    for (QAction* a : window.menuBar()->actions()) {
+        if (a->text() == "&Tools") tools = a->menu();
+    }
+    REQUIRE(tools != nullptr);
+    QStringList groups;
+    for (QAction* a : tools->actions()) {
+        if (a->isVisible()) groups << a->text();
+    }
+    CHECK(groups.contains("Mesh cleanup"));
+    CHECK(groups.contains("Surfacing"));
+    CHECK_FALSE(groups.contains("Holes")); // no one-item groups by prefix
+    QAction* fill = nullptr;
+    for (QAction* a : window.findChildren<QAction*>()) {
+        if (a->objectName() == "holes.fill") fill = a;
+    }
+    REQUIRE(fill != nullptr);
+    CHECK(fill->text() == QStringLiteral("Fill holes…\tholes.fill"));
+}
+
+TEST_CASE("Object menus offer the tools for their kind, and History jumps to a step", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto ball = dir.path() / "ball.stl";
+    REQUIRE(writeMesh(makeSphere(10.0, 3), ball).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(ball.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    const auto run = [&](const char* command, const Json& params) {
+        Json out;
+        bool done = false;
+        engine.run(command, params, [&](const Result<Json>& r) {
+            if (r) out = *r;
+            done = true;
+        });
+        REQUIRE(waitFor([&] { return done && !engine.busy(); }, 120000));
+        return out;
+    };
+    const auto layout =
+        run("quad.remesh", {{"id", mesh}, {"target_faces", 300}})["id"].get<ObjectId>();
+    auto* form = window.findChild<ParamForm*>();
+    const auto menuFor = [&](ObjectId id) {
+        auto menu = std::make_unique<QMenu>();
+        window.fillObjectMenu(*menu, id);
+        return menu;
+    };
+    const auto action = [](const QMenu& menu, const char* name) -> QAction* {
+        for (QAction* a : menu.actions()) {
+            if (a->objectName() == name) return a;
+        }
+        return nullptr;
+    };
+
+    // A mesh offers its tools; a quad layout Build surface, with the layout filled in.
+    auto meshMenu = menuFor(mesh);
+    CHECK(action(*meshMenu, "holes.fill") != nullptr);
+    CHECK(action(*meshMenu, "sketch.section") != nullptr);
+    CHECK(action(*meshMenu, "surface.build") == nullptr);
+    auto layoutMenu = menuFor(layout);
+    QAction* build = action(*layoutMenu, "surface.build");
+    REQUIRE(build != nullptr);
+    CHECK(build->text() == QStringLiteral("Build surface…"));
+    build->trigger();
+    REQUIRE(form->command() != nullptr);
+    CHECK(form->command()->name == "surface.build");
+    CHECK(form->findChild<QComboBox*>("id")->currentData().value<ObjectId>() == layout);
+
+    // The layout was made by quad.remesh: its menu opens that form with the same parameters.
+    QAction* rerun = action(*layoutMenu, "rerun");
+    REQUIRE(rerun != nullptr);
+    CHECK(rerun->text() == QStringLiteral("Change and run Quad remesh again…"));
+    rerun->trigger();
+    CHECK(form->command()->name == "quad.remesh");
+    CHECK(form->findChild<QSpinBox*>("target_faces")->value() == 300);
+    CHECK(form->findChild<QComboBox*>("id")->currentData().value<ObjectId>() == mesh);
+    CHECK(form->findChild<QToolButton*>("advanced")->isChecked()); // target_faces is changed
+
+    // History: a first row for the start, then each step; a double-click undoes or redoes to it.
+    run("mesh.smooth", {{"id", mesh}});
+    run("mesh.flip", {{"id", mesh}});
+    auto* history = window.findChild<QListWidget*>();
+    REQUIRE(history != nullptr);
+    const std::size_t steps = engine.snapshot()->undo.size();
+    REQUIRE(history->count() == static_cast<int>(steps) + 1);
+    CHECK(history->item(0)->text() == "(start)");
+    emit history->itemActivated(history->item(static_cast<int>(steps) - 2)); // two back
+    REQUIRE(waitFor([&] { return !engine.busy() && engine.snapshot()->redo.size() == 2; }));
+    CHECK(engine.snapshot()->undo.size() == steps - 2);
+    CHECK(engine.snapshot()->redo.front().label == "mesh.smooth");
+    REQUIRE(history->count() == static_cast<int>(steps) + 1);
+    emit history->itemActivated(history->item(history->count() - 1)); // redo both
+    REQUIRE(waitFor([&] { return !engine.busy() && engine.snapshot()->redo.empty(); }));
+    CHECK(engine.snapshot()->undo.size() == steps);
+    emit history->itemActivated(history->item(0)); // back to the start
+    REQUIRE(waitFor([&] { return !engine.busy() && engine.snapshot()->undo.empty(); }));
+    CHECK(countKind(*engine.snapshot(), "mesh") == 0);
+}
+
+TEST_CASE("The Inspector lists shells and hotspots, and the Shell tool picks a part", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    // Two balls in one mesh, the second smaller and off to the side; and a bumpy ball.
+    const TriMesh big = makeSphere(10.0, 3);
+    const TriMesh small = makeSphere(5.0, 3, {.x = 40.0, .y = 0.0, .z = 0.0});
+    std::vector<Vec3d> positions = big.positions();
+    positions.insert(positions.end(), small.positions().begin(), small.positions().end());
+    std::vector<std::uint32_t> indices = big.indices();
+    for (const std::uint32_t i : small.indices())
+        indices.push_back(i + static_cast<std::uint32_t>(big.positions().size()));
+    const auto pair = dir.path() / "pair.stl";
+    const auto bumpy = dir.path() / "bumpy.stl";
+    REQUIRE(writeMesh(makeMesh(std::move(positions), std::move(indices)), pair).has_value());
+    REQUIRE(writeMesh(makeBumpySphere(10.0, 30, 60), bumpy).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(pair.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    auto* inspector = window.findChild<InspectorPanel*>();
+    REQUIRE(inspector != nullptr);
+    Viewport* view = window.viewport();
+
+    // List shells, from the Workflow, runs into the Inspector: a row per shell, the main one
+    // marked, each with a box to check.
+    window.findChild<QPushButton*>("shells.detect")->click();
+    window.findChild<ParamForm*>()->runRequested();
+    REQUIRE(waitFor([&] { return !engine.busy() && inspector->command() == "shells.detect"; }));
+    const auto shellRows =
+        inspector->tree()->findItems("Shell ", Qt::MatchStartsWith | Qt::MatchRecursive);
+    REQUIRE(shellRows.size() == 2);
+    CHECK(shellRows[0]->text(0) == "Shell 0 (main)");
+    CHECK(shellRows[1]->text(0) == "Shell 1");
+    CHECK(shellRows[1]->text(1).startsWith("Area (mm²)"));
+
+    // Clicking a shell looks at it: the small ball fills the view, so the centre is on it.
+    view->fitAll();
+    emit inspector->tree()->itemClicked(shellRows[1], 0);
+    view->setMode(Mode::Shell);
+    const QPointF c(view->width() / 2.0, view->height() / 2.0);
+    drag(view, {c});
+    REQUIRE(
+        waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "selection") == 1; }));
+    CHECK(engine.snapshot()->undo.back().label == "select.shell");
+    const auto selected = [&] {
+        for (const auto& o : engine.snapshot()->objects) {
+            if (o.selection() != nullptr) return o.selection()->faces->count();
+        }
+        return std::size_t{0};
+    };
+    CHECK(selected() == small.faceCount());
+
+    // Checked shells become one selection; Keep main deletes the rest and lists them again.
+    auto* selectShells = inspector->findChild<QPushButton*>("selectShells");
+    REQUIRE(selectShells != nullptr);
+    CHECK_FALSE(selectShells->isEnabled());
+    shellRows[0]->setCheckState(0, Qt::Checked);
+    CHECK(selectShells->isEnabled());
+    CHECK(inspector->checkedShells() == std::vector<int>{0});
+    selectShells->click();
+    REQUIRE(
+        waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "selection") == 2; }));
+    CHECK(selected() == big.faceCount());
+    inspector->findChild<QPushButton*>("keepMain")->click();
+    REQUIRE(waitFor([&] {
+        return !engine.busy() && inspector->result().value("shells", Json::array()).size() == 1;
+    }));
+    CHECK(engine.snapshot()->find(mesh)->mesh()->mesh->faceCount() == big.faceCount());
+
+    // A deviation picked in the Objects list shows its hotspots; each looks at its patch, and
+    // Select hotspots measures again, making each a selection.
+    window.openFiles({QString::fromStdString(bumpy.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 2; }));
+    const ObjectId scan = engine.snapshot()->objects.back().id;
+    bool done = false;
+    engine.run("deviation.compute",
+               {{"id", scan}, {"reference_id", mesh}, {"tolerance_mm", 0.05}},
+               [&](const Result<Json>&) { done = true; });
+    REQUIRE(waitFor([&] { return done && !engine.busy(); }));
+    auto* objects = window.findChild<QTreeWidget*>();
+    for (QTreeWidgetItemIterator it(objects); *it != nullptr; ++it) {
+        if ((*it)->text(0).endsWith("(deviation)")) objects->setCurrentItem(*it);
+    }
+    REQUIRE(waitFor([&] { return !engine.busy() && inspector->command() == "deviation.info"; }));
+    const auto hotspots =
+        inspector->tree()->findItems("Hotspot ", Qt::MatchStartsWith | Qt::MatchRecursive);
+    REQUIRE_FALSE(hotspots.empty());
+    const Mat4d before = view->viewProjection();
+    emit inspector->tree()->itemClicked(hotspots.front(), 0);
+    CHECK(view->viewProjection().m != before.m);
+    const std::size_t selections = countKind(*engine.snapshot(), "selection");
+    auto* selectHotspots = inspector->findChild<QPushButton*>("selectHotspots");
+    REQUIRE(selectHotspots->isVisibleTo(inspector));
+    selectHotspots->click();
+    REQUIRE(waitFor([&] {
+        return !engine.busy() && countKind(*engine.snapshot(), "deviation") == 2 &&
+               inspector->command() == "deviation.info";
+    }));
+    CHECK(countKind(*engine.snapshot(), "selection") ==
+          selections + static_cast<std::size_t>(hotspots.size()));
 }
 
 TEST_CASE("Help opens the user guide and follows its links", "[app]") {

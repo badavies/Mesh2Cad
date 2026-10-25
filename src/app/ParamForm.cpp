@@ -1,16 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ParamForm.h"
 
+#include <QCheckBox>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
 #include <QFont>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QPoint>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSignalBlocker>
+#include <QSpinBox>
 #include <QString>
 #include <QStringList>
 #include <QToolButton>
@@ -20,6 +25,9 @@
 #include <QWidget>
 #include <Qt>
 #include <algorithm>
+#include <cmath>
+#include <expected>
+#include <limits>
 #include <memory>
 #include <ranges>
 #include <string>
@@ -84,6 +92,45 @@ QString example(const Json& items) {
     return QString::fromStdString(Json::array({item}).dump());
 }
 
+/// A tuning parameter: optional, with a default, and not objects (an object, a list of them, or
+/// a list of items made of them such as surface.build's flat areas).
+bool isAdvanced(const Json& prop) {
+    if (!prop.contains("default") || prop.contains("x-object")) return false;
+    const Json items = prop.value("items", Json::object());
+    return !items.contains("x-object") &&
+           !std::ranges::any_of(items.value("properties", Json::object()),
+                                [](const Json& p) { return p.contains("x-object"); });
+}
+
+/// The range a number may take, from the schema's minimum and maximum (exclusive ones a step
+/// inside); unbounded sides are as large as a spin box holds.
+std::pair<double, double> limits(const Json& prop, const bool integer) {
+    const double step = integer ? 1.0 : 1e-6;
+    double low = integer ? std::numeric_limits<int>::min() : -1e9;
+    double high = integer ? std::numeric_limits<int>::max() : 1e9;
+    if (prop.contains("minimum")) low = prop["minimum"].get<double>();
+    if (prop.contains("exclusiveMinimum")) low = prop["exclusiveMinimum"].get<double>() + step;
+    if (prop.contains("maximum")) high = prop["maximum"].get<double>();
+    if (prop.contains("exclusiveMaximum")) high = prop["exclusiveMaximum"].get<double>() - step;
+    return {low, high};
+}
+
+/// A spin box for millimetres and other numbers: up to six decimals, shown without trailing
+/// zeros (0.1, not 0.100000).
+class NumberBox : public QDoubleSpinBox {
+public:
+    NumberBox() {
+        setDecimals(6);
+        setStepType(AdaptiveDecimalStepType);
+        QLocale numbers = locale();
+        numbers.setNumberOptions(numbers.numberOptions() | QLocale::OmitGroupSeparator);
+        setLocale(numbers);
+    }
+    [[nodiscard]] QString textFromValue(const double value) const override {
+        return locale().toString(value, 'g', 12);
+    }
+};
+
 } // namespace
 
 ParamForm::ParamForm(QWidget* parent) : QWidget(parent) {
@@ -98,14 +145,42 @@ ParamForm::ParamForm(QWidget* parent) : QWidget(parent) {
     fieldsHost_ = new QWidget;
     fields_ = new QFormLayout(fieldsHost_);
     fields_->setContentsMargins(0, 4, 0, 4);
+    // Tuning parameters, folded away; open or closed stays as the person left it.
+    advancedToggle_ = new QToolButton;
+    advancedToggle_->setObjectName(QStringLiteral("advanced"));
+    advancedToggle_->setCheckable(true);
+    advancedToggle_->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    advancedToggle_->setArrowType(Qt::RightArrow);
+    advancedToggle_->setAutoRaise(true);
+    advancedToggle_->hide();
+    advancedHost_ = new QWidget;
+    advanced_ = new QFormLayout(advancedHost_);
+    advanced_->setContentsMargins(12, 0, 0, 4);
+    advancedHost_->hide();
+    connect(advancedToggle_, &QToolButton::toggled, this, [this](const bool open) {
+        advancedOpen_ = open;
+        advancedToggle_->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+        advancedHost_->setVisible(open);
+    });
     run_ = new QPushButton(tr("Run"));
     run_->setDefault(true);
     run_->setEnabled(false);
     connect(run_, &QPushButton::clicked, this, &ParamForm::runRequested);
+    reset_ = new QPushButton(tr("Reset to defaults"));
+    reset_->setObjectName(QStringLiteral("reset"));
+    reset_->setToolTip(
+        tr("Put every setting back to its default; the objects chosen and points picked stay"));
+    reset_->setEnabled(false);
+    connect(reset_, &QPushButton::clicked, this, &ParamForm::resetToDefaults);
+    auto* buttons = new QHBoxLayout;
+    buttons->addWidget(reset_);
+    buttons->addWidget(run_, 1);
     layout->addWidget(title_);
     layout->addWidget(summary_);
     layout->addWidget(fieldsHost_);
-    layout->addWidget(run_);
+    layout->addWidget(advancedToggle_);
+    layout->addWidget(advancedHost_);
+    layout->addLayout(buttons);
     layout->addStretch(1);
 }
 
@@ -113,164 +188,278 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
     command_ = command;
     editors_.clear();
     while (fields_->rowCount() > 0) fields_->removeRow(0);
+    while (advanced_->rowCount() > 0) advanced_->removeRow(0);
+    advancedToggle_->hide();
+    advancedHost_->hide();
+    emit pointsChanged({});
     if (command == nullptr) {
         title_->setText(tr("Choose a tool from the Tools menu or the workflow."));
         summary_->clear();
         run_->setEnabled(false);
+        reset_->setEnabled(false);
         return;
     }
     title_->setText(QString::fromStdString(command->name));
     summary_->setText(QString::fromStdString(command->summary));
     run_->setEnabled(true);
+    reset_->setEnabled(true);
 
     const Json& schema = command->paramsSchema;
     std::vector<std::string> required;
     if (schema.contains("required")) required = schema["required"].get<std::vector<std::string>>();
-    for (const Json properties = schema.value("properties", Json::object());
-         const auto& [key, prop] : properties.items()) {
+    const Json properties = schema.value("properties", Json::object());
+    // The fields a person sets first lead, the tuning parameters the command has defaults for
+    // follow under Advanced (JSON objects here keep their keys sorted, so the schema's own order
+    // is lost).
+    std::vector<std::string> keys;
+    for (const auto& [key, prop] : properties.items()) keys.push_back(key);
+    const auto rank = [&](const std::string& key) {
+        const Json& prop = properties[key];
+        const bool object = prop.contains("x-object") ||
+                            (prop.contains("items") && prop["items"].contains("x-object"));
+        const bool needed = std::ranges::find(required, key) != required.end();
+        return key == "id"        ? 0
+               : object && needed ? 1
+               : needed           ? 2
+               : object           ? 3
+               : key == "name"    ? 5
+               : isAdvanced(prop) ? 6
+                                  : 4;
+    };
+    std::ranges::stable_sort(keys, std::ranges::less{}, rank);
+    bool openAdvanced = false;
+    int advancedCount = 0;
+    for (const std::string& key : keys) {
+        const Json& prop = properties[key];
         Field field;
         field.required = std::ranges::find(required, key) != required.end();
-        const std::string type = prop.value("type", "");
+        field.advanced = !field.required && isAdvanced(prop);
+        if (prop.contains("default")) field.fallback = prop["default"];
         const QString tip = QString::fromStdString(prop.value("description", ""));
-        const bool has = values.contains(key);
-        QString placeholder;
-        if (prop.contains("default"))
-            placeholder = tr("default %1").arg(valueText(prop["default"]));
-        else if (!field.required)
-            placeholder = tr("optional");
-
-        if (type == "boolean") {
-            auto* combo = new QComboBox;
-            combo->addItem(
-                prop.contains("default")
-                    ? tr("Default (%1)").arg(prop["default"].get<bool>() ? tr("yes") : tr("no"))
-                    : tr("Default"));
-            combo->addItem(tr("Yes"));
-            combo->addItem(tr("No"));
-            if (has) combo->setCurrentIndex(values[key].get<bool>() ? 1 : 2);
-            field.type = "boolean";
-            field.editor = combo;
-            combo->setObjectName(QString::fromStdString(key));
-        } else if (prop.contains("x-object")) {
-            field.kinds = kindsOf(prop["x-object"]);
-            auto* combo = new QComboBox;
-            combo->setObjectName(QString::fromStdString(key));
-            field.type = "object";
-            field.editor = combo;
-            fillObjects(field, has ? values[key].get<ObjectId>() : 0);
-            connect(combo, &QComboBox::activated, this, [this, combo] {
-                if (const auto id = combo->currentData().value<ObjectId>(); id != 0)
-                    emit objectChosen(id);
-            });
-        } else if (type == "string" && prop.contains("enum")) {
-            auto* combo = new QComboBox;
-            combo->addItem(prop.contains("default")
-                               ? tr("Default (%1)").arg(valueText(prop["default"]))
-                               : tr("None"));
-            for (const Json& option : prop["enum"]) combo->addItem(valueText(option));
-            if (has) combo->setCurrentText(valueText(values[key]));
-            field.type = "enum";
-            field.editor = combo;
-            combo->setObjectName(QString::fromStdString(key));
-        } else {
-            auto* edit = new QLineEdit;
-            edit->setPlaceholderText(placeholder);
-            if (has) edit->setText(valueText(values[key]));
-            if (type == "integer" || type == "number" || type == "string") {
-                field.type = type;
-            } else if (type == "array" && prop.contains("items") &&
-                       prop["items"].value("type", "") == "number") {
-                field.type = "vec3";
-                if (placeholder.isEmpty()) edit->setPlaceholderText(QStringLiteral("x, y, z"));
-            } else if (type == "array" && prop.contains("items") &&
-                       prop["items"].contains("x-object")) {
-                // A list of objects by id, typed as their numbers: "12, 13, 14".
-                field.type = "ids";
-                const Json& x = prop["items"]["x-object"];
-                field.kinds = kindsOf(x);
-                const QString kind =
-                    x.is_string() && x != "any"
-                        ? QString::fromStdString(x.get<std::string>()).replace('_', ' ')
-                        : tr("object");
-                const QString hint = tr("%1 ids, e.g. 3, 4, 5").arg(kind);
-                edit->setPlaceholderText(field.required ? hint : tr("optional: %1").arg(hint));
-            } else if (type == "array" && prop.contains("items") &&
-                       prop["items"].value("type", "") == "array") {
-                // A list of points, typed as JSON or picked in the viewport, with a Clear button.
-                field.type = "points";
-                edit->setPlaceholderText(tr("click in the view, or JSON [[x, y, z], ...]"));
-                edit->setObjectName(QString::fromStdString(key));
-                auto* row = new QWidget;
-                auto* h = new QHBoxLayout(row);
-                h->setContentsMargins(0, 0, 0, 0);
-                auto* clear = new QToolButton;
-                clear->setText(tr("Clear"));
-                clear->setObjectName(QStringLiteral("clear"));
-                connect(clear, &QToolButton::clicked, edit, &QLineEdit::clear);
-                h->addWidget(edit, 1);
-                h->addWidget(clear);
-                field.editor = edit;
-                fields_->addRow(label(key) + (field.required ? " *" : ""), row);
-                row->setToolTip(tip);
-                editors_[key] = field;
-                continue;
-            } else {
-                field.type = "json";
-                if (type == "array" && prop.contains("items") &&
-                    prop["items"].contains("properties")) {
-                    // A list of objects: show one, so the shape to type is plain.
-                    edit->setPlaceholderText(tr("JSON, e.g. %1").arg(example(prop["items"])));
-                    for (const auto& [itemKey, itemProp] : prop["items"]["properties"].items()) {
-                        if (!itemProp.contains("x-object")) {
-                            field.items.clear();
-                            break;
-                        }
-                        field.items.emplace_back(itemKey, kindsOf(itemProp["x-object"]));
-                    }
-                } else if (placeholder.isEmpty() || placeholder == tr("optional")) {
-                    edit->setPlaceholderText(tr("JSON"));
-                }
-                if (!field.items.empty()) {
-                    // Every item is objects (surface.build's flat areas): build it from the rows
-                    // picked in the Objects list, with Add and Clear buttons.
-                    addItemsRow(key, field, edit, tip);
-                    continue;
-                }
-            }
-            field.editor = edit;
-            edit->setObjectName(QString::fromStdString(key));
-            if (key == "path") {
-                // A file chooser next to path fields, showing the files the command takes;
-                // commands that write files ask for a new one.
-                auto* row = new QWidget;
-                auto* h = new QHBoxLayout(row);
-                h->setContentsMargins(0, 0, 0, 0);
-                auto* browse = new QToolButton;
-                browse->setText(QStringLiteral("…"));
-                browse->setObjectName(QStringLiteral("browse"));
-                const bool saving = command->writesFiles;
-                const QString filter = fileFilter(prop);
-                browse->setProperty("saving", saving);
-                browse->setProperty("filter", filter);
-                connect(browse, &QToolButton::clicked, this, [this, edit, saving, filter] {
-                    const QString file =
-                        saving
-                            ? QFileDialog::getSaveFileName(this, tr("Save"), edit->text(), filter)
-                            : QFileDialog::getOpenFileName(this, tr("Open"), edit->text(), filter);
-                    if (!file.isEmpty()) edit->setText(file);
-                });
-                h->addWidget(edit, 1);
-                h->addWidget(browse);
-                fields_->addRow(label(key) + (field.required ? " *" : ""), row);
-                row->setToolTip(tip);
-                editors_[key] = field;
-                continue;
-            }
+        if (field.advanced) {
+            ++advancedCount;
+            if (values.contains(key) && values[key] != field.fallback) openAdvanced = true;
         }
-        field.editor->setToolTip(tip);
-        fields_->addRow(label(key) + (field.required ? " *" : ""), field.editor);
+        QWidget* row = makeEditor(key, prop, field, values);
+        row->setToolTip(tip);
+        QFormLayout* layout = field.advanced ? advanced_ : fields_;
+        layout->addRow(label(key) + (field.required ? " *" : ""), row);
         editors_[key] = field;
     }
+    if (advancedCount > 0) {
+        advancedToggle_->setText(tr("Advanced (%1)").arg(advancedCount));
+        advancedToggle_->show();
+        // Opened for values passed in that differ from the defaults, without changing what the
+        // person chose.
+        const bool open = advancedOpen_ || openAdvanced;
+        const QSignalBlocker quiet(advancedToggle_);
+        advancedToggle_->setChecked(open);
+        advancedToggle_->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
+        advancedHost_->setVisible(open);
+    }
+}
+
+QWidget*
+ParamForm::makeEditor(const std::string& key, const Json& prop, Field& field, const Json& values) {
+    const std::string type = prop.value("type", "");
+    const QString name = QString::fromStdString(key);
+    const bool has = values.contains(key);
+    const Json& start = has ? values[key] : field.fallback;
+    const Json& items = prop.value("items", Json::object());
+
+    if (type == "boolean") {
+        // Checked as the command's default; sent only when changed from it.
+        auto* box = new QCheckBox;
+        box->setObjectName(name);
+        box->setChecked(start.is_boolean() && start.get<bool>());
+        field.type = "boolean";
+        field.editor = box;
+        return box;
+    }
+    if (prop.contains("x-object")) {
+        field.kinds = kindsOf(prop["x-object"]);
+        auto* combo = new QComboBox;
+        combo->setObjectName(name);
+        field.type = "object";
+        field.editor = combo;
+        fillObjects(field, has ? values[key].get<ObjectId>() : 0);
+        connect(combo, &QComboBox::activated, this, [this, combo] {
+            if (const auto id = combo->currentData().value<ObjectId>(); id != 0)
+                emit objectChosen(id);
+        });
+        return combo;
+    }
+    if (type == "string" && prop.contains("enum")) {
+        auto* combo = new QComboBox;
+        combo->setObjectName(name);
+        combo->addItem(prop.contains("default") ? tr("Default (%1)").arg(valueText(prop["default"]))
+                                                : tr("None"));
+        for (const Json& option : prop["enum"]) combo->addItem(valueText(option));
+        if (has) combo->setCurrentText(valueText(values[key]));
+        field.type = "enum";
+        field.editor = combo;
+        return combo;
+    }
+    if (type == "array" && items.value("type", "") == "string" && items.contains("enum")) {
+        // A set of options (mesh.segment's kinds): a box for each, checked as the default.
+        auto* row = new QWidget;
+        row->setObjectName(name);
+        auto* h = new QHBoxLayout(row);
+        h->setContentsMargins(0, 0, 0, 0);
+        for (const Json& option : items["enum"]) {
+            auto* box = new QCheckBox(valueText(option));
+            box->setObjectName(QString::fromStdString(option.get<std::string>()));
+            box->setChecked(start.is_array() && std::ranges::find(start, option) != start.end());
+            h->addWidget(box);
+            field.options.emplace_back(option.get<std::string>(), box);
+        }
+        h->addStretch(1);
+        field.type = "options";
+        field.editor = row;
+        return row;
+    }
+    if ((type == "integer" || type == "number") && prop.contains("default")) {
+        // A spin box within the schema's limits, starting at the default.
+        const auto [low, high] = limits(prop, type == "integer");
+        field.minimum = low;
+        field.maximum = high;
+        if (type == "integer") {
+            auto* box = new QSpinBox;
+            box->setRange(static_cast<int>(low), static_cast<int>(high));
+            box->setValue(start.is_number() ? start.get<int>() : 0);
+            field.editor = box;
+        } else {
+            auto* box = new NumberBox;
+            box->setRange(low, high);
+            box->setValue(start.is_number() ? start.get<double>() : 0.0);
+            field.editor = box;
+        }
+        field.editor->setObjectName(name);
+        field.type = type == "integer" ? "spin" : "dspin";
+        return field.editor;
+    }
+
+    auto* edit = new QLineEdit;
+    edit->setObjectName(name);
+    field.editor = edit;
+    if (has) edit->setText(valueText(values[key]));
+    if (prop.contains("default"))
+        edit->setPlaceholderText(tr("default %1").arg(valueText(prop["default"])));
+    else if (!field.required)
+        edit->setPlaceholderText(tr("optional"));
+    if (type == "integer" || type == "number" || type == "string") {
+        field.type = type;
+        if (type != "string") {
+            // Typed, so it can stay empty for the command to choose; held to the limits.
+            const auto [low, high] = limits(prop, type == "integer");
+            field.minimum = low;
+            field.maximum = high;
+        }
+    } else if (type == "array" && items.value("type", "") == "number") {
+        field.type = "vec3";
+        if (edit->placeholderText().isEmpty()) edit->setPlaceholderText(QStringLiteral("x, y, z"));
+    } else if (type == "array" && items.contains("x-object")) {
+        // A list of objects by id, typed as their numbers: "12, 13, 14".
+        field.type = "ids";
+        const Json& x = items["x-object"];
+        field.kinds = kindsOf(x);
+        const QString kind = x.is_string() && x != "any"
+                                 ? QString::fromStdString(x.get<std::string>()).replace('_', ' ')
+                                 : tr("object");
+        const QString hint = tr("%1 ids, e.g. 3, 4, 5").arg(kind);
+        edit->setPlaceholderText(field.required ? hint : tr("optional: %1").arg(hint));
+    } else if (type == "array" && items.value("type", "") == "array" &&
+               items.value("items", Json::object()).value("type", "") == "number") {
+        // A list of points, picked in the viewport or typed as JSON.
+        field.type = "points";
+        return pointsRow(edit);
+    } else {
+        field.type = "json";
+        if (type == "array" && items.contains("properties")) {
+            // A list of objects: show one, so the shape to type is plain.
+            edit->setPlaceholderText(tr("JSON, e.g. %1").arg(example(items)));
+            for (const auto& [itemKey, itemProp] : items["properties"].items()) {
+                if (!itemProp.contains("x-object")) {
+                    field.items.clear();
+                    break;
+                }
+                field.items.emplace_back(itemKey, kindsOf(itemProp["x-object"]));
+            }
+        } else if (!prop.contains("default")) {
+            edit->setPlaceholderText(tr("JSON"));
+        }
+        // Every item is objects (surface.build's flat areas): build it from the rows picked in
+        // the Objects list, with Add and Clear buttons.
+        if (!field.items.empty()) return itemsRow(key, field, edit);
+    }
+    if (key == "path") return pathRow(prop, edit);
+    return edit;
+}
+
+QWidget* ParamForm::pointsRow(QLineEdit* edit) {
+    edit->setPlaceholderText(tr("click in the view, or JSON [[x, y, z], ...]"));
+    auto* row = new QWidget;
+    auto* h = new QHBoxLayout(row);
+    h->setContentsMargins(0, 0, 0, 0);
+    auto* count = new QLabel;
+    count->setObjectName(QStringLiteral("count"));
+    auto* undo = new QToolButton;
+    undo->setText(tr("Undo last"));
+    undo->setObjectName(QStringLiteral("undoPoint"));
+    auto* clear = new QToolButton;
+    clear->setText(tr("Clear"));
+    clear->setObjectName(QStringLiteral("clear"));
+    connect(clear, &QToolButton::clicked, edit, &QLineEdit::clear);
+    connect(undo, &QToolButton::clicked, edit, [edit] {
+        Json list = Json::parse(edit->text().toStdString(), nullptr, false);
+        if (!list.is_array() || list.empty()) return;
+        list.erase(list.end() - 1);
+        edit->setText(list.empty() ? QString() : QString::fromStdString(list.dump()));
+    });
+    // The count, and the markers in the viewport, follow the list as it is picked or typed.
+    const auto changed = [this, edit, count, undo] {
+        std::vector<Vec3d> points;
+        const Json list = Json::parse(edit->text().toStdString(), nullptr, false);
+        for (const Json& p : list.is_array() ? list : Json::array()) {
+            if (p.is_array() && p.size() == 3 &&
+                std::ranges::all_of(p, [](const Json& x) { return x.is_number(); }))
+                points.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
+        }
+        count->setText(points.size() == 1 ? tr("1 point") : tr("%1 points").arg(points.size()));
+        undo->setEnabled(!points.empty());
+        emit pointsChanged(points);
+    };
+    connect(edit, &QLineEdit::textChanged, this, changed);
+    changed();
+    h->addWidget(edit, 1);
+    h->addWidget(count);
+    h->addWidget(undo);
+    h->addWidget(clear);
+    return row;
+}
+
+QWidget* ParamForm::pathRow(const Json& prop, QLineEdit* edit) {
+    // A file chooser next to path fields, showing the files the command takes; commands that
+    // write files ask for a new one.
+    auto* row = new QWidget;
+    auto* h = new QHBoxLayout(row);
+    h->setContentsMargins(0, 0, 0, 0);
+    auto* browse = new QToolButton;
+    browse->setText(QStringLiteral("…"));
+    browse->setObjectName(QStringLiteral("browse"));
+    const bool saving = command_->writesFiles;
+    const QString filter = fileFilter(prop);
+    browse->setProperty("saving", saving);
+    browse->setProperty("filter", filter);
+    connect(browse, &QToolButton::clicked, this, [this, edit, saving, filter] {
+        const QString file =
+            saving ? QFileDialog::getSaveFileName(this, tr("Save"), edit->text(), filter)
+                   : QFileDialog::getOpenFileName(this, tr("Open"), edit->text(), filter);
+        if (!file.isEmpty()) edit->setText(file);
+    });
+    h->addWidget(edit, 1);
+    h->addWidget(browse);
+    return row;
 }
 
 void ParamForm::setObjects(std::shared_ptr<const DocSnapshot> snapshot) {
@@ -327,10 +516,7 @@ void ParamForm::setSelectedObjects(const std::vector<ObjectId>& ids) {
     }
 }
 
-void ParamForm::addItemsRow(const std::string& key,
-                            Field& field,
-                            QLineEdit* edit,
-                            const QString& tip) {
+QWidget* ParamForm::itemsRow(const std::string& key, const Field& field, QLineEdit* edit) {
     QStringList names;
     for (const auto& kinds : std::views::values(field.items)) {
         QStringList either;
@@ -343,8 +529,6 @@ void ParamForm::addItemsRow(const std::string& key,
     // Keeps the example typed JSON shows.
     edit->setPlaceholderText(
         tr("Pick %1, then Add; or %2").arg(names.join(tr(" and ")), edit->placeholderText()));
-    edit->setObjectName(QString::fromStdString(key));
-    edit->setToolTip(tip);
     auto* row = new QWidget;
     auto* h = new QHBoxLayout(row);
     h->setContentsMargins(0, 0, 0, 0);
@@ -363,9 +547,25 @@ void ParamForm::addItemsRow(const std::string& key,
     h->addWidget(edit, 1);
     h->addWidget(add);
     h->addWidget(clear);
-    field.editor = edit;
-    fields_->addRow(label(key) + (field.required ? " *" : ""), row);
-    editors_[key] = field;
+    return row;
+}
+
+void ParamForm::resetToDefaults() {
+    if (command_ == nullptr) return;
+    // Every setting goes back to its default; the objects chosen and points picked stay.
+    Json keep = Json::object();
+    for (const auto& [key, field] : editors_) {
+        if (field.type == "object") {
+            if (const auto id =
+                    static_cast<QComboBox*>(field.editor)->currentData().value<ObjectId>();
+                id != 0)
+                keep[key] = id;
+        } else if (field.type == "ids" || field.type == "points") {
+            if (const QString text = static_cast<QLineEdit*>(field.editor)->text(); !text.isEmpty())
+                keep[key] = text.toStdString();
+        }
+    }
+    setCommand(command_, keep);
 }
 
 bool ParamForm::addPicked(const std::string& key) {
@@ -454,9 +654,32 @@ Result<Json> ParamForm::params() const {
         const auto bad = [&key](const QString& why) {
             return fail(ErrorCode::InvalidArgument, (label(key) + ": " + why).toStdString());
         };
+        // Settings at the command's default are left out, so its own default applies.
+        const auto put = [&](const Json& v) {
+            if (v != field.fallback) out[key] = v;
+        };
         if (field.type == "boolean") {
-            if (const int index = static_cast<QComboBox*>(field.editor)->currentIndex(); index > 0)
-                out[key] = index == 1;
+            put(static_cast<QCheckBox*>(field.editor)->isChecked());
+            continue;
+        }
+        if (field.type == "spin") {
+            put(static_cast<QSpinBox*>(field.editor)->value());
+            continue;
+        }
+        if (field.type == "dspin") {
+            const double v = static_cast<QDoubleSpinBox*>(field.editor)->value();
+            if (!field.fallback.is_number() ||
+                std::abs(v - field.fallback.get<double>()) > 1e-9 * std::max(1.0, std::abs(v)))
+                out[key] = v;
+            continue;
+        }
+        if (field.type == "options") {
+            Json chosen = Json::array();
+            for (const auto& [option, box] : field.options) {
+                if (box->isChecked()) chosen.push_back(option);
+            }
+            if (chosen.empty()) return bad(tr("choose at least one"));
+            put(chosen);
             continue;
         }
         if (field.type == "object") {
@@ -481,13 +704,20 @@ Result<Json> ParamForm::params() const {
             continue;
         }
         bool ok = false;
+        const auto inRange = [&](const double v) -> Result<void> {
+            if (v < field.minimum) return bad(tr("at least %1").arg(field.minimum));
+            if (v > field.maximum) return bad(tr("at most %1").arg(field.maximum));
+            return {};
+        };
         if (field.type == "integer") {
             const long long v = text.toLongLong(&ok);
             if (!ok) return bad(tr("expected a whole number"));
+            if (auto in = inRange(static_cast<double>(v)); !in) return std::unexpected(in.error());
             out[key] = v;
         } else if (field.type == "number") {
             const double v = text.toDouble(&ok);
             if (!ok) return bad(tr("expected a number"));
+            if (auto in = inRange(v); !in) return std::unexpected(in.error());
             out[key] = v;
         } else if (field.type == "string") {
             out[key] = text.toStdString();
@@ -520,6 +750,7 @@ Result<Json> ParamForm::params() const {
 
 void ParamForm::setBusy(const bool busy) const {
     run_->setEnabled(!busy && command_ != nullptr);
+    reset_->setEnabled(!busy && command_ != nullptr);
     run_->setText(busy ? tr("Working…") : tr("Run"));
 }
 

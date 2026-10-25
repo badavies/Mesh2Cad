@@ -18,6 +18,7 @@
 #include <QLabel>
 #include <QList>
 #include <QListWidget>
+#include <QListWidgetItem>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
@@ -45,9 +46,9 @@
 #include <Qt>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <map>
 #include <memory>
 #include <ranges>
@@ -64,8 +65,11 @@
 #include "m2c/rpc/Session.h"
 
 #include "Engine.h"
+#include "InspectorPanel.h"
 #include "ParamForm.h"
+#include "ToolCatalog.h"
 #include "Viewport.h"
+#include "WorkflowPanel.h"
 
 namespace m2c::app {
 
@@ -83,31 +87,6 @@ QString projectFilter() {
 
 Json toJson(const Vec3d& v) {
     return Json::array({v.x, v.y, v.z});
-}
-
-QString groupTitle(const std::string& prefix) {
-    static const std::map<std::string, QString> titles{
-        {"mesh", QObject::tr("Mesh")},
-        {"holes", QObject::tr("Holes")},
-        {"shells", QObject::tr("Shells")},
-        {"select", QObject::tr("Select")},
-        {"faces", QObject::tr("Faces")},
-        {"align", QObject::tr("Align")},
-        {"plane", QObject::tr("Fit")},
-        {"primitive", QObject::tr("Primitive")},
-        {"measure", QObject::tr("Measure")},
-        {"quad", QObject::tr("Quad layout")},
-        {"surface", QObject::tr("Surface")},
-        {"solid", QObject::tr("Solid")},
-        {"sketch", QObject::tr("Sketch")},
-        {"fillet", QObject::tr("Fillet")},
-        {"deviation", QObject::tr("Deviation")},
-        {"view", QObject::tr("View")},
-        {"object", QObject::tr("Object")},
-        {"project", QObject::tr("Project")},
-    };
-    const auto it = titles.find(prefix);
-    return it != titles.end() ? it->second : QString::fromStdString(prefix);
 }
 
 /// A column of the Objects list that is not edited in place.
@@ -245,27 +224,8 @@ void MainWindow::buildDocks() {
     connect(tree_, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         const QTreeWidgetItem* item = tree_->itemAt(pos);
         if (item == nullptr) return;
-        const auto id = item->data(0, kIdRole).value<ObjectId>();
-        const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
         QMenu menu;
-        menu.addAction(tr("Fit view"), this, [this, id] { viewport_->fitObject(id); });
-        // An edit (an agent's, say) can rebuild the tree while the menu is open, deleting
-        // `item`, so find the object's item again.
-        menu.addAction(tr("Rename"), this, [this, id] {
-            for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
-                if ((*it)->data(0, kIdRole).value<ObjectId>() == id) {
-                    tree_->editItem(*it, 0);
-                    return;
-                }
-            }
-        });
-        if (o != nullptr && infoCommand(*o) != nullptr)
-            menu.addAction(tr("Info"), this, [this, id] { showInfo(id); });
-        menu.addSeparator();
-        const std::vector<ObjectId> rows = rowsFor(id);
-        menu.addAction(rows.size() > 1 ? tr("Delete %1 objects").arg(rows.size()) : tr("Delete"),
-                       this,
-                       [this, rows] { run("object.delete", {{"ids", rows}}); });
+        fillObjectMenu(menu, item->data(0, kIdRole).value<ObjectId>());
         menu.exec(tree_->viewport()->mapToGlobal(pos));
     });
     auto* objects = new QDockWidget(tr("Objects"), this);
@@ -273,34 +233,27 @@ void MainWindow::buildDocks() {
     objects->setWidget(tree_);
     addDockWidget(Qt::LeftDockWidgetArea, objects);
 
-    // Workflow: the usual order of M0/M1 tools, each opening its form.
-    auto* workflow = new QWidget;
-    auto* steps = new QVBoxLayout(workflow);
-    const auto addStep = [&](const QString& text, const std::function<void()>& action) {
-        auto* button = new QPushButton(text);
-        button->setStyleSheet("text-align: left; padding: 4px 8px;");
-        connect(button, &QPushButton::clicked, this, action);
-        steps->addWidget(button);
-    };
-    addStep(tr("1  Import scan…"), [this] { importMeshes(); });
-    addStep(tr("2  Repair"), [this] { showTool("mesh.repair"); });
-    addStep(tr("    then select spikes and tunnels"), [this] { showTool("select.defects"); });
-    addStep(tr("3  Fill holes"), [this] { showTool("holes.fill"); });
-    addStep(tr("4  Remove small shells"), [this] { showTool("shells.clean"); });
-    addStep(tr("5  Smooth"), [this] { showTool("mesh.smooth"); });
-    addStep(tr("6  Simplify"), [this] { showTool("mesh.simplify"); });
-    addStep(tr("7  Align to principal axes"), [this] { showTool("align.principal"); });
-    addStep(tr("    or align to datums"), [this] { showTool("align.datum"); });
-    addStep(tr("8  Save project…"), [this] { saveProject(false); });
-    steps->addStretch(1);
+    // Workflow: the pipeline's tracks in order, each step opening its tool, under the current
+    // object's stage gate.
+    workflow_ = new WorkflowPanel(engine_);
+    connect(workflow_, &WorkflowPanel::toolRequested, this, [this](const QString& command) {
+        if (command == QLatin1String("mesh.import")) {
+            importMeshes();
+        } else if (command == QLatin1String("project.save")) {
+            saveProject(false);
+        } else {
+            showTool(command);
+        }
+    });
     auto* workflowDock = new QDockWidget(tr("Workflow"), this);
     workflowDock->setObjectName("workflow");
-    workflowDock->setWidget(workflow);
+    workflowDock->setWidget(workflow_);
     addDockWidget(Qt::LeftDockWidgetArea, workflowDock);
 
     form_ = new ParamForm;
     connect(form_, &ParamForm::runRequested, this, &MainWindow::runForm);
     connect(form_, &ParamForm::objectChosen, this, &MainWindow::chooseObject);
+    connect(form_, &ParamForm::pointsChanged, viewport_, &Viewport::setMarkedPoints);
     auto* scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setWidget(form_);
@@ -310,6 +263,11 @@ void MainWindow::buildDocks() {
     addDockWidget(Qt::RightDockWidgetArea, tool);
 
     history_ = new QListWidget;
+    history_->setToolTip(tr("Double-click a step to undo or redo to just after it"));
+    // Each row holds how many steps away it is: negative to undo, positive to redo.
+    connect(history_, &QListWidget::itemActivated, this, [this](const QListWidgetItem* item) {
+        if (const int steps = item->data(Qt::UserRole).toInt(); steps != 0) stepHistory(steps);
+    });
     auto* historyDock = new QDockWidget(tr("History"), this);
     historyDock->setObjectName("history");
     historyDock->setWidget(history_);
@@ -323,7 +281,59 @@ void MainWindow::buildDocks() {
     logDock->setWidget(log_);
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
     tabifyDockWidget(historyDock, logDock);
+
+    // Inspector: Info and the read-only tools' results, a row each, beside History and the Log.
+    inspector_ = new InspectorPanel;
+    connect(inspector_, &InspectorPanel::boundsClicked, viewport_, &Viewport::fitBox);
+    connect(inspector_, &InspectorPanel::commandRequested, this, &MainWindow::runInspectorAction);
+    auto* inspectorDock = new QDockWidget(tr("Inspector"), this);
+    inspectorDock->setObjectName("inspector");
+    inspectorDock->setWidget(inspector_);
+    addDockWidget(Qt::BottomDockWidgetArea, inspectorDock);
+    tabifyDockWidget(logDock, inspectorDock);
     tool->raise();
+}
+
+void MainWindow::fillObjectMenu(QMenu& menu, const ObjectId id) const {
+    const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
+    // The tools that take an object of this kind, then a rerun of the command that made it.
+    if (o != nullptr) {
+        for (const std::string& command : objectTools(o->kind())) {
+            if (engine_.registry().find(command) == nullptr) continue;
+            const QString name = QString::fromStdString(command);
+            QAction* a = menu.addAction(toolInfo(command).title + QStringLiteral("…"),
+                                        this,
+                                        [this, name, id] { showTool(name, id); });
+            a->setObjectName(name);
+        }
+        if (const Command* made = engine_.registry().find(o->provenance.command);
+            made != nullptr && made->mutatesDocument && !o->provenance.params.empty()) {
+            if (!menu.isEmpty()) menu.addSeparator();
+            menu.addAction(tr("Change and run %1 again…").arg(toolInfo(made->name).title),
+                           this,
+                           [this, id] { showMadeWith(id); })
+                ->setObjectName(QStringLiteral("rerun"));
+        }
+        if (!menu.isEmpty()) menu.addSeparator();
+    }
+    menu.addAction(tr("Fit view"), this, [this, id] { viewport_->fitObject(id); });
+    // An edit (an agent's, say) can rebuild the tree while the menu is open, deleting the
+    // row, so find the object's row again.
+    menu.addAction(tr("Rename"), this, [this, id] {
+        for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
+            if ((*it)->data(0, kIdRole).value<ObjectId>() == id) {
+                tree_->editItem(*it, 0);
+                return;
+            }
+        }
+    });
+    if (o != nullptr && infoCommand(*o) != nullptr)
+        menu.addAction(tr("Info"), this, [this, id] { showInfo(id); });
+    menu.addSeparator();
+    const std::vector<ObjectId> rows = rowsFor(id);
+    menu.addAction(rows.size() > 1 ? tr("Delete %1 objects").arg(rows.size()) : tr("Delete"),
+                   this,
+                   [this, rows] { run("object.delete", {{"ids", rows}}); });
 }
 
 void MainWindow::buildToolbar() {
@@ -336,7 +346,7 @@ void MainWindow::buildToolbar() {
         QString key;
         QString tip;
     };
-    const std::array<ModeAction, 5> modes{{
+    const std::array<ModeAction, 6> modes{{
         {.text = tr("Navigate"),
          .mode = Mode::Navigate,
          .key = "1",
@@ -362,6 +372,11 @@ void MainWindow::buildToolbar() {
          .key = "5",
          .tip = tr("Click two points to measure their distance. Right drag, or a drag off the "
                    "mesh, orbits")},
+        {.text = tr("Shell"),
+         .mode = Mode::Shell,
+         .key = "6",
+         .tip = tr("Click a face to select the whole connected part it is on. Ctrl removes. "
+                   "Right drag, or a drag off the mesh, orbits")},
     }};
     for (const auto& [text, mode, key, tip] : modes) {
         QAction* a = bar->addAction(text);
@@ -471,19 +486,28 @@ void MainWindow::buildMenus() {
     for (const QDockWidget* dock : findChildren<QDockWidget*>())
         view->addAction(dock->toggleViewAction());
 
-    // Tools: every command, grouped by prefix, each opening its generated form.
+    // Tools: every command by the task it serves, titled for people with the command's name
+    // beside it, each opening its generated form.
     QMenu* tools = menuBar()->addMenu(tr("&Tools"));
-    std::map<std::string, QMenu*> groups;
-    for (const Command* c : engine_.registry().list()) {
-        const std::string prefix = c->name.substr(0, c->name.find('.'));
-        if (prefix == "doc" || prefix == "commands") continue;
-        QMenu*& group = groups[prefix];
-        if (group == nullptr) group = tools->addMenu(groupTitle(prefix));
-        QAction* a = group->addAction(QString::fromStdString(c->name));
+    std::map<QString, QMenu*> groups;
+    for (const QString& group : toolGroups()) groups[group] = tools->addMenu(group);
+    std::vector<const Command*> commands = engine_.registry().list();
+    std::ranges::stable_sort(
+        commands, std::ranges::less{}, [](const Command* c) { return toolInfo(c->name).order; });
+    for (const Command* c : commands) {
+        const auto [title, group, order] = toolInfo(c->name);
+        if (group.isEmpty()) continue;
+        QMenu*& menu = groups[group];
+        if (menu == nullptr) menu = tools->addMenu(group);
+        const QString name = QString::fromStdString(c->name);
+        QAction* a = menu->addAction(title + QStringLiteral("…\t") + name);
+        a->setObjectName(name);
         a->setToolTip(QString::fromStdString(c->summary));
         a->setStatusTip(QString::fromStdString(c->summary));
-        const QString name = QString::fromStdString(c->name);
         connect(a, &QAction::triggered, this, [this, name] { showTool(name); });
+    }
+    for (QMenu* menu : std::views::values(groups)) {
+        if (menu->isEmpty()) menu->menuAction()->setVisible(false);
     }
 
     QMenu* help = menuBar()->addMenu(tr("&Help"));
@@ -556,19 +580,29 @@ void MainWindow::onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot) 
     form_->setObjects(snapshot_);
 
     history_->clear();
-    for (const auto& [label, source] : snapshot_->undo) {
-        history_->addItem(QStringLiteral("%1   [%2]")
-                              .arg(QString::fromStdString(label), QString::fromStdString(source)));
+    // A first row for the state before every step, so a double-click can undo them all.
+    const auto done = static_cast<int>(snapshot_->undo.size());
+    auto* start = new QListWidgetItem(tr("(start)"));
+    start->setData(Qt::UserRole, -done);
+    history_->addItem(start);
+    for (int i = 0; i < done; ++i) {
+        const auto& [label, source] = snapshot_->undo[static_cast<std::size_t>(i)];
+        auto* item = new QListWidgetItem(
+            QStringLiteral("%1   [%2]")
+                .arg(QString::fromStdString(label), QString::fromStdString(source)));
+        item->setData(Qt::UserRole, i + 1 - done);
+        history_->addItem(item);
     }
-    for (const auto& [label, source] : snapshot_->redo) {
+    for (std::size_t i = 0; i < snapshot_->redo.size(); ++i) {
+        const auto& [label, source] = snapshot_->redo[i];
         auto* item = new QListWidgetItem(
             QStringLiteral("%1   [%2]  (undone)")
                 .arg(QString::fromStdString(label), QString::fromStdString(source)));
         item->setForeground(palette().color(QPalette::Disabled, QPalette::Text));
+        item->setData(Qt::UserRole, static_cast<int>(i) + 1);
         history_->addItem(item);
     }
-    if (!snapshot_->undo.empty())
-        history_->setCurrentRow(static_cast<int>(snapshot_->undo.size()) - 1);
+    history_->setCurrentRow(done);
     undo_->setEnabled(!snapshot_->undo.empty());
     redo_->setEnabled(!snapshot_->redo.empty());
     undo_->setText(snapshot_->undo.empty()
@@ -674,9 +708,14 @@ void MainWindow::onTreeSelection() {
             (*it)->isSelected() && std::ranges::find(selectedIds_, id) == selectedIds_.end())
             selectedIds_.push_back(id);
     }
+    const ObjectId before = selected_;
     selected_ = selectedIds_.empty() ? 0 : selectedIds_.front();
     form_->setSelectedObjects(selectedIds_);
     showCurrent();
+    // A deviation picked in the list shows its statistics and hotspots.
+    if (const DocumentObject* o = snapshot_ ? snapshot_->find(selected_) : nullptr;
+        o != nullptr && o->deviation() != nullptr && selected_ != before)
+        showInfo(selected_, true);
 }
 
 std::vector<ObjectId> MainWindow::rowsFor(const ObjectId id) const {
@@ -686,6 +725,7 @@ std::vector<ObjectId> MainWindow::rowsFor(const ObjectId id) const {
 
 void MainWindow::showCurrent() const {
     viewport_->setCurrent(currentMesh(), currentSelection(), selected_);
+    workflow_->setCurrent(snapshot_, selected_ != 0 ? selected_ : currentMesh());
 }
 
 void MainWindow::chooseObject(const ObjectId id) {
@@ -727,12 +767,45 @@ const char* MainWindow::infoCommand(const DocumentObject& o) {
                                       : nullptr;
 }
 
-void MainWindow::showInfo(const ObjectId id) const {
+void MainWindow::showInfo(const ObjectId id, const bool background) const {
     const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
     const char* info = o != nullptr ? infoCommand(*o) : nullptr;
     if (info == nullptr) return;
-    run(info, {{"id", id}}, [this](const Result<Json>& r) {
-        if (r) log_->appendPlainText(QString::fromStdString(r->dump(2)));
+    engine_.run(
+        info,
+        {{"id", id}},
+        [this, info](const Result<Json>& r) {
+            if (r) inspect(QString::fromLatin1(info), *r);
+        },
+        background);
+}
+
+void MainWindow::inspect(const QString& command, const Json& result) const {
+    inspector_->showResult(command, result);
+    if (auto* dock = findChild<QDockWidget*>("inspector")) {
+        dock->show();
+        dock->raise();
+    }
+}
+
+void MainWindow::runInspectorAction(const QString& command, const Json& params) {
+    const ObjectId mesh = params.value("id", ObjectId{0});
+    run(command, params, [this, command, mesh](const Result<Json>& r) {
+        if (!r) {
+            QMessageBox::warning(this, command, QString::fromStdString(r.error().message));
+            return;
+        }
+        adoptSelection(r);
+        if (command == "deviation.compute") {
+            // The new deviation, with its hotspots now selections.
+            showInfo(r->value("id", ObjectId{0}));
+        } else if (command != "shells.select") {
+            // Keeping or splitting renumbers the shells, so list them again.
+            run("shells.detect", {{"id", mesh}}, [this](const Result<Json>& shells) {
+                if (shells) inspect(QStringLiteral("shells.detect"), *shells);
+            });
+            viewport_->update();
+        }
     });
 }
 
@@ -787,14 +860,59 @@ Json MainWindow::formDefaults(const Command& command) const {
     return values;
 }
 
-void MainWindow::showTool(const QString& name) const {
+void MainWindow::showTool(const QString& name, const ObjectId forObject) const {
     const Command* c = engine_.registry().find(name.toStdString());
     if (c == nullptr) return;
-    form_->setCommand(c, formDefaults(*c));
+    Json values = formDefaults(*c);
+    if (const DocumentObject* o = snapshot_ ? snapshot_->find(forObject) : nullptr) {
+        // The field of the object's kind: id, else a required one, else any; a list takes it
+        // as its one item.
+        std::vector<std::string> required;
+        if (c->paramsSchema.contains("required"))
+            required = c->paramsSchema["required"].get<std::vector<std::string>>();
+        std::string best;
+        Json item;
+        int bestRank = 3;
+        const Json properties = c->paramsSchema.value("properties", Json::object());
+        for (const auto& [key, prop] : properties.items()) {
+            const bool list = !prop.contains("x-object") && prop.contains("items") &&
+                              prop["items"].contains("x-object");
+            const Json x = list ? prop["items"]["x-object"] : prop.value("x-object", Json());
+            const Json kinds = x.is_array() ? x : Json::array({x});
+            if (std::ranges::find(kinds, Json(o->kind())) == kinds.end()) continue;
+            const int rank = key == "id"                                          ? 0
+                             : std::ranges::find(required, key) != required.end() ? 1
+                                                                                  : 2;
+            if (rank < bestRank) {
+                bestRank = rank;
+                best = key;
+                item = list ? Json::array({o->id}) : Json(o->id);
+            }
+        }
+        if (!best.empty()) values[best] = item;
+    }
+    form_->setCommand(c, values);
     if (auto* dock = findChild<QDockWidget*>("tool")) {
         dock->show();
         dock->raise();
     }
+}
+
+void MainWindow::showMadeWith(const ObjectId id) const {
+    const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
+    const Command* c = o != nullptr ? engine_.registry().find(o->provenance.command) : nullptr;
+    if (c == nullptr) return;
+    const Json params = Json::parse(o->provenance.params, nullptr, false);
+    form_->setCommand(c, params.is_object() ? params : Json::object());
+    if (auto* dock = findChild<QDockWidget*>("tool")) {
+        dock->show();
+        dock->raise();
+    }
+}
+
+void MainWindow::stepHistory(const int steps) const {
+    // One command per step, run in order, as pressing Undo or Redo that many times would.
+    for (int i = 0; i < std::abs(steps); ++i) run(steps < 0 ? "doc.undo" : "doc.redo", {});
 }
 
 void MainWindow::runForm() {
@@ -813,10 +931,12 @@ void MainWindow::runForm() {
             return;
         }
         adoptSelection(r);
-        // Read-only tools report through the log.
+        // Read-only tools report in the Inspector; a new deviation shows its statistics there.
         if (const Command* command = engine_.registry().find(name.toStdString());
             command != nullptr && !command->mutatesDocument) {
-            log_->appendPlainText(name + QStringLiteral(": ") + QString::fromStdString(r->dump(2)));
+            inspect(name, *r);
+        } else if (name == "deviation.compute") {
+            showInfo(r->value("id", ObjectId{0}));
         }
         if (name == "mesh.wrap" || name == "shells.split") viewport_->update();
     });
@@ -894,8 +1014,11 @@ void MainWindow::onFaceClicked(Hit hit, const bool subtract, const bool add) {
     if (p.is_null()) return;
     p["id"] = hit.meshId;
     p["face"] = hit.face;
-    p["max_angle_deg"] = viewport_->creaseAngle();
-    run("select.crease", p, [this](const Result<Json>& r) { adoptSelection(r); });
+    const bool shell = viewport_->mode() == Mode::Shell;
+    if (!shell) p["max_angle_deg"] = viewport_->creaseAngle();
+    run(shell ? "select.shell" : "select.crease", p, [this](const Result<Json>& r) {
+        adoptSelection(r);
+    });
 }
 
 void MainWindow::onMeasured(Hit a, Hit b) const {

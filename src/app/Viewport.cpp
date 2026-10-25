@@ -398,6 +398,11 @@ Aabb Viewport::visibleBounds(const std::optional<ObjectId> only) const {
     return box;
 }
 
+void Viewport::setMarkedPoints(std::vector<Vec3d> points) {
+    marked_ = std::move(points);
+    update();
+}
+
 void Viewport::fitAll() {
     const Aabb box = visibleBounds();
     if (box.min.x > box.max.x) return;
@@ -406,7 +411,10 @@ void Viewport::fitAll() {
 }
 
 void Viewport::fitObject(ObjectId id) {
-    const Aabb box = visibleBounds(id);
+    fitBox(visibleBounds(id));
+}
+
+void Viewport::fitBox(const Aabb& box) {
     if (box.min.x > box.max.x) return;
     camera_.fit(box);
     update();
@@ -909,6 +917,17 @@ void Viewport::drawOverlay() {
         }
     }
 
+    // Points the open tool form has picked, numbered in order.
+    for (std::size_t i = 0; i < marked_.size(); ++i) {
+        const auto c = project(marked_[i]);
+        if (!c) continue;
+        painter.setPen(QPen(QColor(20, 20, 24), 1.5));
+        painter.setBrush(QColor(255, 220, 80));
+        painter.drawEllipse(*c, 5.0, 5.0);
+        painter.setPen(QColor(255, 230, 120));
+        painter.drawText(*c + QPointF(8, -8), QString::number(i + 1));
+    }
+
     // Tool feedback.
     painter.setBrush(Qt::NoBrush);
     if (mode_ == Mode::Brush && hover_) {
@@ -953,7 +972,7 @@ void Viewport::drawOverlay() {
             }
         }
     }
-    if (mode_ == Mode::Crease && hover_) {
+    if ((mode_ == Mode::Crease || mode_ == Mode::Shell) && hover_) {
         if (const auto c = project(hover_->point)) {
             painter.setPen(QPen(accent, 1.5));
             painter.drawLine(*c - QPointF(6, 0), *c + QPointF(6, 0));
@@ -1150,6 +1169,7 @@ void Viewport::mousePressEvent(QMouseEvent* event) {
         break;
     // Off the mesh, as with the brush, a left drag orbits.
     case Mode::Crease:
+    case Mode::Shell:
         if (const auto hit = pick(event->position())) {
             emit faceClicked(*hit, ctrl, shift);
         } else {

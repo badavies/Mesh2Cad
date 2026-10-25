@@ -32,7 +32,8 @@ enum class Mode {
     Brush,
     Lasso,
     Crease,
-    Measure
+    Measure,
+    Shell ///< A click selects the whole connected part under it.
 };
 
 /// A point under the cursor on a visible object: a mesh, or (pickObject) a solid or primitive.
@@ -102,6 +103,7 @@ public:
     /// quad layout or sketch; a mesh shows as current instead).
     void setCurrent(ObjectId meshId, ObjectId selectionId, ObjectId highlightId = 0);
     void setMode(Mode mode);
+    [[nodiscard]] Mode mode() const noexcept { return mode_; }
     void setBrushRadius(double mm);
     [[nodiscard]] double brushRadius() const noexcept { return brushRadius_; }
     void setCreaseAngle(double degrees) { creaseAngle_ = degrees; }
@@ -111,9 +113,14 @@ public:
     void setWireframe(bool on);
     void setShowBackFaces(bool on);
     void setColorBlindPalette(bool on);
+    /// Points a tool form has picked (fillet.fit's edge_points), drawn numbered over everything.
+    void setMarkedPoints(std::vector<Vec3d> points);
+    [[nodiscard]] const std::vector<Vec3d>& markedPoints() const noexcept { return marked_; }
 
     void fitAll();
     void fitObject(ObjectId id);
+    /// Looks at a box, such as a hotspot's or a shell's bounds.
+    void fitBox(const Aabb& box);
     void setStandardView(double yaw, double pitch);
 
     [[nodiscard]] const Camera& camera() const noexcept { return camera_; }
@@ -153,6 +160,7 @@ signals:
     brushStroke(ObjectId meshId, const std::vector<m2c::Vec3d>& centers, bool subtract, bool add);
     /// A finished lasso, in normalised device coordinates.
     void lassoDrawn(const QPolygonF& ndc, bool subtract, bool add);
+    /// A click on a mesh in the Crease or Shell tool.
     void faceClicked(m2c::app::Hit hit, bool subtract, bool add);
     /// A click (no drag) in Navigate mode on a mesh, solid or primitive.
     void objectClicked(m2c::app::Hit hit);
@@ -280,6 +288,7 @@ private:
     ObjectId strokeMesh_{0};
     QPolygonF lasso_;
     std::optional<Hit> measureStart_;
+    std::vector<Vec3d> marked_;
     bool interacting_{false};
     QTimer interactionTimer_;
 };
