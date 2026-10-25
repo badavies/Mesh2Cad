@@ -10,6 +10,8 @@ add_library(m2c_app STATIC
     DeviationColors.h
     Viewport.cpp
     Viewport.h
+    InspectorPanel.cpp
+    InspectorPanel.h
     ParamForm.cpp
     ParamForm.h
     ToolCatalog.cpp

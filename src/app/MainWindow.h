@@ -20,6 +20,7 @@ class QTreeWidgetItem;
 
 namespace m2c::app {
 
+class InspectorPanel;
 class ParamForm;
 class WorkflowPanel;
 
@@ -36,9 +37,10 @@ public:
 
     [[nodiscard]] Viewport* viewport() const noexcept { return viewport_; }
 
-    /// Logs an object's info query (mesh.info, solid.info, deviation.info), as its context
-    /// menu's Info does. Objects without one are ignored.
-    void showInfo(ObjectId id) const;
+    /// Shows an object's info query (mesh.info, solid.info, deviation.info) in the Inspector,
+    /// as its context menu's Info does. Objects without one are ignored. In the background, it
+    /// leaves the cursor and the log alone, as for a deviation picked in the Objects list.
+    void showInfo(ObjectId id, bool background = false) const;
     /// Fills an Objects list row's context menu: the tools that take an object of its kind
     /// (each opening its form with the object filled in), a rerun of the command that made it
     /// with its parameters, Fit view, Rename, Info and Delete.
@@ -71,6 +73,10 @@ private:
     /// Undoes (negative) or redoes (positive) this many steps, as a double-click in History does.
     void stepHistory(int steps) const;
     void runForm();
+    /// Shows a read-only result in the Inspector, and brings it to the front.
+    void inspect(const QString& command, const Json& result) const;
+    /// Runs an action the Inspector asks for, then shows what changed.
+    void runInspectorAction(const QString& command, const Json& params);
     void run(const QString& command, const Json& params, Engine::Done done = {}) const;
     /// The read-only query that describes an object of this kind, or null.
     [[nodiscard]] static const char* infoCommand(const DocumentObject& o);
@@ -102,6 +108,7 @@ private:
     QTreeWidget* tree_{nullptr};
     ParamForm* form_{nullptr};
     WorkflowPanel* workflow_{nullptr};
+    InspectorPanel* inspector_{nullptr};
     QListWidget* history_{nullptr};
     QPlainTextEdit* log_{nullptr};
     QLabel* status_{nullptr};
