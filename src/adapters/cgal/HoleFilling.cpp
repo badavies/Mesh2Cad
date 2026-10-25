@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <expected>
@@ -12,6 +13,7 @@
 #include <CGAL/boost/graph/Euler_operations.h>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/TriMesh.h"
 // Newer CGAL (6.2.1 from vcpkg) moved extract_boundary_cycles() from Polygon_mesh_processing to
 // the BGL border header and deprecated the old one; the downloaded CGAL 6.0.1 has only the old one.
@@ -34,6 +36,11 @@ namespace PMP = CGAL::Polygon_mesh_processing;
 namespace {
 
 using Vector = Kernel::Vector_3;
+
+// When its Delaunay search finds no triangulation, CGAL falls back to searching every
+// triangulation of the rim, which takes time cubic in the rim's length: about 8 s for 680 edges
+// and many minutes for the 3400-edge loops of a 1.7M-face scan. Larger holes skip that search.
+constexpr std::size_t kCubicSearchMaxEdges = 500;
 
 Vector unit(const Vector& v) {
     const double len = std::sqrt(CGAL::to_double(v.squared_length()));
@@ -102,7 +109,8 @@ std::vector<SurfaceMesh::Face_index> fanFill(SurfaceMesh& mesh,
 
 } // namespace
 
-Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& params) {
+Result<HoleFillResult>
+fillHoles(const TriMesh& input, const HoleFillParams& params, const Progress& progress) {
     return guarded("hole filling", [&] -> Result<HoleFillResult> {
         SurfaceMesh mesh = toSurfaceMesh(input);
         using Halfedge = SurfaceMesh::Halfedge_index;
@@ -115,7 +123,17 @@ Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& par
         std::size_t skipped = 0;
         std::size_t failed = 0;
         std::size_t added = 0;
-        for (const Halfedge start : cycles) {
+        // A scan can have thousands of holes: the fraction is reported about a hundred times,
+        // and a cancel is seen before each hole.
+        const std::size_t reportEvery = std::max<std::size_t>(1, cycles.size() / 100);
+        for (std::size_t i = 0; i < cycles.size(); ++i) {
+            if (i % reportEvery == 0)
+                report(progress,
+                       "filling holes",
+                       static_cast<double>(i) / static_cast<double>(cycles.size()));
+            if (auto go = checkCancelled(progress, "filling holes"); !go)
+                return std::unexpected(go.error());
+            const Halfedge start = cycles[i];
             double perimeter = 0.0;
             std::size_t edges = 0;
             Halfedge h = start;
@@ -138,12 +156,17 @@ Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& par
             // dome: the patch must leave the rim parallel to the walls. There the patch only
             // keeps position continuity, which gives a flat cap on a flat rim.
             const unsigned continuity = rimAlignment(mesh, start) >= std::sqrt(0.5) ? 1 : 0;
+            // A large hole also tries a 2D constrained Delaunay triangulation, which suits a
+            // nearly flat rim, before the 3D Delaunay search.
+            const bool large = edges > kCubicSearchMaxEdges;
             if (params.refineAndFair) {
                 const auto outcome = PMP::triangulate_refine_and_fair_hole(
                     mesh,
                     start,
                     CGAL::parameters::face_output_iterator(std::back_inserter(newFaces))
-                        .fairing_continuity(continuity));
+                        .fairing_continuity(continuity)
+                        .use_2d_constrained_delaunay_triangulation(large)
+                        .do_not_use_cubic_algorithm(large));
                 // Fairing can fail on awkward holes; the hole is still triangulated and refined.
                 ok = !newFaces.empty();
                 (void)outcome;
@@ -151,10 +174,14 @@ Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& par
                 PMP::triangulate_hole(
                     mesh,
                     start,
-                    CGAL::parameters::face_output_iterator(std::back_inserter(newFaces)));
+                    CGAL::parameters::face_output_iterator(std::back_inserter(newFaces))
+                        .use_2d_constrained_delaunay_triangulation(large)
+                        .do_not_use_cubic_algorithm(large));
                 ok = !newFaces.empty();
             }
-            if (!ok && mesh.is_border(start)) {
+            // A fan across a large rim the Delaunay searches could not span folds over itself,
+            // so such a hole is left open and counted as failed.
+            if (!ok && !large && mesh.is_border(start)) {
                 newFaces = fanFill(mesh, start, params.refineAndFair, continuity);
                 ok = !newFaces.empty();
             }

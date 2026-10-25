@@ -32,7 +32,7 @@ A spike starts at a tip or a fold. At a tip, the corners of the faces around a v
 
 ## Holes
 
-`holes.fill` closes open boundaries with patches that blend into the surrounding surface. `max_edges` and `max_perimeter_mm` leave larger openings alone, so a real opening in the part stays open. In this example the three small holes in the wall are filled, and the 48-edge opening at the top is skipped:
+`holes.fill` closes open boundaries with patches that blend into the surrounding surface. `max_edges` and `max_perimeter_mm` leave larger openings alone, so a real opening in the part stays open. By default holes with more than 100 boundary edges are left open, as most scan gaps are much smaller. Set `max_edges` to 0 to fill every hole. In this example the three small holes in the wall are filled, and the 48-edge opening at the top is skipped:
 
 ```jsonl
 {"command": "mesh.import", "params": {"path": "cylinder_holes.ply"}}

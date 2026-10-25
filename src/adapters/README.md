@@ -11,7 +11,7 @@ target.
 
 - `m2c/adapters/cgal/MeshTools.h` (namespace `m2c::cgal`):
   - `repair` with `RepairParams` and `RepairResult`: merge duplicates, remove degenerate faces and fins, make manifold, orient, optionally remove self-intersections.
-  - `fillHoles` with `HoleFillParams` and `HoleFillResult`: fill holes up to a perimeter or edge limit, optionally refined and faired.
+  - `fillHoles` with `HoleFillParams` and `HoleFillResult`: fill holes up to a perimeter or edge limit, optionally refined and faired. Rims over 500 edges skip CGAL's cubic search and stay open if its Delaunay searches fail.
   - `simplify` with `SimplifyParams`: Garland-Heckbert edge collapse to a target face count.
   - `remesh` with `RemeshParams`: isotropic remeshing that keeps sharp edges.
   - `shrinkWrap` with `WrapParams`: 3D alpha wrapping to a watertight, manifold mesh.

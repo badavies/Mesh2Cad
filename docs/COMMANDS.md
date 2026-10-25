@@ -12,14 +12,16 @@ and `rpc.hello` report it.
 Lengths are millimetres; objects are referred to by id (see `doc.list`).
 
 Long commands (`quad.remesh`, `surface.build`, `deviation.compute`, `mesh.simplify`,
-`mesh.remesh`, `primitive.trim`) say which stage they are at while they run: as
+`mesh.remesh`, `primitive.trim`, `mesh.repair`, `holes.fill`, `select.defects`) say which
+stage they are at while they run: as
 `rpc.progress` notifications over JSON-RPC, as `notifications/progress` over MCP when the
 tool call carries `_meta.progressToken`, and in the desktop app's status bar.
 
 A JSON-RPC request's id is its job id: `rpc.cancel` `{"id": ...}` stops the running
-request with that id. `quad.remesh`, `surface.build`, `deviation.compute` and
-`fillet.fit` stop at their next stage, or within a few thousand points while fitting or
-measuring, and fail with code -32800 (`cancelled`); the document stays as it was. Over
+request with that id. `quad.remesh`, `surface.build`, `deviation.compute`, `fillet.fit`,
+`mesh.repair`, `holes.fill` and `select.defects` stop at their next stage (`holes.fill`
+before its next hole), or within a few thousand points while fitting or measuring, and
+fail with code -32800 (`cancelled`); the document stays as it was. Over
 MCP, `notifications/cancelled` stops a tool call the same way; in the desktop app, the
 Cancel button in the status bar does.
 
@@ -165,7 +167,7 @@ Fill open boundaries with patches that blend into the surrounding surface. Holes
 | --- | --- | --- | --- |
 | `fair` | boolean |  | Refine and fair the patch to match the surrounding curvature. Where the surface meets the hole at more than 45 degrees (an open end) the patch stays flat instead of doming. Default `true`. |
 | `id` | mesh id | yes |  |
-| `max_edges` | integer |  | Leave holes with more boundary edges open; 0 = no limit. Default `0`. |
+| `max_edges` | integer |  | Leave holes with more boundary edges open; 0 = no limit. The default fills most scan gaps and keeps larger openings, such as cut-outs. Default `100`. |
 | `max_perimeter_mm` | number |  | Leave holes with a longer boundary open; 0 = no limit. Default `0`. |
 
 ## measure

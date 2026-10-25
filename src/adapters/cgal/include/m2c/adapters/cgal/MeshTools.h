@@ -55,7 +55,10 @@ struct HoleFillResult {
     std::size_t addedFaces{0};
 };
 
-[[nodiscard]] Result<HoleFillResult> fillHoles(const TriMesh& input, const HoleFillParams& params);
+/// Fills each boundary loop within the limits. Reports the fraction of holes done and stops before
+/// the next hole once cancelled.
+[[nodiscard]] Result<HoleFillResult>
+fillHoles(const TriMesh& input, const HoleFillParams& params, const Progress& progress = {});
 
 struct SimplifyParams {
     std::size_t targetFaces{0}; ///< 0 = no face count target (then maxErrorMm must be set).
