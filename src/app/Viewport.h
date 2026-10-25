@@ -116,6 +116,14 @@ public:
     /// Points a tool form has picked (fillet.fit's edge_points), drawn numbered over everything.
     void setMarkedPoints(std::vector<Vec3d> points);
     [[nodiscard]] const std::vector<Vec3d>& markedPoints() const noexcept { return marked_; }
+    /// Joins picked points into lines (quad.remesh's guides).
+    void setMarkedLines(std::vector<std::vector<Vec3d>> lines);
+    /// Shows where a plane lies (sketch.section's, from its open form), as a see-through square
+    /// over the visible objects; none hides it.
+    void setPreviewPlane(std::optional<SketchPlane> plane);
+    [[nodiscard]] const std::optional<SketchPlane>& previewPlane() const noexcept {
+        return previewPlane_;
+    }
 
     void fitAll();
     void fitObject(ObjectId id);
@@ -275,6 +283,8 @@ private:
     QPolygonF lasso_;
     std::optional<Hit> measureStart_;
     std::vector<Vec3d> marked_;
+    std::vector<std::vector<Vec3d>> markedLines_;
+    std::optional<SketchPlane> previewPlane_;
     bool interacting_{false};
     QTimer interactionTimer_;
 };

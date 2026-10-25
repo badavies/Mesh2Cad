@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -60,6 +61,8 @@
 
 #include "m2c/commands/Command.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Primitive.h"
+#include "m2c/core/Sketch.h"
 #include "m2c/core/Vec3.h"
 #include "m2c/document/Document.h"
 #include "m2c/rpc/Session.h"
@@ -247,6 +250,8 @@ void MainWindow::buildDocks() {
     connect(form_, &ParamForm::runRequested, this, &MainWindow::runForm);
     connect(form_, &ParamForm::objectChosen, this, &MainWindow::chooseObject);
     connect(form_, &ParamForm::pointsChanged, viewport_, &Viewport::setMarkedPoints);
+    connect(form_, &ParamForm::linesChanged, viewport_, &Viewport::setMarkedLines);
+    connect(form_, &ParamForm::valuesChanged, this, &MainWindow::previewSection);
     auto* scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setWidget(form_);
@@ -566,6 +571,7 @@ void MainWindow::onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot) 
     showCurrent();
     refreshTree();
     form_->setObjects(snapshot_);
+    previewSection(); // a plane primitive it cuts with may have changed
 
     history_->clear();
     // A first row for the state before every step, so a double-click can undo them all.
@@ -898,6 +904,48 @@ void MainWindow::showMadeWith(const ObjectId id) const {
     }
 }
 
+std::optional<SketchPlane> MainWindow::sectionPlane(const Json& params) const {
+    // As sketch.section reads it; the command checks it again when it runs.
+    const auto vec = [&](const char* key) -> std::optional<Vec3d> {
+        const Json v = params.value(key, Json());
+        if (!v.is_array() || v.size() != 3 ||
+            !std::ranges::all_of(v, [](const Json& x) { return x.is_number(); }))
+            return std::nullopt;
+        return Vec3d{.x = v[0].get<double>(), .y = v[1].get<double>(), .z = v[2].get<double>()};
+    };
+    SketchPlane plane;
+    if (const std::string name = params.value("plane", ""); name == "yz") {
+        plane.u = {.x = 0, .y = 1, .z = 0};
+        plane.v = {.x = 0, .y = 0, .z = 1};
+    } else if (name == "zx") {
+        plane.u = {.x = 0, .y = 0, .z = 1};
+        plane.v = {.x = 1, .y = 0, .z = 0};
+    } else if (name.empty() && params.contains("plane_id")) {
+        const DocumentObject* o =
+            snapshot_ ? snapshot_->find(params.value("plane_id", ObjectId{0})) : nullptr;
+        if (o == nullptr || o->primitive() == nullptr ||
+            o->primitive()->fit.surface.kind != PrimitiveKind::Plane)
+            return std::nullopt;
+        plane =
+            planeThrough(o->primitive()->fit.surface.point, o->primitive()->fit.surface.direction);
+    } else if (name.empty()) {
+        const auto point = vec("point");
+        const auto normal = vec("normal");
+        if (!point || !normal || !(length(*normal) > 0.0)) return std::nullopt;
+        plane = planeThrough(*point, *normal);
+    }
+    plane.origin = plane.origin + plane.normal() * params.value("offset_mm", 0.0);
+    return plane;
+}
+
+void MainWindow::previewSection() const {
+    std::optional<SketchPlane> plane;
+    if (const Command* c = form_->command(); c != nullptr && c->name == "sketch.section") {
+        if (const auto params = form_->params()) plane = sectionPlane(*params);
+    }
+    viewport_->setPreviewPlane(plane);
+}
+
 void MainWindow::stepHistory(const int steps) const {
     // One command per step, run in order, as pressing Undo or Redo that many times would.
     for (int i = 0; i < std::abs(steps); ++i) run(steps < 0 ? "doc.undo" : "doc.redo", {});
@@ -992,6 +1040,14 @@ void MainWindow::onObjectClicked(const Hit& hit) {
         c != nullptr && c->name == "fillet.fit" && o->solid() != nullptr) {
         form_->appendPoint("edge_points", hit.point);
         return;
+    }
+    // With quad.remesh open a click on its mesh adds a point to the last guide.
+    if (const Command* c = form_->command(); c != nullptr && c->name == "quad.remesh") {
+        if (const auto params = form_->params();
+            params && o->mesh() != nullptr && params->value("id", ObjectId{0}) == o->id) {
+            form_->appendPoint("guides", hit.point);
+            return;
+        }
     }
     chooseObject(hit.objectId);
     form_->setSelectedObjects(selectedIds_);

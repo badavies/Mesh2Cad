@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "Engine.h"
@@ -70,6 +71,10 @@ private:
     /// Opens the form of the command that made an object, with the parameters it was made with,
     /// to change them and run it again.
     void showMadeWith(ObjectId id) const;
+    /// The plane sketch.section would cut with for these parameters, or none if they give no
+    /// valid one; for the viewport to show while its form is open.
+    [[nodiscard]] std::optional<SketchPlane> sectionPlane(const Json& params) const;
+    void previewSection() const;
     /// Undoes (negative) or redoes (positive) this many steps, as a double-click in History does.
     void stepHistory(int steps) const;
     void runForm();

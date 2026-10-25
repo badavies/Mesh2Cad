@@ -53,6 +53,8 @@ to it are additive within 1.x.
   problems highlighted. Clicking a deviation hotspot or a shell looks at it; shells can be
   selected, kept or split from there, and **Select hotspots** makes each hotspot a selection. A
   Shell tool (key 6) selects the connected part under a click.
+- The Section sketch form shows its cutting plane in the view as you set it, and with the Quad
+  remesh form open, clicks on the mesh draw its guides (**New line** starts another).
 
 ### Prismatic and hybrid parts (M4)
 
