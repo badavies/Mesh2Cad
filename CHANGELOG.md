@@ -36,6 +36,11 @@ to it are additive within 1.x.
   smoothing.
 - In the app, a left drag that starts off the mesh orbits in Crease and Measure, as it already
   did in Brush.
+- Tool forms list the objects and required values first and fold the tuning parameters with
+  defaults under **Advanced**. Booleans are check boxes, numbers with a default spin boxes within
+  the schema's limits, `mesh.segment`'s `kinds` a box for each kind, and **Reset to defaults**
+  puts every setting back. `fillet.fit`'s edge points are counted, numbered in the viewport and
+  taken back one at a time with **Undo last**.
 
 ### Prismatic and hybrid parts (M4)
 

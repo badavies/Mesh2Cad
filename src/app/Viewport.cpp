@@ -398,6 +398,11 @@ Aabb Viewport::visibleBounds(const std::optional<ObjectId> only) const {
     return box;
 }
 
+void Viewport::setMarkedPoints(std::vector<Vec3d> points) {
+    marked_ = std::move(points);
+    update();
+}
+
 void Viewport::fitAll() {
     const Aabb box = visibleBounds();
     if (box.min.x > box.max.x) return;
@@ -886,6 +891,17 @@ void Viewport::drawOverlay() {
                 if (const auto c = project(p)) painter.drawEllipse(*c, 4.0, 4.0);
             }
         }
+    }
+
+    // Points the open tool form has picked, numbered in order.
+    for (std::size_t i = 0; i < marked_.size(); ++i) {
+        const auto c = project(marked_[i]);
+        if (!c) continue;
+        painter.setPen(QPen(QColor(20, 20, 24), 1.5));
+        painter.setBrush(QColor(255, 220, 80));
+        painter.drawEllipse(*c, 5.0, 5.0);
+        painter.setPen(QColor(255, 230, 120));
+        painter.drawText(*c + QPointF(8, -8), QString::number(i + 1));
     }
 
     // Tool feedback.
