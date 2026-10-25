@@ -403,6 +403,16 @@ void Viewport::setMarkedPoints(std::vector<Vec3d> points) {
     update();
 }
 
+void Viewport::setMarkedLines(std::vector<std::vector<Vec3d>> lines) {
+    markedLines_ = std::move(lines);
+    update();
+}
+
+void Viewport::setPreviewPlane(std::optional<SketchPlane> plane) {
+    previewPlane_ = plane;
+    update();
+}
+
 void Viewport::fitAll() {
     const Aabb box = visibleBounds();
     if (box.min.x > box.max.x) return;
@@ -917,7 +927,34 @@ void Viewport::drawOverlay() {
         }
     }
 
-    // Points the open tool form has picked, numbered in order.
+    // The plane the open form will cut with: a square over what is shown, centred on it.
+    if (const Aabb box = visibleBounds(); previewPlane_ && box.min.x <= box.max.x) {
+        const Vec3d mid = (box.min + box.max) * 0.5;
+        const Vec2d at = previewPlane_->toPlane(mid);
+        const double half = 0.4 * length(box.max - box.min);
+        QPolygonF square;
+        for (const auto& [du, dv] : {std::pair{-1.0, -1.0}, {1.0, -1.0}, {1.0, 1.0}, {-1.0, 1.0}}) {
+            if (const auto c =
+                    project(previewPlane_->toWorld({.x = at.x + du * half, .y = at.y + dv * half})))
+                square << *c;
+        }
+        if (square.size() == 4) {
+            painter.setPen(QPen(QColor(90, 170, 250), 1.5));
+            painter.setBrush(QColor(90, 170, 250, 50));
+            painter.drawPolygon(square);
+        }
+    }
+
+    // Lines through the picked points, then the points, numbered in order.
+    painter.setPen(QPen(QColor(255, 220, 80), 2.0));
+    painter.setBrush(Qt::NoBrush);
+    for (const auto& line : markedLines_) {
+        QPolygonF path;
+        for (const Vec3d& p : line) {
+            if (const auto c = project(p)) path << *c;
+        }
+        painter.drawPolyline(path);
+    }
     for (std::size_t i = 0; i < marked_.size(); ++i) {
         const auto c = project(marked_[i]);
         if (!c) continue;

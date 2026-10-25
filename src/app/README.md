@@ -49,8 +49,12 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
 - In Navigate mode a click (no drag) on a mesh, solid or primitive selects it in the Objects
   list; with `fillet.fit` open a click on a solid adds the point to `edge_points` instead (the
   command takes a point near each edge), and the viewport numbers the points picked
-  (`Viewport::setMarkedPoints`, fed by `ParamForm::pointsChanged`). The selection tools still pick
-  meshes only.
+  (`Viewport::setMarkedPoints`, fed by `ParamForm::pointsChanged`). With `quad.remesh` open a
+  click on its mesh adds a point to the last of its `guides` (New line starts another), drawn
+  joined (`Viewport::setMarkedLines`). The selection tools still pick meshes only.
+- With `sketch.section` open the viewport shows its plane (`Viewport::setPreviewPlane`), read
+  from the form's parameters as the command reads them (`MainWindow::sectionPlane`) whenever
+  they change (`ParamForm::valuesChanged`).
 - A path field's browse button filters on the parameter's `x-file-types` and opens a Save dialog
   when the command writes files, an Open dialog otherwise (ADR-031).
 - The log panel shows every command that changes the document or writes a file (with the path),

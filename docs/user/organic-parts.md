@@ -9,7 +9,7 @@ Start from a prepared mesh: watertight and aligned ([Mesh preparation](mesh-prep
 `quad.remesh` makes the quad cage. `target_faces` sets roughly how many quads it has: more quads follow the scan more closely, but give the solid more faces. 2,000 is a good start for a hand-sized part. The cage shows as orange edges over the mesh.
 
 - `crease_angle_deg` lines cage edges up with the part's sharp edges (edges sharper than that angle). To keep those edges sharp, give `surface.build` the same `crease_angle_deg`.
-- `guides` are polylines drawn on the mesh. Cage edges follow them, which lets you lay out the patches by hand where the automatic layout puts them badly.
+- `guides` are polylines drawn on the mesh. Cage edges follow them, which lets you lay out the patches by hand where the automatic layout puts them badly. In the app, with the Quad remesh form open, click on the mesh (in Navigate mode) to add points to a guide, drawn as you go; **New line** starts the next guide and **Undo last** takes a point off.
 - Thin parts the remesher misses, such as the head of a post, are joined back on with a tube of quads (`join_parts`), or left out and counted when they can't be joined.
 - For a one-sided scan of a sheet, such as a lid, `keep_outline` leaves the outer boundary open. `surface.build` then needs `thickness_mm` to turn the fitted sheet into a wall.
 

@@ -53,6 +53,8 @@ to it are additive within 1.x.
   problems highlighted. Clicking a deviation hotspot or a shell looks at it; shells can be
   selected, kept or split from there, and **Select hotspots** makes each hotspot a selection. A
   Shell tool (key 6) selects the connected part under a click.
+- The Section sketch form shows its cutting plane in the view as you set it, and with the Quad
+  remesh form open, clicks on the mesh draw its guides (**New line** starts another).
 - Optional 3Dconnexion SpaceMouse navigation in the app on Windows, through the 3DxWare SDK you
   install yourself (`-DMESH2CAD_SPACEMOUSE=ON`, off by default). The SDK's licence is not
   GPL-compatible, so such a build is for your own machine; installers never include it (ADR-039).

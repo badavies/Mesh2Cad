@@ -33,7 +33,7 @@ When segmentation misses a region, or you only need a few faces, select the regi
 
 ## Sketches, extrude and revolve
 
-`sketch.section` cuts the mesh with a plane and fits lines, arcs and splines to the cut, as a sketch. The plane can be an origin plane, a fitted plane primitive, or a point and a normal, moved by `offset_mm`. `solid.extrude` pushes the sketch's outer loop, less any loops inside it, along the plane's normal: `one_sided`, `symmetric` or `two_sided`. `solid.revolve` turns it about an axis in the sketch plane. Lines and arcs stay exact. Sketches are fitted, not constrained.
+`sketch.section` cuts the mesh with a plane and fits lines, arcs and splines to the cut, as a sketch. The plane can be an origin plane, a fitted plane primitive, or a point and a normal, moved by `offset_mm`. In the app, the Section sketch form shows its plane in the view as a see-through square, moving as you change the plane or the offset. `solid.extrude` pushes the sketch's outer loop, less any loops inside it, along the plane's normal: `one_sided`, `symmetric` or `two_sided`. `solid.revolve` turns it about an axis in the sketch plane. Lines and arcs stay exact. Sketches are fitted, not constrained.
 
 ## Booleans
 

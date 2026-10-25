@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "ParamForm.h"
 
+#include <QAbstractSpinBox>
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDoubleSpinBox>
@@ -29,6 +30,7 @@
 #include <expected>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -192,6 +194,7 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
     advancedToggle_->hide();
     advancedHost_->hide();
     emit pointsChanged({});
+    emit linesChanged({});
     if (command == nullptr) {
         title_->setText(tr("Choose a tool from the Tools menu or the workflow."));
         summary_->clear();
@@ -257,6 +260,22 @@ void ParamForm::setCommand(const Command* command, const Json& values) {
         advancedToggle_->setArrowType(open ? Qt::DownArrow : Qt::RightArrow);
         advancedHost_->setVisible(open);
     }
+    // Any edit says so, for previews of what the command will do.
+    for (QWidget* host : {fieldsHost_, advancedHost_}) {
+        for (auto* w : host->findChildren<QLineEdit*>())
+            connect(w, &QLineEdit::textChanged, this, &ParamForm::valuesChanged);
+        for (auto* w : host->findChildren<QComboBox*>())
+            connect(w, &QComboBox::currentIndexChanged, this, &ParamForm::valuesChanged);
+        for (auto* w : host->findChildren<QAbstractSpinBox*>()) {
+            if (auto* d = qobject_cast<QDoubleSpinBox*>(w))
+                connect(d, &QDoubleSpinBox::valueChanged, this, &ParamForm::valuesChanged);
+            else if (auto* i = qobject_cast<QSpinBox*>(w))
+                connect(i, &QSpinBox::valueChanged, this, &ParamForm::valuesChanged);
+        }
+        for (auto* w : host->findChildren<QCheckBox*>())
+            connect(w, &QCheckBox::toggled, this, &ParamForm::valuesChanged);
+    }
+    emit valuesChanged();
 }
 
 QWidget*
@@ -372,7 +391,14 @@ ParamForm::makeEditor(const std::string& key, const Json& prop, Field& field, co
                items.value("items", Json::object()).value("type", "") == "number") {
         // A list of points, picked in the viewport or typed as JSON.
         field.type = "points";
-        return pointsRow(edit);
+        return pointsRow(edit, false);
+    } else if (const Json point = items.value("items", Json());
+               type == "array" && items.value("type", "") == "array" && point.is_object() &&
+               point.value("type", "") == "array" &&
+               point.value("items", Json::object()).value("type", "") == "number") {
+        // A list of lines of points (quad.remesh's guides), picked the same way.
+        field.type = "lines";
+        return pointsRow(edit, true);
     } else {
         field.type = "json";
         if (type == "array" && items.contains("properties")) {
@@ -396,8 +422,9 @@ ParamForm::makeEditor(const std::string& key, const Json& prop, Field& field, co
     return edit;
 }
 
-QWidget* ParamForm::pointsRow(QLineEdit* edit) {
-    edit->setPlaceholderText(tr("click in the view, or JSON [[x, y, z], ...]"));
+QWidget* ParamForm::pointsRow(QLineEdit* edit, const bool lines) {
+    edit->setPlaceholderText(lines ? tr("click in the view, or JSON [[[x, y, z], ...], ...]")
+                                   : tr("click in the view, or JSON [[x, y, z], ...]"));
     auto* row = new QWidget;
     auto* h = new QHBoxLayout(row);
     h->setContentsMargins(0, 0, 0, 0);
@@ -410,29 +437,75 @@ QWidget* ParamForm::pointsRow(QLineEdit* edit) {
     clear->setText(tr("Clear"));
     clear->setObjectName(QStringLiteral("clear"));
     connect(clear, &QToolButton::clicked, edit, &QLineEdit::clear);
-    connect(undo, &QToolButton::clicked, edit, [edit] {
-        Json list = Json::parse(edit->text().toStdString(), nullptr, false);
-        if (!list.is_array() || list.empty()) return;
-        list.erase(list.end() - 1);
-        edit->setText(list.empty() ? QString() : QString::fromStdString(list.dump()));
-    });
-    // The count, and the markers in the viewport, follow the list as it is picked or typed.
-    const auto changed = [this, edit, count, undo] {
-        std::vector<Vec3d> points;
+    const auto parse = [edit] {
         const Json list = Json::parse(edit->text().toStdString(), nullptr, false);
-        for (const Json& p : list.is_array() ? list : Json::array()) {
-            if (p.is_array() && p.size() == 3 &&
-                std::ranges::all_of(p, [](const Json& x) { return x.is_number(); }))
-                points.push_back({p[0].get<double>(), p[1].get<double>(), p[2].get<double>()});
+        return list.is_array() ? list : Json::array();
+    };
+    const auto show = [edit](const Json& list) {
+        edit->setText(list.empty() ? QString() : QString::fromStdString(list.dump()));
+    };
+    // The last point goes; with lines, from the last line, and an emptied line with it.
+    connect(undo, &QToolButton::clicked, edit, [parse, show, lines] {
+        Json list = parse();
+        if (lines) {
+            while (!list.empty() && (!list.back().is_array() || list.back().empty()))
+                list.erase(list.end() - 1);
+            if (!list.empty()) list.back().erase(list.back().end() - 1);
+            if (!list.empty() && list.back().empty()) list.erase(list.end() - 1);
+        } else if (!list.empty()) {
+            list.erase(list.end() - 1);
         }
-        count->setText(points.size() == 1 ? tr("1 point") : tr("%1 points").arg(points.size()));
+        show(list);
+    });
+    QToolButton* next = nullptr;
+    if (lines) {
+        // Clicks go on the last line; New line starts another.
+        next = new QToolButton;
+        next->setText(tr("New line"));
+        next->setObjectName(QStringLiteral("newLine"));
+        connect(next, &QToolButton::clicked, edit, [parse, show] {
+            Json list = parse();
+            if (!list.empty() && list.back().is_array() && !list.back().empty())
+                list.push_back(Json::array());
+            show(list);
+        });
+    }
+    // The count, and the markers in the viewport, follow the list as it is picked or typed.
+    const auto changed = [this, parse, count, undo, next, lines] {
+        const auto point = [](const Json& p) -> std::optional<Vec3d> {
+            if (!p.is_array() || p.size() != 3 ||
+                !std::ranges::all_of(p, [](const Json& x) { return x.is_number(); }))
+                return std::nullopt;
+            return Vec3d{p[0].get<double>(), p[1].get<double>(), p[2].get<double>()};
+        };
+        std::vector<std::vector<Vec3d>> found;
+        for (const Json& item : parse()) {
+            if (!lines) {
+                if (const auto p = point(item)) found.push_back({*p});
+                continue;
+            }
+            found.emplace_back();
+            for (const Json& p : item.is_array() ? item : Json::array()) {
+                if (const auto q = point(p)) found.back().push_back(*q);
+            }
+        }
+        std::vector<Vec3d> points;
+        for (const auto& line : found) points.insert(points.end(), line.begin(), line.end());
+        const QString n = points.size() == 1 ? tr("1 point") : tr("%1 points").arg(points.size());
+        std::erase_if(found, [](const auto& line) { return line.empty(); });
+        count->setText(!lines              ? n
+                       : found.size() == 1 ? tr("1 line, %1").arg(n)
+                                           : tr("%1 lines, %2").arg(found.size()).arg(n));
         undo->setEnabled(!points.empty());
+        if (next != nullptr) next->setEnabled(!points.empty());
         emit pointsChanged(points);
+        emit linesChanged(lines ? found : std::vector<std::vector<Vec3d>>{});
     };
     connect(edit, &QLineEdit::textChanged, this, changed);
     changed();
     h->addWidget(edit, 1);
     h->addWidget(count);
+    if (next != nullptr) h->addWidget(next);
     h->addWidget(undo);
     h->addWidget(clear);
     return row;
@@ -560,7 +633,7 @@ void ParamForm::resetToDefaults() {
                     static_cast<QComboBox*>(field.editor)->currentData().value<ObjectId>();
                 id != 0)
                 keep[key] = id;
-        } else if (field.type == "ids" || field.type == "points") {
+        } else if (field.type == "ids" || field.type == "points" || field.type == "lines") {
             if (const QString text = static_cast<QLineEdit*>(field.editor)->text(); !text.isEmpty())
                 keep[key] = text.toStdString();
         }
@@ -620,11 +693,18 @@ bool ParamForm::addPicked(const std::string& key) {
 
 bool ParamForm::appendPoint(const std::string& key, const Vec3d& point) {
     const auto it = editors_.find(key);
-    if (it == editors_.end() || it->second.type != "points") return false;
+    if (it == editors_.end() || (it->second.type != "points" && it->second.type != "lines"))
+        return false;
     auto* edit = static_cast<QLineEdit*>(it->second.editor);
     Json points = Json::parse(edit->text().toStdString(), nullptr, false);
     if (!points.is_array()) points = Json::array();
-    points.push_back(Json::array({point.x, point.y, point.z}));
+    // A line field takes the point on its last line.
+    if (it->second.type == "lines") {
+        if (points.empty() || !points.back().is_array()) points.push_back(Json::array());
+        points.back().push_back(Json::array({point.x, point.y, point.z}));
+    } else {
+        points.push_back(Json::array({point.x, point.y, point.z}));
+    }
     edit->setText(QString::fromStdString(points.dump()));
     return true;
 }
@@ -740,8 +820,17 @@ Result<Json> ParamForm::params() const {
             }
             out[key] = list;
         } else {
-            const Json v = Json::parse(text.toStdString(), nullptr, false);
+            Json v = Json::parse(text.toStdString(), nullptr, false);
             if (v.is_discarded()) return bad(tr("not valid JSON"));
+            // A line started with New line but not picked yet is left out.
+            if (field.type == "lines" && v.is_array()) {
+                Json kept = Json::array();
+                for (const Json& line : v) {
+                    if (!line.is_array() || !line.empty()) kept.push_back(line);
+                }
+                if (kept.empty() && !field.required) continue;
+                v = std::move(kept);
+            }
             out[key] = v;
         }
     }

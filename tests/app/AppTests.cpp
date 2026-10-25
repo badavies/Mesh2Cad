@@ -1361,6 +1361,26 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
     form.setCommand(registry.find("mesh.info"));
     CHECK(marked.empty());
 
+    // A list of lines (quad.remesh's guides) takes points on its last line; New line starts
+    // another, and a line not picked yet is left out.
+    form.setCommand(registry.find("quad.remesh"), {{"id", 7}});
+    std::vector<std::vector<Vec3d>> lines;
+    QObject::connect(&form, &ParamForm::linesChanged, [&](const auto& l) { lines = l; });
+    auto* newLine = form.findChild<QToolButton*>("newLine");
+    REQUIRE(newLine != nullptr);
+    CHECK_FALSE(newLine->isEnabled());
+    REQUIRE(form.appendPoint("guides", {0, 0, 0}));
+    REQUIRE(form.appendPoint("guides", {1, 0, 0}));
+    newLine->click();
+    CHECK(form.params()->at("guides") == Json::parse("[[[0,0,0],[1,0,0]]]"));
+    REQUIRE(form.appendPoint("guides", {0, 1, 0}));
+    CHECK(form.findChild<QLabel*>("count")->text() == "2 lines, 3 points");
+    CHECK(lines.size() == 2);
+    CHECK(marked.size() == 3);
+    form.findChild<QToolButton*>("undoPoint")->click();
+    CHECK(form.findChild<QLabel*>("count")->text() == "1 line, 2 points");
+    CHECK(form.params()->at("guides") == Json::parse("[[[0,0,0],[1,0,0]]]"));
+
     // An optional object field starts at None and is left out.
     form.setCommand(registry.find("sketch.section"), {{"id", 7}});
     CHECK(form.findChild<QComboBox*>("plane_id")->currentText() == "None");
@@ -1735,6 +1755,64 @@ TEST_CASE("The Inspector lists shells and hotspots, and the Shell tool picks a p
     }));
     CHECK(countKind(*engine.snapshot(), "selection") ==
           selections + static_cast<std::size_t>(hotspots.size()));
+}
+
+TEST_CASE("The section plane shows while its form is open, and clicks draw guides", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto ball = dir.path() / "ball.stl";
+    REQUIRE(writeMesh(makeSphere(10.0, 3), ball).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(ball.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    Viewport* view = window.viewport();
+    view->fitAll();
+    auto* form = window.findChild<ParamForm*>();
+    const auto open = [&](const char* command) {
+        QMenu menu;
+        window.fillObjectMenu(menu, mesh);
+        for (QAction* a : menu.actions()) {
+            if (a->objectName() == command) a->trigger();
+        }
+        REQUIRE(form->command() != nullptr);
+        REQUIRE(form->command()->name == command);
+    };
+
+    // The section form shows its plane once it gives one, moved by the offset as it is typed.
+    open("sketch.section");
+    CHECK_FALSE(view->previewPlane().has_value());
+    auto* plane = form->findChild<QComboBox*>("plane");
+    plane->setCurrentIndex(plane->findText("zx"));
+    REQUIRE(view->previewPlane().has_value());
+    CHECK(view->previewPlane()->normal().y == 1.0);
+    form->findChild<QDoubleSpinBox*>("offset_mm")->setValue(4.0);
+    CHECK(view->previewPlane()->origin.y == 4.0);
+    QApplication::processEvents();
+    screenshot(view, "section-preview");
+    open("holes.fill");
+    CHECK_FALSE(view->previewPlane().has_value());
+
+    // With quad.remesh open, clicks on its mesh add guide points, drawn joined.
+    open("quad.remesh");
+    const QPointF c(view->width() / 2.0, view->height() / 2.0);
+    drag(view, {c});
+    drag(view, {c + QPointF(30, 0)});
+    form->findChild<QToolButton*>("newLine")->click();
+    drag(view, {c + QPointF(0, 30)});
+    CHECK(form->findChild<QLabel*>("count")->text() == "2 lines, 3 points");
+    CHECK(view->markedPoints().size() == 3);
+    const Json guides = form->params()->at("guides");
+    REQUIRE(guides.size() == 2);
+    CHECK(guides[0].size() == 2);
+    CHECK(countKind(*engine.snapshot(), "selection") == 0);
 }
 
 TEST_CASE("Help opens the user guide and follows its links", "[app]") {

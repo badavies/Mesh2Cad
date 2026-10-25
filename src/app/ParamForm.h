@@ -54,8 +54,9 @@ public:
     /// the selection a plane was fitted to). False, changing nothing, when a property stays
     /// empty or the form has no such field.
     bool addPicked(const std::string& key);
-    /// Adds a point to a list-of-points field (fillet.fit's edge_points), as a click in the
-    /// viewport does. False when the form has no such field.
+    /// Adds a point to a list-of-points field (fillet.fit's edge_points), or to the last line
+    /// of a list-of-lines field (quad.remesh's guides), as a click in the viewport does. False
+    /// when the form has no such field.
     bool appendPoint(const std::string& key, const Vec3d& point);
     /// Puts every setting back to its default, keeping the objects chosen and points picked
     /// (Reset to defaults).
@@ -78,11 +79,16 @@ signals:
     /// The points of the form's list-of-points field changed (picked, typed, undone or cleared;
     /// empty when another form opens), for the viewport to mark.
     void pointsChanged(const std::vector<m2c::Vec3d>& points);
+    /// The lines of the form's list-of-lines field (quad.remesh's guides) changed; empty when
+    /// it has none.
+    void linesChanged(const std::vector<std::vector<m2c::Vec3d>>& lines);
+    /// A command was chosen or a value edited.
+    void valuesChanged();
 
 private:
     struct Field {
         /// integer, number (typed), spin, dspin (spin boxes), boolean, string, enum, options,
-        /// vec3, ids, points, json, object
+        /// vec3, ids, points, lines, json, object
         std::string type;
         QWidget* editor{nullptr};
         bool required{false};
@@ -100,7 +106,8 @@ private:
     void fillObjects(const Field& field, ObjectId chosen) const;
     /// The editor for a parameter, or the row holding it and its buttons; fills in `field`.
     QWidget* makeEditor(const std::string& key, const Json& prop, Field& field, const Json& values);
-    QWidget* pointsRow(QLineEdit* edit);
+    /// Points picked in the viewport or typed; with `lines`, lines of them.
+    QWidget* pointsRow(QLineEdit* edit, bool lines);
     QWidget* pathRow(const Json& prop, QLineEdit* edit);
     QWidget* itemsRow(const std::string& key, const Field& field, QLineEdit* edit);
 
