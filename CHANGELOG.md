@@ -49,6 +49,10 @@ to it are additive within 1.x.
 - Right-clicking an object offers the tools for its kind with the object filled in, and **Change
   and run ... again** reopens the command that made it with its parameters. A double-click in
   History undoes or redoes to that step.
+- An Inspector panel shows Info and read-only results as rows instead of JSON in the Log, with
+  problems highlighted. Clicking a deviation hotspot or a shell looks at it; shells can be
+  selected, kept or split from there, and **Select hotspots** makes each hotspot a selection. A
+  Shell tool (key 6) selects the connected part under a click.
 
 ### Prismatic and hybrid parts (M4)
 

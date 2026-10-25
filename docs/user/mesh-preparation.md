@@ -41,7 +41,7 @@ A spike starts at a tip or a fold. At a tip, the corners of the faces around a v
 
 ## Loose parts
 
-Scans often pick up specks and fragments. `shells.clean` deletes every shell below a face count or area, and never deletes the main part. `shells.keep` keeps only the main part. `shells.split` moves each loose part into its own object, so you can look at them before deleting.
+Scans often pick up specks and fragments. `shells.clean` deletes every shell below a face count or area, and never deletes the main part. `shells.keep` keeps only the main part. `shells.split` moves each loose part into its own object, so you can look at them before deleting. In the app, **List shells** shows them in the Inspector, where a click looks at one and the buttons select, keep or split them; the Shell tool (key 6) selects the part you click.
 
 ```jsonl
 {"command": "mesh.import", "params": {"path": "torus_shells.ply"}}

@@ -65,6 +65,7 @@
 #include "m2c/rpc/Session.h"
 
 #include "Engine.h"
+#include "InspectorPanel.h"
 #include "ParamForm.h"
 #include "ToolCatalog.h"
 #include "Viewport.h"
@@ -273,6 +274,16 @@ void MainWindow::buildDocks() {
     logDock->setWidget(log_);
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
     tabifyDockWidget(historyDock, logDock);
+
+    // Inspector: Info and the read-only tools' results, a row each, beside History and the Log.
+    inspector_ = new InspectorPanel;
+    connect(inspector_, &InspectorPanel::boundsClicked, viewport_, &Viewport::fitBox);
+    connect(inspector_, &InspectorPanel::commandRequested, this, &MainWindow::runInspectorAction);
+    auto* inspectorDock = new QDockWidget(tr("Inspector"), this);
+    inspectorDock->setObjectName("inspector");
+    inspectorDock->setWidget(inspector_);
+    addDockWidget(Qt::BottomDockWidgetArea, inspectorDock);
+    tabifyDockWidget(logDock, inspectorDock);
     tool->raise();
 }
 
@@ -328,7 +339,7 @@ void MainWindow::buildToolbar() {
         QString key;
         QString tip;
     };
-    const std::array<ModeAction, 5> modes{{
+    const std::array<ModeAction, 6> modes{{
         {.text = tr("Navigate"),
          .mode = Mode::Navigate,
          .key = "1",
@@ -354,6 +365,11 @@ void MainWindow::buildToolbar() {
          .key = "5",
          .tip = tr("Click two points to measure their distance. Right drag, or a drag off the "
                    "mesh, orbits")},
+        {.text = tr("Shell"),
+         .mode = Mode::Shell,
+         .key = "6",
+         .tip = tr("Click a face to select the whole connected part it is on. Ctrl removes. "
+                   "Right drag, or a drag off the mesh, orbits")},
     }};
     for (const auto& [text, mode, key, tip] : modes) {
         QAction* a = bar->addAction(text);
@@ -680,9 +696,14 @@ void MainWindow::onTreeSelection() {
             (*it)->isSelected() && std::ranges::find(selectedIds_, id) == selectedIds_.end())
             selectedIds_.push_back(id);
     }
+    const ObjectId before = selected_;
     selected_ = selectedIds_.empty() ? 0 : selectedIds_.front();
     form_->setSelectedObjects(selectedIds_);
     showCurrent();
+    // A deviation picked in the list shows its statistics and hotspots.
+    if (const DocumentObject* o = snapshot_ ? snapshot_->find(selected_) : nullptr;
+        o != nullptr && o->deviation() != nullptr && selected_ != before)
+        showInfo(selected_, true);
 }
 
 std::vector<ObjectId> MainWindow::rowsFor(const ObjectId id) const {
@@ -734,12 +755,45 @@ const char* MainWindow::infoCommand(const DocumentObject& o) {
                                       : nullptr;
 }
 
-void MainWindow::showInfo(const ObjectId id) const {
+void MainWindow::showInfo(const ObjectId id, const bool background) const {
     const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
     const char* info = o != nullptr ? infoCommand(*o) : nullptr;
     if (info == nullptr) return;
-    run(info, {{"id", id}}, [this](const Result<Json>& r) {
-        if (r) log_->appendPlainText(QString::fromStdString(r->dump(2)));
+    engine_.run(
+        info,
+        {{"id", id}},
+        [this, info](const Result<Json>& r) {
+            if (r) inspect(QString::fromLatin1(info), *r);
+        },
+        background);
+}
+
+void MainWindow::inspect(const QString& command, const Json& result) const {
+    inspector_->showResult(command, result);
+    if (auto* dock = findChild<QDockWidget*>("inspector")) {
+        dock->show();
+        dock->raise();
+    }
+}
+
+void MainWindow::runInspectorAction(const QString& command, const Json& params) {
+    const ObjectId mesh = params.value("id", ObjectId{0});
+    run(command, params, [this, command, mesh](const Result<Json>& r) {
+        if (!r) {
+            QMessageBox::warning(this, command, QString::fromStdString(r.error().message));
+            return;
+        }
+        adoptSelection(r);
+        if (command == "deviation.compute") {
+            // The new deviation, with its hotspots now selections.
+            showInfo(r->value("id", ObjectId{0}));
+        } else if (command != "shells.select") {
+            // Keeping or splitting renumbers the shells, so list them again.
+            run("shells.detect", {{"id", mesh}}, [this](const Result<Json>& shells) {
+                if (shells) inspect(QStringLiteral("shells.detect"), *shells);
+            });
+            viewport_->update();
+        }
     });
 }
 
@@ -865,10 +919,12 @@ void MainWindow::runForm() {
             return;
         }
         adoptSelection(r);
-        // Read-only tools report through the log.
+        // Read-only tools report in the Inspector; a new deviation shows its statistics there.
         if (const Command* command = engine_.registry().find(name.toStdString());
             command != nullptr && !command->mutatesDocument) {
-            log_->appendPlainText(name + QStringLiteral(": ") + QString::fromStdString(r->dump(2)));
+            inspect(name, *r);
+        } else if (name == "deviation.compute") {
+            showInfo(r->value("id", ObjectId{0}));
         }
         if (name == "mesh.wrap" || name == "shells.split") viewport_->update();
     });
@@ -946,8 +1002,11 @@ void MainWindow::onFaceClicked(Hit hit, const bool subtract, const bool add) {
     if (p.is_null()) return;
     p["id"] = hit.meshId;
     p["face"] = hit.face;
-    p["max_angle_deg"] = viewport_->creaseAngle();
-    run("select.crease", p, [this](const Result<Json>& r) { adoptSelection(r); });
+    const bool shell = viewport_->mode() == Mode::Shell;
+    if (!shell) p["max_angle_deg"] = viewport_->creaseAngle();
+    run(shell ? "select.shell" : "select.crease", p, [this](const Result<Json>& r) {
+        adoptSelection(r);
+    });
 }
 
 void MainWindow::onMeasured(Hit a, Hit b) const {
