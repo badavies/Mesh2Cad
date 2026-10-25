@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
 
@@ -30,8 +31,9 @@ struct RepairResult {
 /// Clean-up: merges duplicate points, removes degenerate and duplicate faces and fins (faces
 /// hanging off an edge two other faces already share), makes the mesh manifold, orients faces
 /// consistently (outward when the mesh is closed) and optionally removes self-intersections. Holes
-/// are left open; see fillHoles().
-[[nodiscard]] Result<RepairResult> repair(const TriMesh& input, const RepairParams& params);
+/// are left open; see fillHoles(). Reports each stage and stops between stages once cancelled.
+[[nodiscard]] Result<RepairResult>
+repair(const TriMesh& input, const RepairParams& params, const Progress& progress = {});
 
 /// Whether two faces of the mesh cross each other. Faces that only touch, as coincident copies
 /// of a point or edge do, do not count.

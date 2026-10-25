@@ -2,6 +2,8 @@
 #include <cmath>
 #include <limits>
 
+#include "m2c/core/SpatialIndex.h"
+
 #include "TestMeshes.h"
 
 using namespace m2c;
@@ -21,6 +23,15 @@ TEST_CASE("TriMesh copies share their buffers", "[core][trimesh]") {
     const TriMesh b = a;
     CHECK(a.sharedPositions().get() == b.sharedPositions().get());
     CHECK(a.sharedIndices().get() == b.sharedIndices().get());
+}
+
+TEST_CASE("TriMesh hands out its spatial index only once built", "[core][trimesh]") {
+    const TriMesh a = makeCube();
+    const TriMesh b = a;
+    CHECK(a.builtSpatialIndex() == nullptr); // asking does not build it
+    CHECK(a.builtSpatialIndex() == nullptr);
+    const SpatialIndex& index = b.spatialIndex();
+    CHECK(a.builtSpatialIndex() == &index); // shared by the copies
 }
 
 TEST_CASE("TriMesh rejects invalid input", "[core][trimesh]") {

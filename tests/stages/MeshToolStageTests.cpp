@@ -6,12 +6,15 @@
 #include <array>
 #include <cmath>
 #include <numbers>
+#include <string>
+#include <string_view>
 #include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include "m2c/core/MeshStats.h"
 #include "m2c/core/MeshTopology.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/SpatialIndex.h"
 #include "m2c/pipeline/MeshTools.h"
 #include "m2c/pipeline/Shells.h"
@@ -165,6 +168,37 @@ TEST_CASE("Repair unites shells that pass through each other", "[stages][repair]
     CHECK(s.isWatertight());
     CHECK(detectShells(united->mesh).shells.size() == 2);
     CHECK_THAT(s.signedVolume, WithinAbs(1000.0 + 32.0 + 8.0, 1e-6));
+}
+
+TEST_CASE("Repair reports its stages and stops when cancelled", "[stages][repair]") {
+    const TriMesh box = makeBox(10, 10, 10, 2);
+    const TriMesh scan = combine({box, moved(makeBox(4, 4, 4), {3, 3, 8})});
+
+    std::vector<std::string> stages;
+    const auto repaired = repair(scan, RepairParams{true}, [&](std::string_view stage, double) {
+        stages.emplace_back(stage);
+    });
+    REQUIRE(repaired.has_value());
+    CHECK(stages == std::vector<std::string>{"merging duplicate points and faces",
+                                             "removing fins",
+                                             "orienting faces",
+                                             "making the mesh manifold",
+                                             "removing self-intersections",
+                                             "uniting shells that pass through each other",
+                                             "checking for self-intersections",
+                                             "orienting shells outward"});
+
+    // Cancelled when a stage starts: repair stops there, before running it.
+    const CancelToken token = CancelToken::make();
+    const Progress cancelAtOrienting(
+        [&](std::string_view stage, double) {
+            if (stage == "orienting faces") token.cancel();
+        },
+        token);
+    const auto stopped = repair(scan, {}, cancelAtOrienting);
+    REQUIRE_FALSE(stopped.has_value());
+    CHECK(stopped.error().code == ErrorCode::Cancelled);
+    CHECK(stopped.error().message == "cancelled while orienting faces");
 }
 
 TEST_CASE("Hole filling closes small holes and leaves large ones", "[stages][holes]") {
