@@ -27,6 +27,7 @@
 
 #include "m2c/adapters/cgal/MeshTools.h"
 #include "m2c/core/Error.h"
+#include "m2c/core/Progress.h"
 #include "m2c/core/TriMesh.h"
 
 #include "CgalMesh.h"
@@ -205,7 +206,8 @@ void uniteCrossingShells(SurfaceMesh& mesh) {
 
 } // namespace
 
-Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
+Result<RepairResult>
+repair(const TriMesh& input, const RepairParams& params, const Progress& progress) {
     return guarded("mesh repair", [&] -> Result<RepairResult> {
         // Work on the polygon soup: it can represent any broken input, and CGAL's soup repair and
         // orientation are the most robust way back to a valid mesh.
@@ -219,9 +221,17 @@ Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
             polygons.push_back({a, b, c});
         }
 
+        // Each stage is one CGAL call that cannot be interrupted: a cancelled repair stops at the
+        // start of the next one.
+        if (auto go = checkpoint(progress, "merging duplicate points and faces"); !go)
+            return std::unexpected(go.error());
         PMP::repair_polygon_soup(points, polygons);
+        if (auto go = checkpoint(progress, "removing fins"); !go)
+            return std::unexpected(go.error());
         removeFins(polygons);
         const std::size_t afterSoup = polygons.size();
+        if (auto go = checkpoint(progress, "orienting faces"); !go)
+            return std::unexpected(go.error());
         // Returns false if some points had to be duplicated to make the soup orientable.
         const std::size_t pointsBefore = points.size();
         const bool orientable = PMP::orient_polygon_soup(points, polygons);
@@ -229,6 +239,8 @@ Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
             return fail(ErrorCode::InvalidArgument, "repair removed every face (all degenerate)");
         }
 
+        if (auto go = checkpoint(progress, "making the mesh manifold"); !go)
+            return std::unexpected(go.error());
         SurfaceMesh mesh;
         PMP::polygon_soup_to_polygon_mesh(points, polygons, mesh);
         PMP::stitch_borders(mesh);
@@ -238,17 +250,25 @@ Result<RepairResult> repair(const TriMesh& input, const RepairParams& params) {
             mesh, CGAL::parameters::output_iterator(std::back_inserter(duplicated)));
 
         if (params.removeSelfIntersections) {
+            if (auto go = checkpoint(progress, "removing self-intersections"); !go)
+                return std::unexpected(go.error());
             PMP::experimental::remove_self_intersections(mesh);
             mesh.collect_garbage();
+            if (auto go = checkpoint(progress, "uniting shells that pass through each other"); !go)
+                return std::unexpected(go.error());
             uniteCrossingShells(mesh);
         }
         // Orientation crashes on vertices without faces (unused input points, a removed fin's tip).
         PMP::remove_isolated_vertices(mesh);
         mesh.collect_garbage();
+        if (auto go = checkpoint(progress, "checking for self-intersections"); !go)
+            return std::unexpected(go.error());
         const IntersectionScan intersections = scanIntersections(mesh);
 
         bool flipped = !orientable;
         if (CGAL::is_closed(mesh)) {
+            if (auto go = checkpoint(progress, "orienting shells outward"); !go)
+                return std::unexpected(go.error());
             const bool outward = PMP::is_outward_oriented(mesh);
             // orient_to_bound_a_volume() also gets nested shells (cavities) right, but assumes no
             // face touches another; otherwise orient each shell outward on its own.

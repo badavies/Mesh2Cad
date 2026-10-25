@@ -63,6 +63,9 @@ namespace {
 constexpr std::size_t kProxyThreshold =
     2'000'000; ///< Faces above which a proxy is drawn while moving.
 constexpr std::size_t kProxyFaces = 400'000;
+/// Scans with more faces are not picked until their spatial index, built off the UI thread, is
+/// ready; a smaller one is built on the spot if need be, in well under a second.
+constexpr std::size_t kPickWaitFaces = 500'000;
 
 constexpr auto kVertexShader = R"(#version 330 core
 layout(location = 0) in vec3 position;
@@ -1151,7 +1154,14 @@ Viewport::pickAmong(const Vec3d& origin, const Vec3d& direction, const bool surf
                                  : o.solid() != nullptr ? &o.solid()->solid.display()
                                                         : primitiveDisplay(o);
         if (surface == nullptr || surface->faceCount() == 0) continue;
-        if (const auto hit = surface->spatialIndex().raycast(origin, direction);
+        // A scan's index is built off the UI thread when it is uploaded (syncGpu). Until a large
+        // one is ready it cannot be hit, rather than freezing the window (and, through the
+        // SpaceMouse's hit test, every motion) for as long as the build takes.
+        const SpatialIndex* index = isMesh(o) && surface->faceCount() > kPickWaitFaces
+                                        ? surface->builtSpatialIndex()
+                                        : &surface->spatialIndex();
+        if (index == nullptr) continue;
+        if (const auto hit = index->raycast(origin, direction);
             hit && hit->distance < bestDistance) {
             bestDistance = hit->distance;
             best = Hit{.meshId = isMesh(o) ? o.id : 0,

@@ -58,7 +58,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             RepairParams p;
             M2C_TRY(si, optionalBool(params, "remove_self_intersections", false));
             p.removeSelfIntersections = *si;
-            M2C_TRY(repaired, repair(*object->mesh, p));
+            M2C_TRY(repaired, repair(*object->mesh, p, context.progress));
             Json report{{"removed_faces", repaired->removedFaces},
                         {"split_vertices", repaired->splitVertices},
                         {"orientation_fixed", repaired->orientationFixed},

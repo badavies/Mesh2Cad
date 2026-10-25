@@ -2,6 +2,7 @@
 #include "m2c/core/TriMesh.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -22,6 +23,7 @@ namespace m2c {
 struct MeshCaches {
     std::once_flag indexOnce;
     std::unique_ptr<SpatialIndex> index;
+    std::atomic<bool> indexBuilt{false}; ///< Set once `index` is complete.
     std::once_flag adjacencyOnce;
     FaceAdjacency adjacency;
 };
@@ -33,8 +35,13 @@ TriMesh::TriMesh(PositionBuffer positions, IndexBuffer indices, const Aabb& boun
 const SpatialIndex& TriMesh::spatialIndex() const {
     std::call_once(caches_->indexOnce, [this] {
         caches_->index = std::make_unique<SpatialIndex>(positions_, indices_);
+        caches_->indexBuilt.store(true, std::memory_order_release);
     });
     return *caches_->index;
+}
+
+const SpatialIndex* TriMesh::builtSpatialIndex() const noexcept {
+    return caches_->indexBuilt.load(std::memory_order_acquire) ? caches_->index.get() : nullptr;
 }
 
 const FaceAdjacency& TriMesh::faceAdjacency() const {

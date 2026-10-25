@@ -60,6 +60,10 @@ to it are additive within 1.x.
   GPL-compatible, so such a build is for your own machine; installers never include it (ADR-039).
   It turns the view freely in all six directions, roll included, and follows the 3D mouse exactly
   (ADR-040).
+- `mesh.repair` reports each of its stages in the status bar and stops at the next one when you
+  press **Cancel**, so a large scan no longer looks hung while it repairs. After a large scan
+  changes, the view and the SpaceMouse no longer freeze while its picking index builds in the
+  background; clicks miss it until the index is ready.
 
 ### Prismatic and hybrid parts (M4)
 

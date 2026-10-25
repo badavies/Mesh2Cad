@@ -60,6 +60,10 @@ public:
     /// (thread-safe) and shared by every copy of this mesh.
     [[nodiscard]] const SpatialIndex& spatialIndex() const;
 
+    /// The spatial index if it is already built, without waiting for or starting the build: for
+    /// a UI thread that must not stall while another thread builds the index of a large scan.
+    [[nodiscard]] const SpatialIndex* builtSpatialIndex() const noexcept;
+
     /// Face-to-face adjacency (MeshTopology.h). Built on first use (thread-safe) and shared by
     /// every copy of this mesh, so selection tools on a large scan do not rebuild it per call.
     [[nodiscard]] const FaceAdjacency& faceAdjacency() const;

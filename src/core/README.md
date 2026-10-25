@@ -42,7 +42,8 @@ Must not depend on: `adapters`, `io`, `document`, `pipeline`, `commands`, `app`,
   individually, so a tool that only moves vertices can reuse the index buffer.
 - `TriMesh::spatialIndex()` and `TriMesh::faceAdjacency()` are built lazily on first use
   (thread-safe) and shared by every copy of the mesh. They never go stale because the mesh is
-  immutable.
+  immutable. `TriMesh::builtSpatialIndex()` returns the index only once it is built, so a UI
+  thread can skip a scan whose index another thread is still building instead of waiting.
 - `computeStats` runs serially in index order and `faceComponents` numbers components by lowest
   face index, so results are reproducible.
 - Do not add a type here until a stage needs it (no `StageReport` yet). The roadmap's `SolidRef`
