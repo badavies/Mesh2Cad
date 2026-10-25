@@ -127,16 +127,16 @@ endforeach()
 # m2c_cgal_deps carries everything the CGAL adapter needs. An installed CGAL (vcpkg or system)
 # brings Boost and GMP with it. Otherwise CGAL and the Boost headers are downloaded (about 50 MB,
 # once) and CGAL is told to use Boost.Multiprecision instead of GMP.
-# An installed CGAL finds Boost with find_package(Boost). Policy CMP0167 (CMake 3.30) makes that
-# use Boost's own BoostConfig.cmake, which vcpkg, Ubuntu and MSYS2 all install, instead of the
-# FindBoost module, and CMake warns while the policy is unset. CGAL's files reset the policies to
-# CMake 3.29's, which unsets it again, so the default is set as well as the policy.
-set(CMAKE_POLICY_DEFAULT_CMP0167 NEW)
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 NEW)
-endif()
+# An installed CGAL finds Boost with find_package(Boost), which tries CMake's FindBoost module
+# first, and CMake 3.30 and later warn there that the module is going (policy CMP0167). Setting
+# the policy here does not reach that call under vcpkg: its find_package is a macro, defined in
+# the toolchain file, and a macro runs with the policies of the place it was defined. So while
+# CGAL is found, packages' own config files are tried first, and Boost's BoostConfig.cmake
+# (vcpkg, Ubuntu, MSYS2), which FindBoost handed over to anyway, is found without the module.
 set(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE TRUE)
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG TRUE)
 find_package(CGAL 5.6 CONFIG QUIET)
+unset(CMAKE_FIND_PACKAGE_PREFER_CONFIG)
 add_library(m2c_cgal_deps INTERFACE)
 if(CGAL_FOUND)
     message(STATUS "Mesh2Cad: CGAL ${CGAL_VERSION} found by find_package (vcpkg or system)")
