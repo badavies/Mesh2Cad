@@ -2,6 +2,7 @@
 #pragma once
 
 #include <array>
+#include <optional>
 
 #include "m2c/core/TriMesh.h"
 #include "m2c/core/Vec3.h"
@@ -22,13 +23,15 @@ struct Mat4d {
     friend Mat4d operator*(const Mat4d& a, const Mat4d& b);
 };
 
-/// Orbit camera with +Z up (scans and CAD parts sit on the XY plane).
+/// Orbit camera with +Z up (scans and CAD parts sit on the XY plane). A 3D mouse can also roll
+/// it and turn it over the top; a standard view levels it again.
 class Camera {
 public:
     Vec3d target{};
     double distance{100.0};
     double yawDeg{-60.0};  ///< Around +Z, from +X.
     double pitchDeg{25.0}; ///< Elevation above the XY plane.
+    double rollDeg{0.0};   ///< Turn around the line of sight, counter-clockwise on screen.
     double fovYDeg{35.0};
     double sceneRadius{50.0};
 
@@ -51,15 +54,18 @@ public:
     void zoom(double factor);
     /// Frames a box.
     void fit(const Aabb& box);
+    /// Looks from a direction, level.
     void setView(double yaw, double pitch);
 
     /// Camera-to-world transform: its columns are right, up, back (the camera looks down -Z) and
     /// the eye. This is the view the 3Dconnexion Navigation Library reads and writes.
     [[nodiscard]] Mat4d cameraToWorld() const;
-    /// Moves the eye and turns the camera to a camera-to-world transform. The camera keeps +Z up,
-    /// so roll is dropped and the pitch stops short of straight up or down. The target becomes
-    /// the point on the new line of sight nearest the old one, so orbiting stays around it.
-    void setCameraToWorld(const Mat4d& transform);
+    /// Moves the eye and turns the camera to a camera-to-world transform, exactly, roll and all,
+    /// so cameraToWorld() gives it back. The target becomes the point on the new line of sight
+    /// nearest `focus` (the 3D mouse's pivot; the old target if none), so a mouse orbit
+    /// afterwards turns around it. When that point is not in front of the eye, the distance is
+    /// kept.
+    void setCameraToWorld(const Mat4d& transform, std::optional<Vec3d> focus = std::nullopt);
 
     /// World-space ray through a point given in normalised device coordinates.
     void ray(double ndcX, double ndcY, double aspect, Vec3d& origin, Vec3d& direction) const;

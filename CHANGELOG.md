@@ -58,6 +58,8 @@ to it are additive within 1.x.
 - Optional 3Dconnexion SpaceMouse navigation in the app on Windows, through the 3DxWare SDK you
   install yourself (`-DMESH2CAD_SPACEMOUSE=ON`, off by default). The SDK's licence is not
   GPL-compatible, so such a build is for your own machine; installers never include it (ADR-039).
+  It turns the view freely in all six directions, roll included, and follows the 3D mouse exactly
+  (ADR-040).
 
 ### Prismatic and hybrid parts (M4)
 

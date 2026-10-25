@@ -141,6 +141,9 @@ public:
     [[nodiscard]] Aabb visibleBounds(std::optional<ObjectId> only = std::nullopt) const;
     /// Where the 3D mouse turns the view around, drawn as a dot; nullopt hides it.
     void setNavigationPivot(std::optional<Vec3d> pivot);
+    /// While a 3D mouse moves the view, it is drawn as moving throughout, even through a pause
+    /// in its frames, and at full detail once it stops.
+    void setNavigating(bool navigating);
 
     /// View-projection matrix (column-major, world coordinates) and camera position, as the
     /// select.lasso command expects.
@@ -300,6 +303,7 @@ private:
     std::vector<std::vector<Vec3d>> markedLines_;
     std::optional<SketchPlane> previewPlane_;
     bool interacting_{false};
+    bool navigating_{false};
     QTimer interactionTimer_;
 };
 
