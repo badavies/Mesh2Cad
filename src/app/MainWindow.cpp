@@ -145,9 +145,10 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
     buildMenus();
 #ifdef M2C_HAVE_SPACEMOUSE
     spaceMouse_ = std::make_unique<SpaceMouse>(*viewport_);
-    log_->appendPlainText(spaceMouse_->connected()
-                              ? tr("SpaceMouse: connected to the 3DxWare driver")
-                              : tr("SpaceMouse: no 3DxWare driver found (3DxWare 10.8.12 or newer is needed)"));
+    log_->appendPlainText(
+        spaceMouse_->connected()
+            ? tr("SpaceMouse: connected to the 3DxWare driver")
+            : tr("SpaceMouse: no 3DxWare driver found (3DxWare 10.8.12 or newer is needed)"));
 #endif
 
     status_ = new QLabel;
