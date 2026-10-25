@@ -18,6 +18,7 @@
 #include <QLabel>
 #include <QList>
 #include <QListWidget>
+#include <QListWidgetItem>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMenuBar>
@@ -45,6 +46,7 @@
 #include <Qt>
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -214,27 +216,8 @@ void MainWindow::buildDocks() {
     connect(tree_, &QTreeWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
         const QTreeWidgetItem* item = tree_->itemAt(pos);
         if (item == nullptr) return;
-        const auto id = item->data(0, kIdRole).value<ObjectId>();
-        const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
         QMenu menu;
-        menu.addAction(tr("Fit view"), this, [this, id] { viewport_->fitObject(id); });
-        // An edit (an agent's, say) can rebuild the tree while the menu is open, deleting
-        // `item`, so find the object's item again.
-        menu.addAction(tr("Rename"), this, [this, id] {
-            for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
-                if ((*it)->data(0, kIdRole).value<ObjectId>() == id) {
-                    tree_->editItem(*it, 0);
-                    return;
-                }
-            }
-        });
-        if (o != nullptr && infoCommand(*o) != nullptr)
-            menu.addAction(tr("Info"), this, [this, id] { showInfo(id); });
-        menu.addSeparator();
-        const std::vector<ObjectId> rows = rowsFor(id);
-        menu.addAction(rows.size() > 1 ? tr("Delete %1 objects").arg(rows.size()) : tr("Delete"),
-                       this,
-                       [this, rows] { run("object.delete", {{"ids", rows}}); });
+        fillObjectMenu(menu, item->data(0, kIdRole).value<ObjectId>());
         menu.exec(tree_->viewport()->mapToGlobal(pos));
     });
     auto* objects = new QDockWidget(tr("Objects"), this);
@@ -272,6 +255,11 @@ void MainWindow::buildDocks() {
     addDockWidget(Qt::RightDockWidgetArea, tool);
 
     history_ = new QListWidget;
+    history_->setToolTip(tr("Double-click a step to undo or redo to just after it"));
+    // Each row holds how many steps away it is: negative to undo, positive to redo.
+    connect(history_, &QListWidget::itemActivated, this, [this](const QListWidgetItem* item) {
+        if (const int steps = item->data(Qt::UserRole).toInt(); steps != 0) stepHistory(steps);
+    });
     auto* historyDock = new QDockWidget(tr("History"), this);
     historyDock->setObjectName("history");
     historyDock->setWidget(history_);
@@ -286,6 +274,48 @@ void MainWindow::buildDocks() {
     addDockWidget(Qt::BottomDockWidgetArea, logDock);
     tabifyDockWidget(historyDock, logDock);
     tool->raise();
+}
+
+void MainWindow::fillObjectMenu(QMenu& menu, const ObjectId id) const {
+    const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
+    // The tools that take an object of this kind, then a rerun of the command that made it.
+    if (o != nullptr) {
+        for (const std::string& command : objectTools(o->kind())) {
+            if (engine_.registry().find(command) == nullptr) continue;
+            const QString name = QString::fromStdString(command);
+            QAction* a = menu.addAction(toolInfo(command).title + QStringLiteral("…"),
+                                        this,
+                                        [this, name, id] { showTool(name, id); });
+            a->setObjectName(name);
+        }
+        if (const Command* made = engine_.registry().find(o->provenance.command);
+            made != nullptr && made->mutatesDocument && !o->provenance.params.empty()) {
+            if (!menu.isEmpty()) menu.addSeparator();
+            menu.addAction(tr("Change and run %1 again…").arg(toolInfo(made->name).title),
+                           this,
+                           [this, id] { showMadeWith(id); })
+                ->setObjectName(QStringLiteral("rerun"));
+        }
+        if (!menu.isEmpty()) menu.addSeparator();
+    }
+    menu.addAction(tr("Fit view"), this, [this, id] { viewport_->fitObject(id); });
+    // An edit (an agent's, say) can rebuild the tree while the menu is open, deleting the
+    // row, so find the object's row again.
+    menu.addAction(tr("Rename"), this, [this, id] {
+        for (QTreeWidgetItemIterator it(tree_); *it != nullptr; ++it) {
+            if ((*it)->data(0, kIdRole).value<ObjectId>() == id) {
+                tree_->editItem(*it, 0);
+                return;
+            }
+        }
+    });
+    if (o != nullptr && infoCommand(*o) != nullptr)
+        menu.addAction(tr("Info"), this, [this, id] { showInfo(id); });
+    menu.addSeparator();
+    const std::vector<ObjectId> rows = rowsFor(id);
+    menu.addAction(rows.size() > 1 ? tr("Delete %1 objects").arg(rows.size()) : tr("Delete"),
+                   this,
+                   [this, rows] { run("object.delete", {{"ids", rows}}); });
 }
 
 void MainWindow::buildToolbar() {
@@ -522,19 +552,29 @@ void MainWindow::onDocumentChanged(std::shared_ptr<const DocSnapshot> snapshot) 
     form_->setObjects(snapshot_);
 
     history_->clear();
-    for (const auto& [label, source] : snapshot_->undo) {
-        history_->addItem(QStringLiteral("%1   [%2]")
-                              .arg(QString::fromStdString(label), QString::fromStdString(source)));
+    // A first row for the state before every step, so a double-click can undo them all.
+    const auto done = static_cast<int>(snapshot_->undo.size());
+    auto* start = new QListWidgetItem(tr("(start)"));
+    start->setData(Qt::UserRole, -done);
+    history_->addItem(start);
+    for (int i = 0; i < done; ++i) {
+        const auto& [label, source] = snapshot_->undo[static_cast<std::size_t>(i)];
+        auto* item = new QListWidgetItem(
+            QStringLiteral("%1   [%2]")
+                .arg(QString::fromStdString(label), QString::fromStdString(source)));
+        item->setData(Qt::UserRole, i + 1 - done);
+        history_->addItem(item);
     }
-    for (const auto& [label, source] : snapshot_->redo) {
+    for (std::size_t i = 0; i < snapshot_->redo.size(); ++i) {
+        const auto& [label, source] = snapshot_->redo[i];
         auto* item = new QListWidgetItem(
             QStringLiteral("%1   [%2]  (undone)")
                 .arg(QString::fromStdString(label), QString::fromStdString(source)));
         item->setForeground(palette().color(QPalette::Disabled, QPalette::Text));
+        item->setData(Qt::UserRole, static_cast<int>(i) + 1);
         history_->addItem(item);
     }
-    if (!snapshot_->undo.empty())
-        history_->setCurrentRow(static_cast<int>(snapshot_->undo.size()) - 1);
+    history_->setCurrentRow(done);
     undo_->setEnabled(!snapshot_->undo.empty());
     redo_->setEnabled(!snapshot_->redo.empty());
     undo_->setText(snapshot_->undo.empty()
@@ -754,14 +794,59 @@ Json MainWindow::formDefaults(const Command& command) const {
     return values;
 }
 
-void MainWindow::showTool(const QString& name) const {
+void MainWindow::showTool(const QString& name, const ObjectId forObject) const {
     const Command* c = engine_.registry().find(name.toStdString());
     if (c == nullptr) return;
-    form_->setCommand(c, formDefaults(*c));
+    Json values = formDefaults(*c);
+    if (const DocumentObject* o = snapshot_ ? snapshot_->find(forObject) : nullptr) {
+        // The field of the object's kind: id, else a required one, else any; a list takes it
+        // as its one item.
+        std::vector<std::string> required;
+        if (c->paramsSchema.contains("required"))
+            required = c->paramsSchema["required"].get<std::vector<std::string>>();
+        std::string best;
+        Json item;
+        int bestRank = 3;
+        const Json properties = c->paramsSchema.value("properties", Json::object());
+        for (const auto& [key, prop] : properties.items()) {
+            const bool list = !prop.contains("x-object") && prop.contains("items") &&
+                              prop["items"].contains("x-object");
+            const Json x = list ? prop["items"]["x-object"] : prop.value("x-object", Json());
+            const Json kinds = x.is_array() ? x : Json::array({x});
+            if (std::ranges::find(kinds, Json(o->kind())) == kinds.end()) continue;
+            const int rank = key == "id"                                          ? 0
+                             : std::ranges::find(required, key) != required.end() ? 1
+                                                                                  : 2;
+            if (rank < bestRank) {
+                bestRank = rank;
+                best = key;
+                item = list ? Json::array({o->id}) : Json(o->id);
+            }
+        }
+        if (!best.empty()) values[best] = item;
+    }
+    form_->setCommand(c, values);
     if (auto* dock = findChild<QDockWidget*>("tool")) {
         dock->show();
         dock->raise();
     }
+}
+
+void MainWindow::showMadeWith(const ObjectId id) const {
+    const DocumentObject* o = snapshot_ ? snapshot_->find(id) : nullptr;
+    const Command* c = o != nullptr ? engine_.registry().find(o->provenance.command) : nullptr;
+    if (c == nullptr) return;
+    const Json params = Json::parse(o->provenance.params, nullptr, false);
+    form_->setCommand(c, params.is_object() ? params : Json::object());
+    if (auto* dock = findChild<QDockWidget*>("tool")) {
+        dock->show();
+        dock->raise();
+    }
+}
+
+void MainWindow::stepHistory(const int steps) const {
+    // One command per step, run in order, as pressing Undo or Redo that many times would.
+    for (int i = 0; i < std::abs(steps); ++i) run(steps < 0 ? "doc.undo" : "doc.redo", {});
 }
 
 void MainWindow::runForm() {

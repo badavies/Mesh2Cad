@@ -12,6 +12,7 @@ class QActionGroup;
 class QDoubleSpinBox;
 class QLabel;
 class QListWidget;
+class QMenu;
 class QPlainTextEdit;
 class QPushButton;
 class QTreeWidget;
@@ -38,6 +39,10 @@ public:
     /// Logs an object's info query (mesh.info, solid.info, deviation.info), as its context
     /// menu's Info does. Objects without one are ignored.
     void showInfo(ObjectId id) const;
+    /// Fills an Objects list row's context menu: the tools that take an object of its kind
+    /// (each opening its form with the object filled in), a rerun of the command that made it
+    /// with its parameters, Fit view, Rename, Info and Delete.
+    void fillObjectMenu(QMenu& menu, ObjectId id) const;
 
 protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
@@ -57,7 +62,14 @@ private:
     void showCurrent() const;
     /// Selects an object picked in a tool form, in the tree and the viewport.
     void chooseObject(ObjectId id);
-    void showTool(const QString& name) const;
+    /// Opens a command's form, filled with the current objects; with `forObject`, that object
+    /// goes in the field that takes its kind ("id" first), as its context menu asks.
+    void showTool(const QString& name, ObjectId forObject = 0) const;
+    /// Opens the form of the command that made an object, with the parameters it was made with,
+    /// to change them and run it again.
+    void showMadeWith(ObjectId id) const;
+    /// Undoes (negative) or redoes (positive) this many steps, as a double-click in History does.
+    void stepHistory(int steps) const;
     void runForm();
     void run(const QString& command, const Json& params, Engine::Done done = {}) const;
     /// The read-only query that describes an object of this kind, or null.

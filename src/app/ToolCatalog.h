@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace m2c::app {
@@ -18,6 +19,10 @@ struct ToolInfo {
 };
 
 [[nodiscard]] ToolInfo toolInfo(const std::string& command);
+
+/// The tools an Objects list row of this kind offers in its context menu, in order; each takes
+/// an object of that kind (its schema's "x-object").
+[[nodiscard]] const std::vector<std::string>& objectTools(std::string_view kind);
 
 /// The Tools menu's groups in menu order. Commands hidden from the menu (doc.*,
 /// commands.list) have an empty group.

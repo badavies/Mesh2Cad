@@ -12,6 +12,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMouseEvent>
@@ -1444,6 +1445,92 @@ TEST_CASE("The workflow lists every track and shows the stage gate", "[app]") {
     }
     REQUIRE(fill != nullptr);
     CHECK(fill->text() == QStringLiteral("Fill holes…\tholes.fill"));
+}
+
+TEST_CASE("Object menus offer the tools for their kind, and History jumps to a step", "[app]") {
+    application();
+    const TempDir dir;
+    qputenv("XDG_RUNTIME_DIR", QByteArray::fromStdString(dir.path().string()));
+    qputenv("LOCALAPPDATA", QByteArray::fromStdString(dir.path().string()));
+    const auto ball = dir.path() / "ball.stl";
+    REQUIRE(writeMesh(makeSphere(10.0, 3), ball).has_value());
+
+    Engine engine;
+    MainWindow window(engine);
+    window.resize(1200, 800);
+    window.show();
+    REQUIRE(waitFor([&] { return window.viewport()->isVisible(); }));
+    window.openFiles({QString::fromStdString(ball.string())});
+    REQUIRE(waitFor([&] { return !engine.busy() && countKind(*engine.snapshot(), "mesh") == 1; }));
+    const ObjectId mesh = engine.snapshot()->objects.front().id;
+    const auto run = [&](const char* command, const Json& params) {
+        Json out;
+        bool done = false;
+        engine.run(command, params, [&](const Result<Json>& r) {
+            if (r) out = *r;
+            done = true;
+        });
+        REQUIRE(waitFor([&] { return done && !engine.busy(); }, 120000));
+        return out;
+    };
+    const auto layout =
+        run("quad.remesh", {{"id", mesh}, {"target_faces", 300}})["id"].get<ObjectId>();
+    auto* form = window.findChild<ParamForm*>();
+    const auto menuFor = [&](ObjectId id) {
+        auto menu = std::make_unique<QMenu>();
+        window.fillObjectMenu(*menu, id);
+        return menu;
+    };
+    const auto action = [](const QMenu& menu, const char* name) -> QAction* {
+        for (QAction* a : menu.actions()) {
+            if (a->objectName() == name) return a;
+        }
+        return nullptr;
+    };
+
+    // A mesh offers its tools; a quad layout Build surface, with the layout filled in.
+    auto meshMenu = menuFor(mesh);
+    CHECK(action(*meshMenu, "holes.fill") != nullptr);
+    CHECK(action(*meshMenu, "sketch.section") != nullptr);
+    CHECK(action(*meshMenu, "surface.build") == nullptr);
+    auto layoutMenu = menuFor(layout);
+    QAction* build = action(*layoutMenu, "surface.build");
+    REQUIRE(build != nullptr);
+    CHECK(build->text() == QStringLiteral("Build surface…"));
+    build->trigger();
+    REQUIRE(form->command() != nullptr);
+    CHECK(form->command()->name == "surface.build");
+    CHECK(form->findChild<QComboBox*>("id")->currentData().value<ObjectId>() == layout);
+
+    // The layout was made by quad.remesh: its menu opens that form with the same parameters.
+    QAction* rerun = action(*layoutMenu, "rerun");
+    REQUIRE(rerun != nullptr);
+    CHECK(rerun->text() == QStringLiteral("Change and run Quad remesh again…"));
+    rerun->trigger();
+    CHECK(form->command()->name == "quad.remesh");
+    CHECK(form->findChild<QSpinBox*>("target_faces")->value() == 300);
+    CHECK(form->findChild<QComboBox*>("id")->currentData().value<ObjectId>() == mesh);
+    CHECK(form->findChild<QToolButton*>("advanced")->isChecked()); // target_faces is changed
+
+    // History: a first row for the start, then each step; a double-click undoes or redoes to it.
+    run("mesh.smooth", {{"id", mesh}});
+    run("mesh.flip", {{"id", mesh}});
+    auto* history = window.findChild<QListWidget*>();
+    REQUIRE(history != nullptr);
+    const std::size_t steps = engine.snapshot()->undo.size();
+    REQUIRE(history->count() == static_cast<int>(steps) + 1);
+    CHECK(history->item(0)->text() == "(start)");
+    emit history->itemActivated(history->item(static_cast<int>(steps) - 2)); // two back
+    REQUIRE(waitFor([&] { return !engine.busy() && engine.snapshot()->redo.size() == 2; }));
+    CHECK(engine.snapshot()->undo.size() == steps - 2);
+    CHECK(engine.snapshot()->redo.front().label == "mesh.smooth");
+    REQUIRE(history->count() == static_cast<int>(steps) + 1);
+    emit history->itemActivated(history->item(history->count() - 1)); // redo both
+    REQUIRE(waitFor([&] { return !engine.busy() && engine.snapshot()->redo.empty(); }));
+    CHECK(engine.snapshot()->undo.size() == steps);
+    emit history->itemActivated(history->item(0)); // back to the start
+    REQUIRE(waitFor([&] { return !engine.busy() && engine.snapshot()->undo.empty(); }));
+    CHECK(countKind(*engine.snapshot(), "mesh") == 0);
 }
 
 TEST_CASE("Help opens the user guide and follows its links", "[app]") {

@@ -46,6 +46,9 @@ to it are additive within 1.x.
   stage gate: whether a mesh is closed, manifold and one shell, a solid valid and closed, or a
   deviation within tolerance, and what to do if not. The Tools menu groups commands by task
   with titles, the command's name beside each.
+- Right-clicking an object offers the tools for its kind with the object filled in, and **Change
+  and run ... again** reopens the command that made it with its parameters. A double-click in
+  History undoes or redoes to that step.
 
 ### Prismatic and hybrid parts (M4)
 

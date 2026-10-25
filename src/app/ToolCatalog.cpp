@@ -4,7 +4,10 @@
 #include <QObject>
 #include <QString>
 #include <algorithm>
+#include <functional>
+#include <map>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace m2c::app {
@@ -110,6 +113,43 @@ const std::vector<QString>& toolGroups() {
                                              QObject::tr("Files"),
                                              QObject::tr("Objects")};
     return groups;
+}
+
+const std::vector<std::string>& objectTools(const std::string_view kind) {
+    static const std::map<std::string, std::vector<std::string>, std::less<>> tools{
+        {"mesh",
+         {"mesh.repair",
+          "holes.fill",
+          "shells.detect",
+          "mesh.segment",
+          "quad.remesh",
+          "sketch.section",
+          "deviation.compute",
+          "mesh.export"}},
+        {"selection",
+         {"primitive.fit",
+          "plane.fit",
+          "primitive.box",
+          "mesh.smooth",
+          "faces.delete",
+          "select.grow",
+          "select.shrink",
+          "select.invert"}},
+        {"quad_layout", {"surface.build"}},
+        {"sketch", {"solid.extrude", "solid.revolve", "solid.export"}},
+        {"primitive", {"primitive.align", "primitive.trim", "primitive.solid", "sketch.section"}},
+        {"solid",
+         {"solid.boolean",
+          "fillet.fit",
+          "deviation.compute",
+          "solid.info",
+          "solid.export",
+          "solid.export.mesh"}},
+        {"deviation", {"deviation.info", "deviation.report"}},
+    };
+    static const std::vector<std::string> none;
+    const auto it = tools.find(kind);
+    return it != tools.end() ? it->second : none;
 }
 
 ToolInfo toolInfo(const std::string& command) {
