@@ -54,6 +54,13 @@ if(WIN32)
     set(m2c_doc_dir doc)
 else()
     install(TARGETS ${m2c_programs} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    # A downloaded oneTBB (Mesh2CadDependencies.cmake) is not on the target system, so it goes in
+    # the package and the programs look for it there. On Windows the DLL rules above copy it.
+    if(m2c_tbb_fetched)
+        install(TARGETS tbb LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR} NAMELINK_SKIP)
+        set_target_properties(${m2c_programs} PROPERTIES
+            INSTALL_RPATH "\$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
+    endif()
     if(TARGET mesh2cad-app)
         install(FILES "${CMAKE_SOURCE_DIR}/packaging/linux/mesh2cad.desktop"
                 DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)

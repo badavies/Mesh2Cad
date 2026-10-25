@@ -32,9 +32,9 @@ set(BUILD_EXAMPLES OFF CACHE BOOL "miniz: build examples")
 set(BUILD_FUZZERS OFF CACHE BOOL "miniz: build fuzzers")
 set(BUILD_TESTS OFF CACHE BOOL "miniz: build tests")
 set(INSTALL_PROJECT OFF CACHE BOOL "miniz: install")
-# miniz 3.0.2 asks for CMake 3.4 compatibility, which CMake 4 refuses without this. Older CMake
-# versions ignore the variable.
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+# miniz 3.0.2 asks for CMake 3.4 compatibility, which CMake 4 refuses without this, and CMake 3.31
+# and later warn about anything below 3.10. Older CMake versions ignore the variable.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.10)
 FetchContent_Declare(miniz
     GIT_REPOSITORY https://github.com/richgel999/miniz.git
     GIT_TAG        3.0.2
@@ -42,14 +42,21 @@ FetchContent_Declare(miniz
     FIND_PACKAGE_ARGS CONFIG)
 
 # ---- oneTBB (ADR 0036) --------------------------------------------------------------------------
-# Built as a subproject when no installed copy is found. Like the other fetched libraries it is
-# then static, which oneTBB warns about; only core links it, so there is one scheduler.
+# Built as a subproject when no installed copy is found: a shared library, as every installed copy
+# is, since oneTBB does not support static builds. miniz's BUILD_SHARED_LIBS option (OFF) would
+# make it static, so the variable is ON while oneTBB configures, below. m2c_copy_runtime puts the
+# DLL next to each Windows executable, and Mesh2CadPackaging.cmake installs it; oneTBB's own
+# install rules (headers, CMake files) are off, and so is tbbmalloc, which nothing uses.
 # v2022.2.0 is the first to configure with MinGW on Windows (it probed the assembler through
 # /dev/null). With MinGW, oneTBB's profiling hooks (on in Debug) do not compile, as they pass
 # char names where Windows builds take wchar_t; nothing here uses them. Its headers are system
 # headers, as an installed copy's are: their Windows-only code fails core's warning flags.
+# onetbb-cmp0148.cmake moves it off a policy setting that CMake 4 warns about. The signature check
+# is for DLLs oneTBB loads by itself at run time (tbbbind, which needs hwloc and is not built) and
+# wants them Authenticode-signed; it is off by default, and saying so stops oneTBB warning.
 set(TBB_TEST OFF CACHE BOOL "oneTBB: build tests")
 set(TBB_STRICT OFF CACHE BOOL "oneTBB: treat warnings as errors")
+set(TBB_VERIFY_DEPENDENCY_SIGNATURE OFF CACHE BOOL "oneTBB: verify signatures of loaded DLLs")
 if(MINGW)
     add_compile_definitions(TBB_USE_PROFILING_TOOLS=0)
 endif()
@@ -57,10 +64,11 @@ FetchContent_Declare(TBB
     GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB.git
     GIT_TAG        v2022.3.0
     GIT_SHALLOW    TRUE
+    PATCH_COMMAND  "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_LIST_DIR}/onetbb-cmp0148.cmake"
     SYSTEM
     FIND_PACKAGE_ARGS 2021.5 CONFIG)
 
-set(m2c_dependencies nlohmann_json Eigen3 miniz TBB)
+set(m2c_dependencies nlohmann_json Eigen3 miniz)
 
 if(MESH2CAD_BUILD_TESTS)
     FetchContent_Declare(Catch2
@@ -73,6 +81,21 @@ endif()
 
 FetchContent_MakeAvailable(${m2c_dependencies})
 unset(CMAKE_POLICY_VERSION_MINIMUM)
+
+# Normal variables, which win over the cache entries an older configure (or miniz) left behind,
+# and only while oneTBB configures.
+set(BUILD_SHARED_LIBS ON)
+set(TBB_INSTALL OFF)
+set(TBBMALLOC_BUILD OFF)
+FetchContent_MakeAvailable(TBB)
+unset(BUILD_SHARED_LIBS)
+unset(TBB_INSTALL)
+unset(TBBMALLOC_BUILD)
+list(APPEND m2c_dependencies TBB)
+set(m2c_tbb_fetched OFF)
+if(NOT TBB_FOUND)
+    set(m2c_tbb_fetched ON)
+endif()
 
 if(NOT TARGET Eigen3::Eigen)
     add_library(Eigen3::Eigen INTERFACE IMPORTED)
