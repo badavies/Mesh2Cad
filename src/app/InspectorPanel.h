@@ -17,6 +17,15 @@ class QTreeWidgetItem;
 
 namespace m2c::app {
 
+/// A command the Inspector asks the main window to run. Its parameters travel inside this struct,
+/// not as a bare Json signal argument: Qt probes a signal argument's QDebug operator<<, and
+/// through Json's implicit conversions that reaches the incomplete Windows MSG type, which
+/// MinGW's GCC rejects.
+struct InspectorRequest {
+    QString command;
+    Json params;
+};
+
 /// The Inspector: a read-only command's result (mesh.info, solid.info, deviation.info,
 /// shells.detect, ...) as rows of names and values instead of raw JSON, with units in the
 /// names, problems (open edges, an invalid solid, a deviation past its tolerance) in amber and
@@ -42,7 +51,7 @@ signals:
     /// A row with bounds was clicked: the box to look at.
     void boundsClicked(const m2c::Aabb& box);
     /// One of the result's actions was pressed: the command to run.
-    void commandRequested(const QString& command, const m2c::Json& params);
+    void commandRequested(const m2c::app::InspectorRequest& request);
 
 private:
     void addRow(QTreeWidgetItem* parent, const std::string& key, const Json& value, const Json& in);

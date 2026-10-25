@@ -25,6 +25,7 @@ class QTreeWidgetItem;
 namespace m2c::app {
 
 class InspectorPanel;
+struct InspectorRequest;
 class ParamForm;
 class WorkflowPanel;
 
@@ -84,7 +85,7 @@ private:
     /// Shows a read-only result in the Inspector, and brings it to the front.
     void inspect(const QString& command, const Json& result) const;
     /// Runs an action the Inspector asks for, then shows what changed.
-    void runInspectorAction(const QString& command, const Json& params);
+    void runInspectorAction(const InspectorRequest& request);
     void run(const QString& command, const Json& params, Engine::Done done = {}) const;
     /// The read-only query that describes an object of this kind, or null.
     [[nodiscard]] static const char* infoCommand(const DocumentObject& o);

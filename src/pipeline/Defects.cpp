@@ -349,12 +349,12 @@ struct Grower {
     /// neighbouring faces while they do better. Returns the centre and the size; `patch` is left
     /// holding the final patch.
     std::pair<std::uint32_t, std::size_t> centre(std::uint32_t seed, std::size_t size) {
-        const std::uint32_t far = patch.back();
-        if (const std::size_t s = grow(far, size); s > 0) {
+        const std::uint32_t farthest = patch.back();
+        if (const std::size_t s = grow(farthest, size); s > 0) {
             std::uint32_t middle = patch.back();
             for (std::uint32_t up = ring[middle] / 2; up > 0; --up) middle = parent[middle];
             if (s < size) {
-                seed = far;
+                seed = farthest;
                 size = s;
             }
             if (const std::size_t t = grow(middle, size - 1); t > 0) {

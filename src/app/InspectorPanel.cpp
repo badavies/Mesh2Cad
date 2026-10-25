@@ -141,8 +141,8 @@ InspectorPanel::InspectorPanel(QWidget* parent) : QWidget(parent) {
     select->setToolTip(tr("Make one selection of the checked shells"));
     select->setEnabled(false);
     connect(select, &QPushButton::clicked, this, [this] {
-        emit commandRequested("shells.select",
-                              {{"id", result_.value("id", 0)}, {"shells", checkedShells()}});
+        emit commandRequested(
+            {"shells.select", {{"id", result_.value("id", 0)}, {"shells", checkedShells()}}});
     });
     connect(tree_, &QTreeWidget::itemChanged, select, [this, select] {
         select->setEnabled(!checkedShells().empty());
@@ -151,13 +151,13 @@ InspectorPanel::InspectorPanel(QWidget* parent) : QWidget(parent) {
     keep->setObjectName("keepMain");
     keep->setToolTip(tr("Delete every shell except the main (largest) one"));
     connect(keep, &QPushButton::clicked, this, [this] {
-        emit commandRequested("shells.keep", {{"id", result_.value("id", 0)}});
+        emit commandRequested({"shells.keep", {{"id", result_.value("id", 0)}}});
     });
     auto* split = new QPushButton(tr("Split others off"));
     split->setObjectName("splitShells");
     split->setToolTip(tr("Make every shell except the main one a mesh of its own"));
     connect(split, &QPushButton::clicked, this, [this] {
-        emit commandRequested("shells.split", {{"id", result_.value("id", 0)}});
+        emit commandRequested({"shells.split", {{"id", result_.value("id", 0)}}});
     });
     shells->addWidget(select);
     shells->addWidget(keep);
@@ -172,12 +172,12 @@ InspectorPanel::InspectorPanel(QWidget* parent) : QWidget(parent) {
                                    "each hotspot a selection, ready for Fit primitive"));
     connect(selectHotspots_, &QPushButton::clicked, this, [this] {
         const Json stats = result_.value("stats", Json::object());
-        emit commandRequested("deviation.compute",
-                              {{"id", result_.value("mesh_id", 0)},
-                               {"reference_id", result_.value("reference_id", 0)},
-                               {"tolerance_mm", stats.value("tolerance_mm", 0.1)},
-                               {"max_hotspots", result_.value("hotspots", Json::array()).size()},
-                               {"select_hotspots", true}});
+        emit commandRequested({"deviation.compute",
+                               {{"id", result_.value("mesh_id", 0)},
+                                {"reference_id", result_.value("reference_id", 0)},
+                                {"tolerance_mm", stats.value("tolerance_mm", 0.1)},
+                                {"max_hotspots", result_.value("hotspots", Json::array()).size()},
+                                {"select_hotspots", true}}});
     });
     selectHotspots_->hide();
     layout->addWidget(selectHotspots_);
