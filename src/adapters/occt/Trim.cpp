@@ -130,7 +130,7 @@ double coverage(const TopoDS_Face& face, const SpatialIndex& scan, const double 
     const opencascade::handle<Geom_Surface> surface = BRep_Tool::Surface(face);
     const double tolerance = BRep_Tool::Tolerance(face);
     const BRepTopAdaptor_FClass2d classify(face, tolerance);
-    double total = 0.0, near = 0.0;
+    double total = 0.0, nearby = 0.0;
     for (int j = 0; j < kSamples; ++j) {
         for (int i = 0; i < kSamples; ++i) {
             const double u = u0 + (u1 - u0) * (i + 0.5) / kSamples;
@@ -142,11 +142,11 @@ double coverage(const TopoDS_Face& face, const SpatialIndex& scan, const double 
             const double weight = du.Crossed(dv).Magnitude();
             total += weight;
             if (scan.closestPoint({.x = p.X(), .y = p.Y(), .z = p.Z()}).distance <= maxDistance) {
-                near += weight;
+                nearby += weight;
             }
         }
     }
-    return total > 0.0 ? near / total : 0.0;
+    return total > 0.0 ? nearby / total : 0.0;
 }
 
 /// The triangulation BRepMesh left on each face of the solid, in TopExp::MapShapes order and

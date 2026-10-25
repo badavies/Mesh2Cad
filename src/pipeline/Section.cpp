@@ -186,18 +186,18 @@ thin(const std::span<const Vec2d> q, std::size_t first, std::size_t last, const 
     while (!stack.empty()) {
         const auto [a, b] = stack.back();
         stack.pop_back();
-        std::size_t far = a;
+        std::size_t split = a;
         double farthest = tol;
         for (std::size_t k = a + 1; k < b; ++k) {
             if (const double dist = distanceToSegment(q[a], q[b], q[k]); dist > farthest) {
                 farthest = dist;
-                far = k;
+                split = k;
             }
         }
-        if (far == a) continue;
-        keep[far - first] = true;
-        stack.emplace_back(a, far);
-        stack.emplace_back(far, b);
+        if (split == a) continue;
+        keep[split - first] = true;
+        stack.emplace_back(a, split);
+        stack.emplace_back(split, b);
     }
     std::vector<Vec2d> out;
     for (std::size_t k = first; k <= last; ++k) {

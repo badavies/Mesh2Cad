@@ -822,14 +822,14 @@ TEST_CASE("Sketches show curve kinds, the normal and open chain ends", "[app]") 
 
     // Two dots for the open chain, at its ends; none for the closed loop.
     REQUIRE(scene.openEnds.size() == 2);
-    const auto near = [](const Vec3d& a, const Vec3d& b) { return length(a - b) < 1e-9; };
-    CHECK(near(scene.openEnds[0], sketch.plane.toWorld({40, 10})));
-    CHECK(near(scene.openEnds[1], sketch.plane.toWorld({30, 0})));
+    const auto same = [](const Vec3d& a, const Vec3d& b) { return length(a - b) < 1e-9; };
+    CHECK(same(scene.openEnds[0], sketch.plane.toWorld({40, 10})));
+    CHECK(same(scene.openEnds[1], sketch.plane.toWorld({30, 0})));
     CHECK(buildSketchScene(kindsSketch(false)).openEnds.empty());
 
     // The arrow points along the plane normal, from the origin.
     const Vec3d arrow = scene.arrowTip - scene.arrowTail;
-    CHECK(near(scene.arrowTail, sketch.plane.origin));
+    CHECK(same(scene.arrowTail, sketch.plane.origin));
     CHECK(dot(arrow * (1.0 / length(arrow)), sketch.plane.normal()) > 0.999);
 
     // Drawn: the arrow, the dots and the curves show while the sketch is visible, none of them

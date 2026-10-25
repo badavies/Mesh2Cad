@@ -817,7 +817,7 @@ TEST_CASE("solid.boolean fuses, cuts and intersects trimmed boxes", "[commands][
     const TempDir dir;
     const ObjectId a = trimmedBox(s, dir, {0, 0, 0}, {30, 20, 10}, "a");
     const ObjectId b = trimmedBox(s, dir, {10, 5, 5}, {30, 20, 10}, "b");
-    const ObjectId far = trimmedBox(s, dir, {100, 0, 0}, {30, 20, 10}, "far");
+    const ObjectId distant = trimmedBox(s, dir, {100, 0, 0}, {30, 20, 10}, "far");
     const double overlap = 20.0 * 15.0 * 5.0;
 
     const Json fused = s.run("solid.boolean", {{"id", a}, {"tool_id", b}, {"operation", "fuse"}});
@@ -842,7 +842,7 @@ TEST_CASE("solid.boolean fuses, cuts and intersects trimmed boxes", "[commands][
     // Disjoint solids share nothing; nothing is added for a failure or a bad request.
     const std::size_t before = s.document.objects().size();
     const auto none =
-        s.tryRun("solid.boolean", {{"id", a}, {"tool_id", far}, {"operation", "common"}});
+        s.tryRun("solid.boolean", {{"id", a}, {"tool_id", distant}, {"operation", "common"}});
     REQUIRE_FALSE(none.has_value());
     CHECK(none.error().code == ErrorCode::InvalidState);
     CHECK_FALSE(s.tryRun("solid.boolean", {{"id", a}, {"tool_id", a}, {"operation", "fuse"}}));

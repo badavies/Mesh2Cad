@@ -479,12 +479,12 @@ signedDistances(const Solid& solid, const std::vector<Vec3d>& points, const Prog
             };
             for (std::size_t i = begin; i < end; ++i) {
                 const Vec3d& p = points[i];
-                const ClosestPoint near = index.closestPoint(p);
-                const std::size_t f = triangleFaces[near.face];
+                const ClosestPoint nearest = index.closestPoint(p);
+                const std::size_t f = triangleFaces[nearest.face];
                 // Barycentric weights of the closest point give its (u, v) from the corners'.
-                const auto v = display.face(near.face);
-                const auto [a, b, c] = corners(near.face);
-                const Vec3d e0 = b - a, e1 = c - a, e2 = near.point - a;
+                const auto v = display.face(nearest.face);
+                const auto [a, b, c] = corners(nearest.face);
+                const Vec3d e0 = b - a, e1 = c - a, e2 = nearest.point - a;
                 const double d00 = dot(e0, e0), d01 = dot(e0, e1), d11 = dot(e1, e1);
                 const double d20 = dot(e2, e0), d21 = dot(e2, e1);
                 const double den = d00 * d11 - d01 * d01;

@@ -127,14 +127,14 @@ TEST_CASE("Fusing and intersecting two overlapping boxes give exact volumes", "[
 
 TEST_CASE("Booleans of disjoint solids fail", "[stage][boolean]") {
     const Solid a = box({0, 0, 0}, {30, 20, 10});
-    const Solid far = box({100, 0, 0}, {10, 10, 10});
+    const Solid distant = box({100, 0, 0}, {10, 10, 10});
 
-    auto common = occt::booleanSolids(a, far, occt::BooleanOp::Common, 1e-3);
+    auto common = occt::booleanSolids(a, distant, occt::BooleanOp::Common, 1e-3);
     REQUIRE_FALSE(common.has_value());
     CHECK(common.error().code == ErrorCode::InvalidState);
     CHECK_THAT(common.error().message, ContainsSubstring("nothing is left"));
 
-    auto fused = occt::booleanSolids(a, far, occt::BooleanOp::Fuse, 1e-3);
+    auto fused = occt::booleanSolids(a, distant, occt::BooleanOp::Fuse, 1e-3);
     REQUIRE_FALSE(fused.has_value());
     CHECK(fused.error().code == ErrorCode::InvalidState);
     CHECK_THAT(fused.error().message, ContainsSubstring("2 separate solids"));
@@ -144,7 +144,7 @@ TEST_CASE("Booleans of disjoint solids fail", "[stage][boolean]") {
     REQUIRE_FALSE(all.has_value());
     CHECK(all.error().code == ErrorCode::InvalidState);
 
-    auto negative = occt::booleanSolids(a, far, occt::BooleanOp::Fuse, -1.0);
+    auto negative = occt::booleanSolids(a, distant, occt::BooleanOp::Fuse, -1.0);
     REQUIRE_FALSE(negative.has_value());
     CHECK(negative.error().code == ErrorCode::InvalidArgument);
 }
