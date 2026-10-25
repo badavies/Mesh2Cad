@@ -34,6 +34,8 @@ to it are additive within 1.x.
   refuse parameters their schemas rule out (a missing `visible` or `distance_mm`, `rings` out of
   range, unknown ids in `mesh.pick` and `view.render`); and refined cages fit with the original
   smoothing.
+- In the app, a left drag that starts off the mesh orbits in Crease and Measure, as it already
+  did in Brush.
 
 ### Prismatic and hybrid parts (M4)
 
