@@ -34,6 +34,9 @@ to it are additive within 1.x.
   refuse parameters their schemas rule out (a missing `visible` or `distance_mm`, `rings` out of
   range, unknown ids in `mesh.pick` and `view.render`); and refined cages fit with the original
   smoothing.
+- Optional 3Dconnexion SpaceMouse navigation in the app on Windows, through the 3DxWare SDK you
+  install yourself (`-DMESH2CAD_SPACEMOUSE=ON`, off by default). The SDK's licence is not
+  GPL-compatible, so such a build is for your own machine; installers never include it (ADR-039).
 
 ### Prismatic and hybrid parts (M4)
 

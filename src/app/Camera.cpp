@@ -2,7 +2,9 @@
 #include "Camera.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <numbers>
 
 #include "m2c/core/TriMesh.h"
@@ -72,9 +74,13 @@ double Camera::nearPlane() const {
     return std::max(distance - 2.0 * sceneRadius, distance * 0.01);
 }
 
+double Camera::farPlane() const {
+    return distance + 3.0 * sceneRadius + nearPlane();
+}
+
 Mat4d Camera::projection(const double aspect) const {
     const double n = nearPlane();
-    const double f = distance + 3.0 * sceneRadius + n;
+    const double f = farPlane();
     const double t = 1.0 / std::tan(fovYDeg * kDeg / 2.0);
     Mat4d p;
     p.m.fill(0.0);
@@ -109,6 +115,37 @@ void Camera::fit(const Aabb& box) {
 void Camera::setView(const double yaw, const double pitch) {
     yawDeg = yaw;
     pitchDeg = pitch;
+}
+
+Mat4d Camera::cameraToWorld() const {
+    const std::array<Vec3d, 4> columns{right(), up(), forward() * -1.0, eye()};
+    Mat4d m;
+    for (int c = 0; c < 4; ++c) {
+        const Vec3d& v = columns[static_cast<std::size_t>(c)];
+        m.at(0, c) = v.x, m.at(1, c) = v.y, m.at(2, c) = v.z;
+    }
+    return m;
+}
+
+void Camera::setCameraToWorld(const Mat4d& transform) {
+    const Vec3d r{.x = transform.at(0, 0), .y = transform.at(1, 0), .z = transform.at(2, 0)};
+    const Vec3d u{.x = transform.at(0, 1), .y = transform.at(1, 1), .z = transform.at(2, 1)};
+    const Vec3d back{.x = transform.at(0, 2), .y = transform.at(1, 2), .z = transform.at(2, 2)};
+    const Vec3d e{.x = transform.at(0, 3), .y = transform.at(1, 3), .z = transform.at(2, 3)};
+    constexpr double kMaxPitch = 89.9;
+    const double horizontal = std::hypot(back.x, back.y);
+    if (u.z < 0.0) {
+        // Upside down: turned past straight up or down. Stop there, facing the same way.
+        pitchDeg = back.z > 0.0 ? kMaxPitch : -kMaxPitch;
+    } else {
+        pitchDeg = std::clamp(std::atan2(back.z, horizontal) / kDeg, -kMaxPitch, kMaxPitch);
+        // Looking straight up or down, the line of sight gives no heading; the right axis does.
+        yawDeg = horizontal > 1e-9 * length(back) ? std::atan2(back.y, back.x) / kDeg
+                                                  : std::atan2(-r.x, r.y) / kDeg;
+    }
+    const Vec3d f = forward();
+    distance = std::clamp(dot(target - e, f), sceneRadius * 1e-4, sceneRadius * 100.0);
+    target = e + f * distance;
 }
 
 void Camera::ray(const double ndcX,

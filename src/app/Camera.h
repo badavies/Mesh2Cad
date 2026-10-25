@@ -43,6 +43,7 @@ public:
     [[nodiscard]] Mat4d view() const;
     [[nodiscard]] Mat4d projection(double aspect) const;
     [[nodiscard]] double nearPlane() const;
+    [[nodiscard]] double farPlane() const;
 
     void orbit(double dxDeg, double dyDeg);
     /// Pan by a fraction of the view height.
@@ -51,6 +52,14 @@ public:
     /// Frames a box.
     void fit(const Aabb& box);
     void setView(double yaw, double pitch);
+
+    /// Camera-to-world transform: its columns are right, up, back (the camera looks down -Z) and
+    /// the eye. This is the view the 3Dconnexion Navigation Library reads and writes.
+    [[nodiscard]] Mat4d cameraToWorld() const;
+    /// Moves the eye and turns the camera to a camera-to-world transform. The camera keeps +Z up,
+    /// so roll is dropped and the pitch stops short of straight up or down. The target becomes
+    /// the point on the new line of sight nearest the old one, so orbiting stays around it.
+    void setCameraToWorld(const Mat4d& transform);
 
     /// World-space ray through a point given in normalised device coordinates.
     void ray(double ndcX, double ndcY, double aspect, Vec3d& origin, Vec3d& direction) const;

@@ -16,10 +16,12 @@ Headers live in this folder (no `m2c/app/` prefix); everything is in namespace `
 - `ParamForm.h`: `ParamForm`, a form generated from a command's JSON schema: drop-downs for objects, comma-separated numbers for points and id lists, and JSON (with an example) for lists of objects.
 - `Camera.h`: `Camera` (orbit camera, +Z up) and `Mat4d` (double-precision 4x4 matrix).
 - `DeviationColors.h`: `deviationColor` and `deviationRange`, the deviation colour scale.
+- `SpaceMouse.h`: `SpaceMouse`, 3Dconnexion SpaceMouse navigation of the viewport through the 3DxWare Navigation Library. Built only with `MESH2CAD_SPACEMOUSE=ON` on Windows (ADR-039).
 
 ## Dependencies
 
-May use: `core`, `document`, `commands`, `rpc`; Qt 6 Widgets, OpenGL, OpenGLWidgets and Network.
+May use: `core`, `document`, `commands`, `rpc`; Qt 6 Widgets, OpenGL, OpenGLWidgets and Network;
+the 3DxWare SDK in `SpaceMouse.cpp` only, when `MESH2CAD_SPACEMOUSE` is on.
 Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel library headers
 (CGAL, Open CASCADE, OpenSubdiv). Enforced by `scripts/check_layers.py`.
 
@@ -60,5 +62,8 @@ Must not depend on: `adapters`, `io`, `pipeline`, `cli`, `mcp`, and kernel libra
   distance, drawn over everything so a worst point on the back still shows, and the hover text
   of the Measure, Brush and Crease tools ends with the distance at the cursor
   (`| dev: +0.234 mm`).
+- A SpaceMouse moves the camera like a mouse orbit does: no command, nothing in History. The
+  camera keeps +Z up, so the 3D mouse's roll is dropped; it turns around the point the Navigation
+  Library hit-tests at the centre of the view (`Viewport::pickRay`), shown as a blue dot.
 - `--screenshot out.png FILE` renders and quits (CI smoke test). `--no-agent-socket` turns the
   local socket off.

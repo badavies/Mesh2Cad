@@ -21,6 +21,17 @@ target_link_libraries(m2c_app
         Qt6::Widgets Qt6::OpenGL Qt6::OpenGLWidgets Qt6::Network
     PRIVATE
         m2c_warnings)
+# SpaceMouse navigation (ADR 0039), only with MESH2CAD_SPACEMOUSE=ON and the 3DxWare SDK.
+if(M2C_HAVE_SPACEMOUSE)
+    target_sources(m2c_app PRIVATE SpaceMouse.cpp SpaceMouse.h)
+    # PUBLIC: MainWindow.h has a member only in this build.
+    target_compile_definitions(m2c_app PUBLIC M2C_HAVE_SPACEMOUSE PRIVATE NOMINMAX)
+    # The SDK's 3DxWare::Navlib target has no IMPORTED_LOCATION, so link its parts, as the SDK's
+    # own samples do.
+    target_link_libraries(m2c_app PRIVATE 3DxWare::headers ${TDxWare_LIBRARIES})
+    # The SDK's library comes without its debug database.
+    target_link_options(m2c_app INTERFACE /ignore:4099)
+endif()
 # The source tree's guide is Help > User guide's fallback in a build that isn't installed.
 target_compile_definitions(m2c_app
     PRIVATE MESH2CAD_VERSION="${PROJECT_VERSION}" MESH2CAD_SOURCE_DIR="${PROJECT_SOURCE_DIR}")

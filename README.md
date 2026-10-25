@@ -56,6 +56,10 @@ Then tell CMake where Qt is, in the profile's *CMake options*:
 
 With vcpkg, `vcpkg install` with the `app` feature builds Qt from source instead (slow). On Linux, `sudo apt install qt6-base-dev libgl1-mesa-dev` is enough. `-DMESH2CAD_BUILD_APP=ON` makes a missing Qt an error, `OFF` skips the app.
 
+### SpaceMouse (optional, Windows)
+
+To navigate with a 3Dconnexion SpaceMouse, install 3DxWare 10.8.12 or newer and the [3DxWare SDK](https://3dconnexion.com/software-developer-program/), set the environment variable `TDxWare_SDK_DIR` to the SDK folder (for example `C:\Users\you\Downloads\3DxWare_SDK_v4-0-6_r22071`), and add `-DMESH2CAD_SPACEMOUSE=ON` to the CMake options of a Visual Studio (MSVC) profile. The SDK's licence is not compatible with the GPL, so a build with it is for your own use and must not be shared ([ADR 0039](docs/adr/0039-spacemouse-navigation.md)).
+
 ### Running outside CLion
 
 Executables are in the build folder, for example `cmake-build-debug\src\app\mesh2cad-app.exe`, `src\cli\mesh2cad.exe`, `src\rpc\mesh2cad-rpc.exe` and `src\mcp\mesh2cad-mcp.exe`. The build copies the MinGW runtime DLLs and (via `windeployqt`) the Qt DLLs next to them, so they start from Explorer, a terminal or Claude Desktop.
@@ -71,6 +75,7 @@ Executables are in the build folder, for example `cmake-build-debug\src\app\mesh
 | Wheel | Zoom |
 | Double-click | Orbit around the point under the cursor |
 | F, Ctrl+1/3/7/0 | Fit all; front, right, top, isometric view |
+| SpaceMouse (builds with `MESH2CAD_SPACEMOUSE`) | Move the view; it turns around the point at the centre of the view, shown as a blue dot. Its Fit and view buttons work |
 | 1-5 | Navigate, Brush, Lasso, Crease, Measure |
 | Brush: drag | Paint faces into the current selection; Ctrl removes; `[` and `]` change the size |
 | Lasso: drag | Select visible faces inside the outline; Shift adds, Ctrl removes |
