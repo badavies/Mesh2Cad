@@ -131,6 +131,17 @@ public:
     void fitBox(const Aabb& box);
     void setStandardView(double yaw, double pitch);
 
+    [[nodiscard]] const Camera& camera() const noexcept { return camera_; }
+    /// Moves the camera, as a 3D mouse does: drawn like a mouse orbit (huge meshes use their
+    /// coarse proxy while it moves).
+    void setCamera(const Camera& camera);
+    [[nodiscard]] double aspect() const;
+    /// The bounds of the visible objects, or of one object whether shown or not. Empty
+    /// (min > max) when there is nothing to draw.
+    [[nodiscard]] Aabb visibleBounds(std::optional<ObjectId> only = std::nullopt) const;
+    /// Where the 3D mouse turns the view around, drawn as a dot; nullopt hides it.
+    void setNavigationPivot(std::optional<Vec3d> pivot);
+
     /// View-projection matrix (column-major, world coordinates) and camera position, as the
     /// select.lasso command expects.
     [[nodiscard]] Mat4d viewProjection() const;
@@ -139,6 +150,8 @@ public:
     /// The nearest visible mesh, solid or primitive under a widget position. The selection tools
     /// pick meshes only.
     [[nodiscard]] std::optional<Hit> pickObject(const QPointF& pos) const;
+    /// The nearest visible mesh, solid or primitive along a world-space ray.
+    [[nodiscard]] std::optional<Hit> pickRay(const Vec3d& origin, const Vec3d& direction) const;
 
     /// The markers at the extremes of each visible mesh's shown deviation (the newest visible
     /// one, which colours it): its largest and smallest distance, each at the first vertex with
@@ -239,11 +252,11 @@ private:
     [[nodiscard]] std::optional<Hit> pick(const QPointF& pos) const;
     /// The nearest hit on visible meshes, and with `surfaces` on solids and primitives too.
     [[nodiscard]] std::optional<Hit> pickAmong(const QPointF& pos, bool surfaces) const;
+    [[nodiscard]] std::optional<Hit>
+    pickAmong(const Vec3d& origin, const Vec3d& direction, bool surfaces) const;
     [[nodiscard]] QPointF ndc(const QPointF& pos) const;
     [[nodiscard]] std::optional<QPointF> project(const Vec3d& p) const;
     [[nodiscard]] double pixelsPerMm(const Vec3d& at) const;
-    [[nodiscard]] double aspect() const;
-    [[nodiscard]] Aabb visibleBounds(std::optional<ObjectId> only = std::nullopt) const;
     void markInteracting();
 
     std::shared_ptr<const DocSnapshot> snapshot_;
@@ -263,6 +276,7 @@ private:
     bool wireframe_{false};
     bool showBackFaces_{true};
     bool colorBlind_{false};
+    std::optional<Vec3d> navigationPivot_;
 
     // Mouse state.
     enum class Drag {

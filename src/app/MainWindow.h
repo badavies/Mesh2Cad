@@ -8,6 +8,9 @@
 
 #include "Engine.h"
 #include "Viewport.h"
+#ifdef M2C_HAVE_SPACEMOUSE
+#include "SpaceMouse.h"
+#endif
 
 class QActionGroup;
 class QDoubleSpinBox;
@@ -110,6 +113,9 @@ private:
     Engine& engine_;
     std::shared_ptr<const DocSnapshot> snapshot_;
     Viewport* viewport_{nullptr};
+#ifdef M2C_HAVE_SPACEMOUSE
+    std::unique_ptr<SpaceMouse> spaceMouse_; ///< Closed before the viewport goes.
+#endif
     QTreeWidget* tree_{nullptr};
     ParamForm* form_{nullptr};
     WorkflowPanel* workflow_{nullptr};

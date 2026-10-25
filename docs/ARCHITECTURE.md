@@ -519,6 +519,7 @@ Significant decisions are recorded here and in full in `docs/adr/NNNN-title.md` 
 | ADR-036 | oneTBB for deterministic parallel loops | Accepted | Fixed chunks and ordered reductions give the same results on any number of threads; see `docs/adr/0036-onetbb-parallel-chunks.md` |
 | ADR-037 | Our own glTF writer; Open CASCADE only triangulates | Accepted | OCCT's writer needs RapidJSON and the XCAF toolkits, which our builds leave out; see `docs/adr/0037-own-gltf-writer.md` |
 | ADR-038 | Scan spikes and tunnels found by our own search, as a selection | Accepted | Tips and folds grown over their steep sides; tunnels as handles, from patches' Euler characteristic; see `docs/adr/0038-scan-spikes-and-tunnels.md` |
+| ADR-039 | SpaceMouse navigation through the 3DxWare SDK, an optional Windows build, off by default | Accepted | The SDK's licence is not GPL-compatible, so builds with it are for your own machine; see `docs/adr/0039-spacemouse-navigation.md` |
 
 ## 15. Review log
 

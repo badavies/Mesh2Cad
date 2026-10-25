@@ -48,6 +48,7 @@
 #include "m2c/io/MeshIO.h"
 #include "m2c/rpc/Session.h"
 
+#include "Camera.h"
 #include "Engine.h"
 #include "InspectorPanel.h"
 #include "MainWindow.h"
@@ -1112,6 +1113,12 @@ TEST_CASE("Clicks pick solids and primitives, and mark fillet edges", "[app][fit
     const Vec3d local = hit->point - Vec3d{60, 0, 15};
     CHECK(std::abs(std::max({std::abs(local.x), std::abs(local.y), std::abs(local.z)}) - 10.0) <
           1e-3);
+    // A 3D mouse hit-tests the same objects along a ray of its own: from the eye, through the
+    // centre of the view.
+    const auto along = view->pickRay(view->eye(), view->camera().forward());
+    REQUIRE(along.has_value());
+    CHECK(along->objectId == box);
+    CHECK(length(along->point - hit->point) < 1e-6);
 
     // The brush still paints meshes only: a stroke over the solid selects nothing.
     const std::size_t selections = countKind(*engine.snapshot(), "selection");
@@ -1398,6 +1405,90 @@ TEST_CASE("Tool forms are generated from command schemas", "[app]") {
 
 // The M0 gate (docs/ARCHITECTURE.md section 12): a 10M-triangle scan loads and orbits at 30 fps or
 // better. Hidden from normal runs; see tests/README.md for how to run it on a Release build.
+TEST_CASE("The camera follows a 3D mouse's camera-to-world transform", "[app]") {
+    Camera camera;
+    camera.target = {.x = 10, .y = 20, .z = 5};
+    camera.distance = 80;
+    camera.sceneRadius = 50;
+    camera.setView(30, 20);
+    const auto close = [](const Vec3d& a, const Vec3d& b) { return length(a - b) < 1e-9; };
+    const auto column = [](const Mat4d& m, int c) {
+        return Vec3d{.x = m.at(0, c), .y = m.at(1, c), .z = m.at(2, c)};
+    };
+
+    // Columns right, up, back and eye, as the Navigation Library expects.
+    const Mat4d m = camera.cameraToWorld();
+    CHECK(close(column(m, 0), camera.right()));
+    CHECK(close(column(m, 1), camera.up()));
+    CHECK(close(column(m, 2), camera.forward() * -1.0));
+    CHECK(close(column(m, 3), camera.eye()));
+    CHECK(std::abs(dot(column(m, 0), column(m, 1))) < 1e-12);
+
+    SECTION("its own transform changes nothing") {
+        Camera c = camera;
+        c.setCameraToWorld(m);
+        CHECK(std::abs(c.yawDeg - 30) < 1e-9);
+        CHECK(std::abs(c.pitchDeg - 20) < 1e-9);
+        CHECK(std::abs(c.distance - 80) < 1e-9);
+        CHECK(close(c.target, camera.target));
+    }
+    SECTION("moving along the line of sight keeps the target") {
+        Mat4d moved = m;
+        const Vec3d eye = camera.eye() + camera.forward() * 30.0;
+        moved.at(0, 3) = eye.x, moved.at(1, 3) = eye.y, moved.at(2, 3) = eye.z;
+        Camera c = camera;
+        c.setCameraToWorld(moved);
+        CHECK(close(c.eye(), eye));
+        CHECK(std::abs(c.distance - 50) < 1e-9);
+        CHECK(close(c.target, camera.target));
+    }
+    SECTION("turning looks the new way from the new eye, around the old target") {
+        Camera other;
+        other.target = {.x = -40, .y = 5, .z = 60};
+        other.setView(100, -10);
+        Camera c = camera;
+        c.setCameraToWorld(other.cameraToWorld());
+        CHECK(std::abs(c.yawDeg - 100) < 1e-9);
+        CHECK(std::abs(c.pitchDeg + 10) < 1e-9);
+        CHECK(close(c.eye(), other.eye()));
+        CHECK(std::abs(dot(camera.target - c.target, c.forward())) < 1e-9);
+    }
+    SECTION("roll is dropped") {
+        // Turn the right and up axes 20 degrees around the line of sight.
+        const double a = 20 * std::numbers::pi / 180;
+        const Vec3d r = camera.right() * std::cos(a) + camera.up() * std::sin(a);
+        const Vec3d u = camera.up() * std::cos(a) - camera.right() * std::sin(a);
+        Mat4d rolled = m;
+        rolled.at(0, 0) = r.x, rolled.at(1, 0) = r.y, rolled.at(2, 0) = r.z;
+        rolled.at(0, 1) = u.x, rolled.at(1, 1) = u.y, rolled.at(2, 1) = u.z;
+        Camera c = camera;
+        c.setCameraToWorld(rolled);
+        CHECK(std::abs(c.yawDeg - 30) < 1e-9);
+        CHECK(std::abs(c.pitchDeg - 20) < 1e-9);
+        CHECK(std::abs(c.right().z) < 1e-12);
+    }
+    SECTION("upside down past straight up, it stops looking down from above") {
+        Mat4d over = m;
+        for (int row = 0; row < 3; ++row) {
+            over.at(row, 0) = -m.at(row, 0);
+            over.at(row, 1) = -m.at(row, 1);
+        }
+        Camera c = camera;
+        c.setCameraToWorld(over);
+        CHECK(c.pitchDeg == 89.9);
+        CHECK(std::abs(c.yawDeg - 30) < 1e-9);
+    }
+    SECTION("looking straight down, the right axis gives the heading") {
+        Mat4d down; // right +X, up +Y, back +Z
+        down.at(2, 3) = 100;
+        Camera c = camera;
+        c.setCameraToWorld(down);
+        CHECK(std::abs(c.yawDeg + 90) < 1e-9);
+        CHECK(c.pitchDeg == 89.9);
+        CHECK(close(c.eye(), {.x = 0, .y = 0, .z = 100}));
+    }
+}
+
 TEST_CASE("The workflow lists every track and shows the stage gate", "[app]") {
     application();
     const TempDir dir;

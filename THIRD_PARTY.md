@@ -22,6 +22,12 @@ Dependencies come from vcpkg when a vcpkg preset is used. Otherwise `cmake/Mesh2
 | [dset](https://github.com/wjakob/dset) | commit 7967ef0 | zlib | Union-find inside Instant Meshes | via Instant Meshes |
 | [Qt 6](https://www.qt.io) (Widgets, OpenGL, OpenGLWidgets, Network) | 6.4+ from the Qt installer, vcpkg (`app` feature) or the system; never fetched | LGPL-3.0 (dynamically linked) | Desktop app and viewport (ADR-008, ADR-023) | `src/app` only |
 
+## Optional, never distributed
+
+| Dependency | Version | Licence | Used for | Where |
+| --- | --- | --- | --- | --- |
+| [3DxWare SDK](https://3dconnexion.com/software-developer-program/) (Navigation Library) | 4.0+, installed by you; never fetched | Proprietary (3Dconnexion SDK licence; not GPL-compatible) | SpaceMouse navigation, only with `-DMESH2CAD_SPACEMOUSE=ON` on Windows and MSVC. A build with it is for your own machine and must not be distributed (ADR-039) | `src/app/SpaceMouse.cpp` only |
+
 ## Build tooling (not distributed)
 
 | Tool | Licence | Used for |

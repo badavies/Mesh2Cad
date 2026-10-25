@@ -430,6 +430,18 @@ void Viewport::fitBox(const Aabb& box) {
     update();
 }
 
+void Viewport::setCamera(const Camera& camera) {
+    camera_ = camera;
+    fitPending_ = false;
+    markInteracting();
+    update();
+}
+
+void Viewport::setNavigationPivot(const std::optional<Vec3d> pivot) {
+    navigationPivot_ = pivot;
+    update();
+}
+
 void Viewport::setStandardView(const double yaw, const double pitch) {
     camera_.setView(yaw, pitch);
     update();
@@ -906,6 +918,15 @@ void Viewport::drawOverlay() {
         }
     }
 
+    // The 3D mouse's pivot, while it turns the view.
+    if (navigationPivot_) {
+        if (const auto c = project(*navigationPivot_)) {
+            painter.setPen(QPen(QColor(20, 20, 24), 1.5));
+            painter.setBrush(QColor(80, 200, 255));
+            painter.drawEllipse(*c, 5.0, 5.0);
+        }
+    }
+
     // The plane the open form will cut with: a square over what is shown, centred on it.
     if (const Aabb box = visibleBounds(); previewPlane_ && box.min.x <= box.max.x) {
         const Vec3d mid = (box.min + box.max) * 0.5;
@@ -1100,12 +1121,21 @@ std::optional<Hit> Viewport::pickObject(const QPointF& pos) const {
     return pickAmong(pos, true);
 }
 
+std::optional<Hit> Viewport::pickRay(const Vec3d& origin, const Vec3d& direction) const {
+    return pickAmong(origin, direction, true);
+}
+
 std::optional<Hit> Viewport::pickAmong(const QPointF& pos, const bool surfaces) const {
-    if (!snapshot_) return std::nullopt;
     const QPointF n = ndc(pos);
     Vec3d origin;
     Vec3d direction;
     camera_.ray(n.x(), n.y(), aspect(), origin, direction);
+    return pickAmong(origin, direction, surfaces);
+}
+
+std::optional<Hit>
+Viewport::pickAmong(const Vec3d& origin, const Vec3d& direction, const bool surfaces) const {
+    if (!snapshot_) return std::nullopt;
     std::optional<Hit> best;
     double bestDistance = std::numeric_limits<double>::infinity();
     for (const DocumentObject& o : snapshot_->objects) {

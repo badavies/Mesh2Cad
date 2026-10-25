@@ -125,6 +125,13 @@ MainWindow::MainWindow(Engine& engine, QWidget* parent) : QMainWindow(parent), e
     buildDocks();
     buildToolbar();
     buildMenus();
+#ifdef M2C_HAVE_SPACEMOUSE
+    spaceMouse_ = std::make_unique<SpaceMouse>(*viewport_);
+    log_->appendPlainText(
+        spaceMouse_->connected()
+            ? tr("SpaceMouse: connected to the 3DxWare driver")
+            : tr("SpaceMouse: no 3DxWare driver found (3DxWare 10.8.12 or newer is needed)"));
+#endif
 
     status_ = new QLabel;
     hover_ = new QLabel;
@@ -546,10 +553,15 @@ void MainWindow::buildMenus() {
                      engine_.sessionLogPath().toHtmlEscaped()));
     });
     help->addAction(tr("About Mesh2Cad"), this, [this] {
-        QMessageBox::about(this,
-                           tr("About Mesh2Cad"),
-                           tr("<b>Mesh2Cad %1</b><p>Scan to CAD. GPL-3.0-or-later.</p>")
-                               .arg(QStringLiteral(MESH2CAD_VERSION)));
+        QString text = tr("<b>Mesh2Cad %1</b><p>Scan to CAD. GPL-3.0-or-later.</p>")
+                           .arg(QStringLiteral(MESH2CAD_VERSION));
+#ifdef M2C_HAVE_SPACEMOUSE
+        // Required by the 3Dconnexion SDK licence (ADR 0039).
+        text += tr("<p>3D input device development tools and related technology are provided "
+                   "under license from 3Dconnexion. &copy; 3Dconnexion 1992 - 2025. All rights "
+                   "reserved.</p>");
+#endif
+        QMessageBox::about(this, tr("About Mesh2Cad"), text);
     });
 }
 

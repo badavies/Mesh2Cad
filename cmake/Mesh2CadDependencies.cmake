@@ -356,3 +356,22 @@ if(NOT MESH2CAD_BUILD_APP STREQUAL "OFF")
                        "'Building the desktop app')")
     endif()
 endif()
+
+# ---- 3DxWare SDK (ADR 0039): optional SpaceMouse navigation in the app, Windows and MSVC only ----
+# The SDK is not redistributable and its licence is not GPL-compatible, so it is never fetched and
+# is off by default: a build with it is for your own machine and must not be distributed.
+option(MESH2CAD_SPACEMOUSE
+    "SpaceMouse navigation in the app with the 3DxWare SDK (Windows, MSVC; set TDxWare_SDK_DIR)" OFF)
+set(M2C_HAVE_SPACEMOUSE OFF)
+if(MESH2CAD_SPACEMOUSE)
+    if(NOT M2C_HAVE_QT)
+        message(FATAL_ERROR "MESH2CAD_SPACEMOUSE needs the desktop app (Qt 6)")
+    elseif(NOT WIN32 OR NOT MSVC)
+        message(FATAL_ERROR "MESH2CAD_SPACEMOUSE needs Windows and MSVC (the 3DxWare SDK library "
+                            "is built for MSVC)")
+    endif()
+    find_package(TDxWare_SDK 4.0 CONFIG REQUIRED HINTS "$ENV{TDxWare_SDK_DIR}")
+    set(M2C_HAVE_SPACEMOUSE ON)
+    message(STATUS "Mesh2Cad: SpaceMouse navigation on, with the 3DxWare SDK in "
+                   "${TDxWare_SDK_DIR}. Do not distribute this build (ADR 0039).")
+endif()
