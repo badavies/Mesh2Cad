@@ -5,7 +5,7 @@ When a command fails, it changes nothing: the document stays as it was and no fi
 | Message (start) | What it means | What to do |
 | --- | --- | --- |
 | `unsupported mesh file type` | The file isn't STL, OBJ or PLY. | Convert it to one of those, or export it again from the scanner software. |
-| `mesh.info` shows boundary or non-manifold edges | The scan has holes or bad topology. | Run `mesh.repair`, then `holes.fill`. If it is still open, use `mesh.wrap`. |
+| `mesh.info` shows boundary or non-manifold edges | The scan has holes or bad topology. | Run `mesh.repair`, then `holes.fill`, which leaves holes over 100 edges open unless you set `max_edges` (0 fills every hole). If it is still open, use `mesh.wrap`. |
 | `self_intersecting` stays true after a repair | Parts of the mesh pass through each other. | Run `mesh.repair` with `remove_self_intersections`. |
 | `the quad layout could not be closed` | The remesher left holes or non-manifold edges it could not close. This usually comes from a mesh that isn't watertight or has thin spikes. | Repair and fill the mesh first. Try a different `target_faces`, or smooth spiky areas. |
 | `an open cage needs a thickness` | The cage was made with `keep_outline` (a one-sided sheet). | Give `surface.build` a `thickness_mm`. |

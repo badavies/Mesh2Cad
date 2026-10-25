@@ -69,6 +69,9 @@ to it are additive within 1.x.
   failed, when its Delaunay searches find no triangulation. It reports the fraction of holes
   done and stops at the next hole when you press **Cancel**. Debug builds compile CGAL without
   its own checks, which walked the whole mesh before every hole.
+- `holes.fill` now leaves holes with more than 100 boundary edges open unless `max_edges` says
+  otherwise (0 fills every hole). Most scan gaps are far smaller, and the larger loops are often
+  openings in the part, such as cut-outs, which filling would close.
 
 ### Prismatic and hybrid parts (M4)
 

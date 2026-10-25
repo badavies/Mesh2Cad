@@ -76,7 +76,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             "properties":{
                 "id":{"type":"integer","x-object":"mesh","minimum":0},
                 "max_perimeter_mm":{"type":"number","minimum":0,"default":0,"description":"Leave holes with a longer boundary open; 0 = no limit."},
-                "max_edges":{"type":"integer","minimum":0,"default":0,"description":"Leave holes with more boundary edges open; 0 = no limit."},
+                "max_edges":{"type":"integer","minimum":0,"default":100,"description":"Leave holes with more boundary edges open; 0 = no limit. The default fills most scan gaps and keeps larger openings, such as cut-outs."},
                 "fair":{"type":"boolean","default":true,"description":"Refine and fair the patch to match the surrounding curvature. Where the surface meets the hole at more than 45 degrees (an open end) the patch stays flat instead of doming."}
             },
             "required":["id"],"additionalProperties":false})",
@@ -85,7 +85,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             M2C_TRY(object, requireMesh(context, params));
             HoleFillParams p;
             M2C_TRY(perimeter, optionalNumber(params, "max_perimeter_mm", 0.0, 0.0, kBig));
-            M2C_TRY(edges, optionalInteger(params, "max_edges", 0, 0, INT32_MAX));
+            M2C_TRY(edges, optionalInteger(params, "max_edges", 100, 0, INT32_MAX));
             M2C_TRY(fair, optionalBool(params, "fair", true));
             p.maxPerimeterMm = *perimeter;
             p.maxEdges = static_cast<std::size_t>(*edges);

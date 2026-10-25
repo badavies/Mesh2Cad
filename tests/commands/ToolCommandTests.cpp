@@ -105,6 +105,34 @@ TEST_CASE("Mesh tools edit in place and undo as one step", "[commands][tools]") 
     CHECK(s.document.undoHistory().size() == steps);
 }
 
+TEST_CASE("holes.fill leaves openings over 100 edges unless told to fill them",
+          "[commands][tools]") {
+    Session s;
+    const TempDir dir;
+    // A can open at the top (a 128-edge rim) with a 6-edge gap in its side.
+    const TriMesh can = makeCylinder(10.0, 20.0, 128, 8);
+    std::vector<Vec3d> p = can.positions();
+    const auto top = static_cast<std::uint32_t>(p.size() - 1); // the top fan's centre, made last
+    p.pop_back();
+    std::vector<std::uint32_t> idx;
+    const std::vector<std::uint32_t>& corners = can.indices();
+    for (std::size_t f = 0; 3 * f < corners.size(); ++f) {
+        const auto t = corners.begin() + static_cast<std::ptrdiff_t>(3 * f);
+        const bool gap = f >= 4 * 128 * 2 && f < 4 * 128 * 2 + 4; // two quads of the fifth band
+        if (!gap && std::find(t, t + 3, top) == t + 3) idx.insert(idx.end(), t, t + 3);
+    }
+    const ObjectId id = s.import(dir, makeMesh(std::move(p), std::move(idx)), "can");
+
+    const Json gap = s.run("holes.fill", {{"id", id}});
+    CHECK(gap["report"]["filled"] == 1);
+    CHECK(gap["report"]["skipped"] == 1);
+    CHECK(gap["stats"]["boundary_edge_count"] == 128);
+
+    const Json all = s.run("holes.fill", {{"id", id}, {"max_edges", 0}});
+    CHECK(all["report"]["filled"] == 1);
+    CHECK(all["stats"]["is_watertight"] == true);
+}
+
 TEST_CASE("mesh.simplify stops at max_error_mm", "[commands][tools]") {
     Session s;
     const TempDir dir;

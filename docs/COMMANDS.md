@@ -167,7 +167,7 @@ Fill open boundaries with patches that blend into the surrounding surface. Holes
 | --- | --- | --- | --- |
 | `fair` | boolean |  | Refine and fair the patch to match the surrounding curvature. Where the surface meets the hole at more than 45 degrees (an open end) the patch stays flat instead of doming. Default `true`. |
 | `id` | mesh id | yes |  |
-| `max_edges` | integer |  | Leave holes with more boundary edges open; 0 = no limit. Default `0`. |
+| `max_edges` | integer |  | Leave holes with more boundary edges open; 0 = no limit. The default fills most scan gaps and keeps larger openings, such as cut-outs. Default `100`. |
 | `max_perimeter_mm` | number |  | Leave holes with a longer boundary open; 0 = no limit. Default `0`. |
 
 ## measure
