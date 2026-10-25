@@ -236,6 +236,70 @@ TEST_CASE("Filling the open end of a box gives a flat cap, not a dome", "[stages
     CHECK_THAT(s.signedVolume, WithinRel(1000.0, 1e-6));
 }
 
+TEST_CASE("Large holes skip the exhaustive search", "[stages][holes]") {
+    // An open tube with 600 vertices round each end: both rims are over the 500 edges up to which
+    // CGAL may search every triangulation, so they are triangulated by Delaunay or not at all.
+    const auto openTube = [](const bool jagged) {
+        TriMesh tube = makeCylinder(10.0, 20.0, 600, 4);
+        std::vector<Vec3d> p = tube.positions();
+        if (jagged) {
+            // Jag the top rim in and up, so neither Delaunay search can span it (searching every
+            // triangulation would, in seconds).
+            for (std::size_t j = 0; j < 600; ++j) {
+                Vec3d& q = p[4 * 600 + j];
+                const double scale = (10.0 - static_cast<double>(j % 5)) / 10.0;
+                q = {.x = q.x * scale,
+                     .y = q.y * scale,
+                     .z = q.z + 2.0 * static_cast<double>(j % 3)};
+            }
+        }
+        tube = makeMesh(std::move(p), tube.indices());
+        // The side's faces come first, then the end caps' fans.
+        std::vector<bool> keep(tube.faceCount(), false);
+        std::fill_n(keep.begin(), 4 * 600 * 2, true);
+        return *extractFaces(tube, keep);
+    };
+
+    // Flat round rims: the 2D Delaunay triangulation fills them, as flat caps.
+    const auto flat = fillHoles(openTube(false), HoleFillParams{0.0, 0, true});
+    REQUIRE(flat.has_value());
+    CHECK(flat->filled == 2);
+    const MeshStats s = computeStats(flat->mesh);
+    CHECK(s.isWatertight());
+    CHECK_THAT(s.bounds.min.z, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(s.bounds.max.z, WithinAbs(20.0, 1e-6));
+    CHECK_THAT(s.signedVolume, WithinRel(std::numbers::pi * 100.0 * 20.0, 1e-3));
+
+    // The jagged rim stays open and is reported, with no fan across it; the flat end is filled.
+    for (const bool fair : {false, true}) {
+        const auto jagged = fillHoles(openTube(true), HoleFillParams{0.0, 0, fair});
+        REQUIRE(jagged.has_value());
+        CHECK(jagged->filled == 1);
+        CHECK(jagged->failed == 1);
+        CHECK(computeStats(jagged->mesh).boundaryEdgeCount == 600);
+    }
+}
+
+TEST_CASE("Hole filling reports progress and stops when cancelled", "[stages][holes]") {
+    const TriMesh holed = cutHole(cutHole(makeSphere(10.0, 4), {10, 0, 0}, 1.5), {-10, 0, 0}, 1.5);
+
+    std::vector<double> fractions;
+    const auto filled = fillHoles(holed, {}, [&](std::string_view stage, const double fraction) {
+        CHECK(stage == "filling holes");
+        fractions.push_back(fraction);
+    });
+    REQUIRE(filled.has_value());
+    CHECK(filled->filled == 2);
+    CHECK(fractions == std::vector{0.0, 0.5});
+
+    const CancelToken token = CancelToken::make();
+    token.cancel();
+    const auto stopped = fillHoles(holed, {}, Progress({}, token));
+    REQUIRE_FALSE(stopped.has_value());
+    CHECK(stopped.error().code == ErrorCode::Cancelled);
+    CHECK(stopped.error().message == "cancelled while filling holes");
+}
+
 TEST_CASE("Holes whose rim vertices are already joined still get filled", "[stages][holes]") {
     // The seven-vertex torus joins every pair of vertices by an edge. Without the faces around
     // one vertex, the hexagonal hole left behind has no triangulation that avoids existing edges,

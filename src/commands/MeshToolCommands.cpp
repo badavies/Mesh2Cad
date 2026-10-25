@@ -90,7 +90,7 @@ void addMeshToolCommands(std::vector<Command>& out) {
             p.maxPerimeterMm = *perimeter;
             p.maxEdges = static_cast<std::size_t>(*edges);
             p.refineAndFair = *fair;
-            M2C_TRY(filled, fillHoles(*object->mesh, p));
+            M2C_TRY(filled, fillHoles(*object->mesh, p, context.progress));
             Json report{{"filled", filled->filled},
                         {"skipped", filled->skipped},
                         {"failed", filled->failed},

@@ -64,6 +64,11 @@ to it are additive within 1.x.
   press **Cancel**, so a large scan no longer looks hung while it repairs. After a large scan
   changes, the view and the SpaceMouse no longer freeze while its picking index builds in the
   background; clicks miss it until the index is ready.
+- `holes.fill` no longer takes half an hour on a large scan with big openings: rims over 500 edges
+  skip CGAL's search of every triangulation (cubic in the rim's length) and stay open, counted as
+  failed, when its Delaunay searches find no triangulation. It reports the fraction of holes
+  done and stops at the next hole when you press **Cancel**. Debug builds compile CGAL without
+  its own checks, which walked the whole mesh before every hole.
 
 ### Prismatic and hybrid parts (M4)
 
