@@ -51,9 +51,10 @@ FetchContent_Declare(miniz
 # /dev/null). With MinGW, oneTBB's profiling hooks (on in Debug) do not compile, as they pass
 # char names where Windows builds take wchar_t; nothing here uses them. Its headers are system
 # headers, as an installed copy's are: their Windows-only code fails core's warning flags.
-# onetbb-cmp0148.cmake moves it off a policy setting that CMake 4 warns about. The signature check
-# is for DLLs oneTBB loads by itself at run time (tbbbind, which needs hwloc and is not built) and
-# wants them Authenticode-signed; it is off by default, and saying so stops oneTBB warning.
+# onetbb-patch.cmake moves it off a policy setting that CMake 4 warns about, and defines a Windows
+# constant that the headers of Qt's MinGW 13.1 lack. The signature check is for DLLs oneTBB loads
+# by itself at run time (tbbbind, which needs hwloc and is not built) and wants them
+# Authenticode-signed; it is off by default, and saying so stops oneTBB warning.
 set(TBB_TEST OFF CACHE BOOL "oneTBB: build tests")
 set(TBB_STRICT OFF CACHE BOOL "oneTBB: treat warnings as errors")
 set(TBB_VERIFY_DEPENDENCY_SIGNATURE OFF CACHE BOOL "oneTBB: verify signatures of loaded DLLs")
@@ -64,7 +65,7 @@ FetchContent_Declare(TBB
     GIT_REPOSITORY https://github.com/uxlfoundation/oneTBB.git
     GIT_TAG        v2022.3.0
     GIT_SHALLOW    TRUE
-    PATCH_COMMAND  "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_LIST_DIR}/onetbb-cmp0148.cmake"
+    PATCH_COMMAND  "${CMAKE_COMMAND}" -P "${CMAKE_CURRENT_LIST_DIR}/onetbb-patch.cmake"
     SYSTEM
     FIND_PACKAGE_ARGS 2021.5 CONFIG)
 
