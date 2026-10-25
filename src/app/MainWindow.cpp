@@ -794,7 +794,8 @@ void MainWindow::inspect(const QString& command, const Json& result) const {
     }
 }
 
-void MainWindow::runInspectorAction(const QString& command, const Json& params) {
+void MainWindow::runInspectorAction(const InspectorRequest& request) {
+    const auto& [command, params] = request;
     const ObjectId mesh = params.value("id", ObjectId{0});
     run(command, params, [this, command, mesh](const Result<Json>& r) {
         if (!r) {
