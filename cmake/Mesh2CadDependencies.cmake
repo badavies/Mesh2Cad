@@ -215,9 +215,16 @@ function(m2c_build_from_source name)
         COMMAND "${CMAKE_COMMAND}" -S "${ARG_SOURCE_DIR}" -B "${build}" ${generator} ${tools}
                 "-DCMAKE_BUILD_TYPE=${ARG_CONFIG}" "-DCMAKE_INSTALL_PREFIX=${prefix}" ${ARG_ARGS}
         RESULT_VARIABLE failed)
+    # Some dependencies put /WX in their own MSVC flags, so a warning that a newer compiler adds
+    # would stop this configure. cl reads the _CL_ environment variable after its command line.
+    set(build_env)
+    if(MSVC)
+        set(build_env "${CMAKE_COMMAND}" -E env _CL_=/WX-)
+    endif()
     if(NOT failed)
         execute_process(
-            COMMAND "${CMAKE_COMMAND}" --build "${build}" --config "${ARG_CONFIG}" --parallel
+            COMMAND ${build_env} "${CMAKE_COMMAND}" --build "${build}" --config "${ARG_CONFIG}"
+                    --parallel
             RESULT_VARIABLE failed)
     endif()
     if(NOT failed)
@@ -296,7 +303,8 @@ endif()
 # ---- OpenSubdiv (ADR 0026) ----------------------------------------------------------------------
 # Only the CPU library (Far) is used. vcpkg's package config is used as is. Elsewhere the library
 # is looked up directly, because Ubuntu's config names a static library the package does not ship;
-# when it is not found, the pinned release is built from source as a static library.
+# when it is not found, the pinned release is built from source as a static library. That release is
+# 3.6.1, because 3.5.0 builds itself with /Wall /WX and stops on MSVC's informational warnings.
 add_library(m2c_osd_deps INTERFACE)
 if(VCPKG_TOOLCHAIN)
     find_package(OpenSubdiv 3.5 CONFIG REQUIRED)
@@ -311,7 +319,7 @@ else()
     else()
         FetchContent_Declare(opensubdiv
             GIT_REPOSITORY https://github.com/PixarAnimationStudios/OpenSubdiv.git
-            GIT_TAG        v3_5_0
+            GIT_TAG        v3_6_1
             GIT_SHALLOW    TRUE
             ${m2c_no_cmake})
         FetchContent_MakeAvailable(opensubdiv)
