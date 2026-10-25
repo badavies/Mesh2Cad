@@ -111,6 +111,9 @@ public:
     void setWireframe(bool on);
     void setShowBackFaces(bool on);
     void setColorBlindPalette(bool on);
+    /// Points a tool form has picked (fillet.fit's edge_points), drawn numbered over everything.
+    void setMarkedPoints(std::vector<Vec3d> points);
+    [[nodiscard]] const std::vector<Vec3d>& markedPoints() const noexcept { return marked_; }
 
     void fitAll();
     void fitObject(ObjectId id);
@@ -266,6 +269,7 @@ private:
     ObjectId strokeMesh_{0};
     QPolygonF lasso_;
     std::optional<Hit> measureStart_;
+    std::vector<Vec3d> marked_;
     bool interacting_{false};
     QTimer interactionTimer_;
 };

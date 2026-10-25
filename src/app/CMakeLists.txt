@@ -12,6 +12,10 @@ add_library(m2c_app STATIC
     Viewport.h
     ParamForm.cpp
     ParamForm.h
+    ToolCatalog.cpp
+    ToolCatalog.h
+    WorkflowPanel.cpp
+    WorkflowPanel.h
     MainWindow.cpp
     MainWindow.h)
 target_include_directories(m2c_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
