@@ -138,6 +138,35 @@ jobs:
           name: fuzz-failing-input
           path: fuzz-failing-input.bin
 
+  # The app is also built with MinGW, which the MSVC job does not exercise: Qt on Windows declares a
+  # QDebug operator<< for the incomplete MSG type, and GCC rejects some uses of it that MSVC and
+  # Linux accept (a bare Json signal argument, for one). Libraries come from MSYS2, so no vcpkg.
+  app-mingw:
+    name: Desktop app (Windows, MinGW from MSYS2)
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-qt6-base mingw-w64-ucrt-x86_64-cgal
+            mingw-w64-ucrt-x86_64-eigen3 mingw-w64-ucrt-x86_64-opencascade
+            mingw-w64-ucrt-x86_64-opensubdiv mingw-w64-ucrt-x86_64-tbb
+            mingw-w64-ucrt-x86_64-nlohmann-json mingw-w64-ucrt-x86_64-catch
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMESH2CAD_WARNINGS_AS_ERRORS=ON -DMESH2CAD_BUILD_APP=ON
+      - name: Build
+        run: cmake --build build
+      # The window tests need OpenGL 3.3, which this machine lacks; the Linux app job runs them.
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -LE app
+
   app:
     name: Desktop app (Linux, Qt from apt)
     runs-on: ubuntu-24.04
