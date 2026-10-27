@@ -32,6 +32,10 @@ namespace Sdc = OpenSubdiv::Sdc;
 
 namespace {
 
+/// OpenSubdiv's patch setup grows with about the cube of a face's sides and cannot be
+/// cancelled: 100 sides take about a second, 400 a minute and 1,800 hours.
+constexpr std::size_t kMaxFaceSides = 128;
+
 /// Point type for OpenSubdiv's stencil evaluation.
 struct Point {
     Vec3d p;
@@ -57,8 +61,17 @@ Limit::create(const QuadLayout& cage,
                          : "the cage must be closed");
     }
     std::vector<int> sizes(cage.faceCount());
+    std::size_t largest = 0;
     for (std::size_t f = 0; f < cage.faceCount(); ++f) {
         sizes[f] = static_cast<int>(cage.face(f).size());
+        largest = std::max(largest, cage.face(f).size());
+    }
+    if (largest > kMaxFaceSides) {
+        return fail(ErrorCode::InvalidArgument,
+                    "the cage has a face with " + std::to_string(largest) +
+                        " sides, more than the " + std::to_string(kMaxFaceSides) +
+                        " a surface can be built from in reasonable time; run quad.remesh again "
+                        "to fill its holes with quads");
     }
     const std::vector<int> indices(cage.faceVertices().begin(), cage.faceVertices().end());
     Far::TopologyDescriptor desc;

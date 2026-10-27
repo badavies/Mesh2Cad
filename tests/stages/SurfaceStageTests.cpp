@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include "m2c/adapters/cgal/MeshTools.h"
 #include "m2c/adapters/occt/Brep.h"
@@ -36,6 +37,7 @@
 
 using namespace m2c;
 using namespace m2c::test;
+using Catch::Matchers::ContainsSubstring;
 
 namespace {
 
@@ -234,6 +236,34 @@ TEST_CASE("Fitting rejects open cages and bad parameters", "[stages][surface]") 
     CHECK_FALSE(fitCage(cube, scan, bad));
     const QuadLayout open = *QuadLayout::create(cube.positions(), {0, 4}, {0, 3, 2, 1});
     CHECK_FALSE(extractPatches(open, PatchParams{}));
+}
+
+TEST_CASE("A cage face with too many sides is refused at once", "[stages][surface]") {
+    // A drum: a band of quads closed at each end by one 200-sided face. OpenSubdiv would take
+    // minutes over it, uncancellably.
+    constexpr std::uint32_t n = 200;
+    std::vector<Vec3d> p;
+    for (std::uint32_t r = 0; r < 2; ++r) {
+        for (std::uint32_t i = 0; i < n; ++i) {
+            const double a = 2.0 * std::numbers::pi * i / n;
+            p.push_back({10.0 * std::cos(a), 10.0 * std::sin(a), 5.0 * r});
+        }
+    }
+    std::vector<std::uint32_t> starts{0};
+    std::vector<std::uint32_t> vertices;
+    for (std::uint32_t i = 0; i < n; ++i) {
+        vertices.insert(vertices.end(), {i, (i + 1) % n, n + (i + 1) % n, n + i});
+        starts.push_back(static_cast<std::uint32_t>(vertices.size()));
+    }
+    for (std::uint32_t i = 0; i < n; ++i) vertices.push_back(n - 1 - i);
+    starts.push_back(static_cast<std::uint32_t>(vertices.size()));
+    for (std::uint32_t i = 0; i < n; ++i) vertices.push_back(n + i);
+    starts.push_back(static_cast<std::uint32_t>(vertices.size()));
+    const QuadLayout drum = *QuadLayout::create(p, std::move(starts), std::move(vertices));
+    REQUIRE(cageStats(drum).closed());
+    const auto patches = extractPatches(drum, PatchParams{});
+    REQUIRE_FALSE(patches);
+    CHECK_THAT(patches.error().message, ContainsSubstring("200 sides"));
 }
 
 TEST_CASE("An open cage fits a scanned sheet and gives open patches", "[stages][surface]") {

@@ -426,7 +426,7 @@ Save every object (meshes, selections, measurements, alignments, quad layouts, s
 
 ### `quad.remesh`
 
-Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges are dropped, open loops filled and faces pointed outward. Loose parts (such as the head of a thin post whose stem the remesher missed) are joined to the main part with a tube of quads, or left out and counted when they cannot be. Guides, polylines drawn on the mesh, lay out the patches by hand: cage edges run along them. With keep_outline, an open mesh (a scanned sheet such as a lid) gives an open cage: its longest boundary loop stays open, cage edges follow it, and the faces point the way the mesh does. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
+Make a quad control cage from a closed mesh with Instant Meshes, then close it: faces on non-manifold edges are dropped, open loops filled (a large one with quads, so that no face has more than five sides) and faces pointed outward. Loose parts (such as the head of a thin post whose stem the remesher missed) are joined to the main part with a tube of quads, or left out and counted when they cannot be. Guides, polylines drawn on the mesh, lay out the patches by hand: cage edges run along them. With keep_outline, an open mesh (a scanned sheet such as a lid) gives an open cage: its longest boundary loop stays open, cage edges follow it, and the faces point the way the mesh does. Adds a quad_layout object; the mesh is unchanged. *(changes the document)*
 
 | Parameter | Type | Required | Notes |
 | --- | --- | --- | --- |
