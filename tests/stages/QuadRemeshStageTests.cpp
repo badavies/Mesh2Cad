@@ -141,6 +141,46 @@ TEST_CASE("Closing a cage fills an open loop and drops fragments", "[stages][qua
     CHECK_THAT(signedVolume(*closed), WithinAbs(1.0, 1e-12));
 }
 
+TEST_CASE("Closing a cage fills a large loop with small faces", "[stages][quad]") {
+    // An open tube 60 quads round: each end is a loop of 60 edges. One 60-sided face per end
+    // would cost the surface build minutes; filling with mostly quads keeps it fast.
+    constexpr std::uint32_t n = 60;
+    constexpr std::uint32_t rings = 4;
+    constexpr double radius = 10.0;
+    std::vector<Vec3d> p;
+    for (std::uint32_t r = 0; r <= rings; ++r) {
+        for (std::uint32_t i = 0; i < n; ++i) {
+            const double a = 2.0 * std::numbers::pi * i / n;
+            p.push_back({radius * std::cos(a), radius * std::sin(a), 2.0 * r});
+        }
+    }
+    std::vector<std::vector<std::uint32_t>> faces;
+    for (std::uint32_t r = 0; r < rings; ++r) {
+        for (std::uint32_t i = 0; i < n; ++i) {
+            const std::uint32_t j = (i + 1) % n;
+            faces.push_back({r * n + i, r * n + j, (r + 1) * n + j, (r + 1) * n + i});
+        }
+    }
+    CageCleanup report;
+    const auto closed = closeCage(cageOf(p, faces), report);
+    REQUIRE(closed);
+    CHECK(report.filledLoops == 2);
+    CHECK(report.largestLoop == n);
+    const CageStats stats = cageStats(*closed);
+    CHECK(stats.closed());
+    std::size_t quads = 0;
+    std::size_t largest = 0;
+    for (std::size_t f = 0; f < closed->faceCount(); ++f) {
+        largest = std::max(largest, closed->face(f).size());
+        if (closed->face(f).size() == 4) ++quads;
+    }
+    CHECK(largest <= 5);
+    CHECK(quads >= closed->faceCount() * 9 / 10);
+    // The fill stays on the plane of each end, so the volume is the prism's.
+    const double base = 0.5 * n * radius * radius * std::sin(2.0 * std::numbers::pi / n);
+    CHECK_THAT(signedVolume(*closed), WithinAbs(base * 2.0 * rings, 1e-9));
+}
+
 TEST_CASE("Closing a cage joins a loose closed part with a tube", "[stages][quad]") {
     // A 30 mm body and, 6 mm above it, a 6 mm block: a post whose stem the remesher missed.
     std::vector<Vec3d> p;

@@ -24,8 +24,8 @@ struct CageCleanup {
     std::size_t joinedComponents{0}; ///< Closed parts joined to the main one with a tube.
     std::size_t joinedComponentFaces{0};
     std::size_t splitVertices{0};     ///< Copies made where faces met only at a vertex.
-    std::size_t filledLoops{0};       ///< Open loops closed with one polygon each.
-    std::size_t largestLoop{0};       ///< Vertices of the largest polygon added.
+    std::size_t filledLoops{0};       ///< Open loops closed.
+    std::size_t largestLoop{0};       ///< Vertices of the largest loop closed.
     std::size_t dissolvedVertices{0}; ///< Vertices shared by only two faces, removed.
     bool flipped{false};              ///< Faces were reversed to point outward.
 };
@@ -44,11 +44,12 @@ struct CageCloseParams {
 
 /// Makes a cage closed, manifold and outward: drops faces on non-manifold edges, orients faces
 /// consistently, splits vertices where separate fans meet, closes each open loop with one
-/// polygon, points faces outward and dissolves valence-2 vertices, all on the largest connected
-/// part. Each other part that closes the same way is joined to it by a tube of quads from the
-/// nearest pair of quads facing each other, no farther apart than twice the part's size; the rest
-/// are left out. Fails with InvalidState when the main part cannot be oriented consistently or
-/// nothing valid is left. With keepOutline the result is open along one loop (see above).
+/// polygon (pieces of at most five sides for a larger loop), points faces outward and dissolves
+/// valence-2 vertices, all on the largest connected part. Each other part that closes the same way
+/// is joined to it by a tube of quads from the nearest pair of quads facing each other, no farther
+/// apart than twice the part's size; the rest are left out. Fails with InvalidState when the main
+/// part cannot be oriented consistently or nothing valid is left. With keepOutline the result is
+/// open along one loop (see above).
 [[nodiscard]] Result<QuadLayout>
 closeCage(const QuadLayout& raw, CageCleanup& report, const CageCloseParams& params = {});
 

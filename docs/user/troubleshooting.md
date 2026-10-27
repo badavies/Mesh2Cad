@@ -8,6 +8,8 @@ When a command fails, it changes nothing: the document stays as it was and no fi
 | `mesh.info` shows boundary or non-manifold edges | The scan has holes or bad topology. | Run `mesh.repair`, then `holes.fill`, which leaves holes over 100 edges open unless you set `max_edges` (0 fills every hole). If it is still open, use `mesh.wrap`. |
 | `self_intersecting` stays true after a repair | Parts of the mesh pass through each other. | Run `mesh.repair` with `remove_self_intersections`. |
 | `the quad layout could not be closed` | The remesher left holes or non-manifold edges it could not close. This usually comes from a mesh that isn't watertight or has thin spikes. | Repair and fill the mesh first. Try a different `target_faces`, or smooth spiky areas. |
+| `a thickness needs an open cage` | The cage is closed: `quad.remesh` fills every open loop, the outline of a scanned sheet too, unless `keep_outline` is on. | Run `quad.remesh` again with `keep_outline` (under **Advanced**), then `surface.build` with the thickness. |
+| `the cage has a face with N sides, more than the 128 ...` | The layout was made before `quad.remesh` filled large holes with quads, and has one polygon across a hole. Building a surface from it would take hours. | Run `quad.remesh` again. |
 | `an open cage needs a thickness` | The cage was made with `keep_outline` (a one-sided sheet). | Give `surface.build` a `thickness_mm`. |
 | `the surface folds over itself: faces meet at ...` | The fitted surface turns back on itself, usually at thin or very sharp features the cage is too coarse to follow. | Raise `target_faces`, or for sharp edges set `crease_angle_deg` in both `quad.remesh` and `surface.build`. Raise `smoothing` a little. |
 | `the surface's faces cross each other` | The fit overshoots an edge sharper than the cage can follow. | As above. `check_crossing` set to false skips the check for quick trials, but don't export such a solid. |
@@ -29,7 +31,7 @@ Import the `.glb` with Blender's own glTF importer and its default options. glTF
 
 ## Slow commands
 
-Long commands show their stage in the status bar, and can be cancelled. Surface building on a large cage takes the longest. For trials, use a smaller `target_faces` and turn off `check_crossing`. Deviation and the cage fit use all your processor cores.
+Long commands show their stage in the status bar, and can be cancelled. Surface building on a large cage takes the longest, and its time grows faster than the cage: start from a few thousand quads and let `refine_to_mm` add detail, rather than a `target_faces` near 100,000. For trials, also turn off `check_crossing`. Deviation and the cage fit use all your processor cores.
 
 ## Reporting a problem
 

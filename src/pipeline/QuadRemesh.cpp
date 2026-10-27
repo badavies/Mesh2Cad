@@ -202,13 +202,94 @@ std::size_t splitNonManifoldVertices(std::vector<Vec3d>& positions, std::vector<
     return split;
 }
 
-/// Closes each loop of boundary edges with one polygon running the other way, apart from the
-/// longest when keepLongest is set.
-void fillLoops(std::vector<Face>& faces, CageCleanup& report, const bool keepLongest) {
+/// Fill faces up to this many sides are kept whole. One polygon per loop is fine for a small
+/// hole, but OpenSubdiv's patch setup grows with about the cube of a face's sides: a 400-sided
+/// face took a minute and a 1,800-sided one hours.
+constexpr std::size_t kMaxFillSides = 5;
+
+/// Splits a fill polygon in two along its shortest chord between vertices half way round,
+/// with points along the chord about one edge apart, until every piece has at most
+/// kMaxFillSides sides. Pieces keep the polygon's orientation. `edges` holds every undirected
+/// edge so far, so that no chord repeats one.
+void splitFill(std::vector<Vec3d>& positions,
+               Face polygon,
+               std::unordered_map<std::uint64_t, bool>& edges,
+               std::vector<Face>& out) {
+    std::vector<Face> pending{std::move(polygon)};
+    while (!pending.empty()) {
+        Face poly = std::move(pending.back());
+        pending.pop_back();
+        const std::size_t m = poly.size();
+        if (m <= kMaxFillSides) {
+            out.push_back(std::move(poly));
+            continue;
+        }
+        double perimeter = 0.0;
+        for (std::size_t i = 0; i < m; ++i) {
+            perimeter += length(positions[poly[(i + 1) % m]] - positions[poly[i]]);
+        }
+        const double edge = std::max(perimeter / static_cast<double>(m), 1e-12);
+        const std::size_t half = m / 2;
+        std::size_t from = 0;
+        double shortest = -1.0;
+        for (std::size_t i = 0; i < m - half; ++i) {
+            const double d = length(positions[poly[i + half]] - positions[poly[i]]);
+            if (shortest < 0.0 || d < shortest) {
+                shortest = d;
+                from = i;
+            }
+        }
+        const std::size_t to = from + half;
+        // Both pieces must end up smaller: each has the chord's points plus half + 1 or
+        // m - half + 1 of the polygon's, and half <= m - half.
+        const std::size_t most = half - 2;
+        auto points = static_cast<std::size_t>(
+            std::clamp(std::lround(shortest / edge) - 1L, 0L, static_cast<long>(most)));
+        // Even pieces split into quads; a polygon with an even count of sides has two pieces
+        // of the same parity.
+        if (m % 2 == 0 && (half + 1 + points) % 2 == 1) {
+            points = points < most ? points + 1 : points - 1;
+        }
+        const std::uint32_t a = poly[from];
+        const std::uint32_t b = poly[to];
+        if (points == 0 && edges.contains(undirected(a, b))) points = 1;
+        Face chord{a};
+        for (std::size_t k = 1; k <= points; ++k) {
+            const double w = static_cast<double>(k) / static_cast<double>(points + 1);
+            chord.push_back(static_cast<std::uint32_t>(positions.size()));
+            positions.push_back(positions[a] + (positions[b] - positions[a]) * w);
+        }
+        chord.push_back(b);
+        for (std::size_t k = 0; k + 1 < chord.size(); ++k) {
+            edges[undirected(chord[k], chord[k + 1])] = true;
+        }
+        // One piece runs a .. b along the polygon and back along the chord, the other b .. a
+        // and forward along the chord.
+        Face first(poly.begin() + static_cast<std::ptrdiff_t>(from),
+                   poly.begin() + static_cast<std::ptrdiff_t>(to) + 1);
+        first.insert(first.end(), chord.rbegin() + 1, chord.rend() - 1);
+        Face second(poly.begin() + static_cast<std::ptrdiff_t>(to), poly.end());
+        second.insert(
+            second.end(), poly.begin(), poly.begin() + static_cast<std::ptrdiff_t>(from) + 1);
+        second.insert(second.end(), chord.begin() + 1, chord.end() - 1);
+        pending.push_back(std::move(first));
+        pending.push_back(std::move(second));
+    }
+}
+
+/// Closes each loop of boundary edges with faces running the other way, apart from the longest
+/// when keepLongest is set: one polygon for a loop of up to kMaxFillSides vertices, otherwise
+/// pieces of one (see splitFill).
+void fillLoops(std::vector<Vec3d>& positions,
+               std::vector<Face>& faces,
+               CageCleanup& report,
+               const bool keepLongest) {
     std::unordered_map<std::uint64_t, bool> halfEdges;
+    std::unordered_map<std::uint64_t, bool> edges;
     for (const Face& face : faces) {
         for (std::size_t i = 0; i < face.size(); ++i) {
             halfEdges[directed(face[i], face[(i + 1) % face.size()])] = true;
+            edges[undirected(face[i], face[(i + 1) % face.size()])] = true;
         }
     }
     // Every vertex is a single fan now, so each boundary vertex starts exactly one boundary edge.
@@ -245,7 +326,7 @@ void fillLoops(std::vector<Face>& faces, CageCleanup& report, const bool keepLon
         std::ranges::reverse(loop);
         report.largestLoop = std::max(report.largestLoop, loop.size());
         ++report.filledLoops;
-        faces.push_back(std::move(loop));
+        splitFill(positions, std::move(loop), edges, faces);
     }
 }
 
@@ -335,7 +416,7 @@ bool closePart(std::vector<Vec3d>& positions,
                const bool keepOutline = false) {
     if (!orientConsistently(faces)) return false;
     report.splitVertices += splitNonManifoldVertices(positions, faces);
-    fillLoops(faces, report, keepOutline);
+    fillLoops(positions, faces, report, keepOutline);
     report.dissolvedVertices += dissolveValenceTwo(positions.size(), faces);
     if (!keepOutline && volumeOf(positions, faces) < 0.0) {
         for (Face& face : faces) std::ranges::reverse(face);
